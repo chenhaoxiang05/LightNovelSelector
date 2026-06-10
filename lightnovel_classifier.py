@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import io
@@ -237,9 +237,15 @@ class PersistentMetadataCache:
             entry = self.data.get("entries", {}).get(key)
             if not isinstance(entry, dict):
                 return None
-            cached_at = float(entry.get("cached_at") or 0)
+            try:
+                cached_at = float(entry.get("cached_at") or 0)
+            except (TypeError, ValueError):
+                self.data["entries"].pop(key, None)
+                self._save()
+                return None
             if time.time() - cached_at > METADATA_CACHE_TTL_SECONDS:
                 self.data["entries"].pop(key, None)
+                self._save()
                 return None
             payload = entry.get("payload")
             return payload if isinstance(payload, dict) else None
@@ -1703,7 +1709,10 @@ def launch_gui() -> None:
                 with ThreadPoolExecutor(max_workers=worker_count) as executor:
                     futures = [executor.submit(fetch_one, index, plan) for index, plan in plans_snapshot]
                     for future in futures:
-                        future.result()
+                        try:
+                            future.result()
+                        except Exception:
+                            pass
 
             threading.Thread(target=work, daemon=True).start()
 

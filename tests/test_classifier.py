@@ -1,5 +1,6 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import json
 import unittest
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -204,6 +205,29 @@ class BangumiMetadataTests(unittest.TestCase):
             loaded = book_metadata_from_dict(PersistentMetadataCache(Path(temp_dir) / "cache.json").get(key) or {})
 
             self.assertEqual(loaded, metadata)
+
+    def test_persistent_metadata_cache_ignores_bad_timestamp(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "cache.json"
+            cache_path.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "entries": {
+                            "book:bad": {
+                                "cached_at": "not-a-number",
+                                "payload": {"title": "Broken"},
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            cache = PersistentMetadataCache(cache_path)
+
+            self.assertIsNone(cache.get("book:bad"))
+            self.assertNotIn("book:bad", PersistentMetadataCache(cache_path).data["entries"])
 
 
 if __name__ == "__main__":

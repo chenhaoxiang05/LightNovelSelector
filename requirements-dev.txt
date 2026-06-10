@@ -1,3 +1,5 @@
 Pillow
 pyinstaller
 pytest
+ruff
+vulture

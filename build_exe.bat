@@ -49,12 +49,17 @@ if not defined APP_VERSION set "APP_VERSION=0.0.0"
 for /f %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "BUILD_STAMP=%%T"
 set "APP_EXE_NAME=LightNovelSelector-v%APP_VERSION%-%BUILD_STAMP%"
 
+if not exist "%~dp0build\spec" mkdir "%~dp0build\spec"
+
 echo Building %APP_EXE_NAME%.exe...
 "%PYTHON_EXE%" -m PyInstaller ^
   --noconfirm ^
   --clean ^
   --onefile ^
   --windowed ^
+  --workpath "%~dp0build\pyinstaller" ^
+  --specpath "%~dp0build\spec" ^
+  --distpath "%~dp0dist" ^
   --name "%APP_EXE_NAME%" ^
   "%~dp0lightnovel_classifier.py"
 if errorlevel 1 exit /b 1

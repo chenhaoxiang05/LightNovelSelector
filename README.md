@@ -19,7 +19,7 @@ py .\lightnovel_classifier.py
 打包后的程序在：
 
 ```text
-D:\selector\dist\LightNovelSelector.exe
+D:\selector\dist\LightNovelSelector-v1.1.0-20260610-230000.exe
 ```
 
 ## 基本使用
