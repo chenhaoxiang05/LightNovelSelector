@@ -6,6 +6,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from lightnovel_classifier import (
     BookMetadata,
+    AppSettings,
+    CustomRule,
     PersistentMetadataCache,
     bangumi_cover_url,
     bangumi_title_candidates,
@@ -16,13 +18,18 @@ from lightnovel_classifier import (
     execute_classification_plan,
     extract_book_lookup_query,
     extract_series_guess,
+    find_duplicate_files,
     identity_query_for_path,
     item_matches_volume,
     normalize_for_match,
     parse_volume_number,
+    plan_status_label,
     read_local_cover_bytes,
     safe_folder_name,
+    load_app_settings,
+    save_app_settings,
     suggest_renamed_filename,
+    undo_classification_report,
 )
 
 
@@ -128,6 +135,97 @@ class MovePlanTests(unittest.TestCase):
             self.assertEqual((moved, skipped), (2, 0))
             self.assertTrue((root / "Sword Art Online" / first.name).exists())
             self.assertTrue((root / "Sword Art Online" / second.name).exists())
+
+    def test_duplicate_file_is_marked_and_skipped(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A Sword.Art.Online.Vol.01.epub"
+            duplicate = root / "B SAO copy.epub"
+            first.write_text("same", encoding="utf-8")
+            duplicate.write_text("same", encoding="utf-8")
+
+            plans = build_classification_plan(root, use_network=False)
+
+            duplicate_plans = [plan for plan in plans if plan.status == "duplicate"]
+            self.assertEqual(len(duplicate_plans), 1)
+            self.assertEqual(duplicate_plans[0].duplicate_of, first)
+            self.assertFalse(duplicate_plans[0].will_move)
+
+            moved, skipped = execute_classification_plan(plans, report_path=root / "report.json")
+
+            self.assertEqual((moved, skipped), (1, 1))
+            report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["summary"]["duplicates"], 1)
+            self.assertEqual(report["summary"]["moved"], 1)
+
+    def test_find_duplicate_files_uses_content_not_name(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A.txt"
+            same = root / "B.txt"
+            different = root / "C.txt"
+            first.write_text("book", encoding="utf-8")
+            same.write_text("book", encoding="utf-8")
+            different.write_text("other", encoding="utf-8")
+
+            duplicates = find_duplicate_files([first, same, different])
+
+            self.assertEqual(duplicates, {same: first})
+
+    def test_custom_rule_overrides_local_guess(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "mystery-file-01.txt"
+            book.write_text("content", encoding="utf-8")
+
+            plans = build_classification_plan(
+                root,
+                use_network=False,
+                custom_rules=[CustomRule(pattern="*mystery*", series="手动系列")],
+            )
+
+            self.assertEqual(len(plans), 1)
+            self.assertEqual(plans[0].series_name, "手动系列")
+            self.assertEqual(plans[0].resolver_source, "自定义规则")
+
+    def test_app_settings_roundtrip(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "settings.json"
+            settings = AppSettings(
+                use_network=False,
+                recursive=True,
+                auto_rename=True,
+                custom_rules=(CustomRule(pattern="*SAO*", series="Sword Art Online"),),
+            )
+
+            save_app_settings(settings, path)
+            loaded = load_app_settings(path)
+
+            self.assertEqual(loaded, settings)
+
+    def test_undo_classification_report_restores_moved_file(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "Sword.Art.Online.Vol.01.txt"
+            book.write_text("one", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            plans = build_classification_plan(root, use_network=False)
+            moved, skipped = execute_classification_plan(plans, report_path=report_path)
+
+            self.assertEqual((moved, skipped), (1, 0))
+            self.assertFalse(book.exists())
+
+            restored, undo_skipped = undo_classification_report(report_path)
+
+            self.assertEqual((restored, undo_skipped), (1, 0))
+            self.assertTrue(book.exists())
+            self.assertEqual(book.read_text(encoding="utf-8"), "one")
+
+    def test_plan_status_label(self) -> None:
+        self.assertEqual(plan_status_label("ready"), "可执行")
+        self.assertEqual(plan_status_label("duplicate"), "重复")
+        self.assertEqual(plan_status_label("error"), "错误")
+        self.assertEqual(plan_status_label("custom"), "custom")
 
 
 class LocalCoverTests(unittest.TestCase):

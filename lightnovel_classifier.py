@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
+import hashlib
 import io
 import json
 import os
@@ -19,6 +21,7 @@ import webbrowser
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime
 from difflib import SequenceMatcher
 from html.parser import HTMLParser
 from pathlib import Path
@@ -27,7 +30,7 @@ from xml.etree import ElementTree
 
 
 APP_NAME = "Light Novel Selector"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 USER_AGENT = f"LightNovelSelector/{APP_VERSION} (+local-file-classifier)"
 BANGUMI_SEARCH_URL = "https://api.bgm.tv/v0/search/subjects"
 BANGUMI_SUBJECT_WEB_URL = "https://bgm.tv/subject/{subject_id}"
@@ -39,6 +42,9 @@ METADATA_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30
 CONTENT_HINT_MAX_CHARS = 5000
 CONTENT_HINT_TEXT_EXTENSIONS = {".txt", ".md", ".html", ".htm"}
 METADATA_PRELOAD_WORKERS = 4
+FILE_FINGERPRINT_CHUNK_SIZE = 1024 * 1024
+REPORT_FILE_NAME = "classification_report.json"
+SETTINGS_FILE_NAME = "settings.json"
 
 SUPPORTED_EXTENSIONS = {
     ".txt",
@@ -142,6 +148,20 @@ class BookMetadata:
     url: str | None = None
 
 
+@dataclass(frozen=True)
+class CustomRule:
+    pattern: str
+    series: str
+
+
+@dataclass(frozen=True)
+class AppSettings:
+    use_network: bool = True
+    recursive: bool = False
+    auto_rename: bool = False
+    custom_rules: tuple[CustomRule, ...] = ()
+
+
 def book_metadata_to_dict(metadata: BookMetadata) -> dict:
     return {
         "title": metadata.title,
@@ -205,6 +225,63 @@ def metadata_cache_path() -> Path:
     else:
         root = Path.home() / ".lightnovel_selector"
     return root / "metadata_cache.json"
+
+
+def app_data_dir() -> Path:
+    base = os.environ.get("LOCALAPPDATA")
+    if base:
+        return Path(base) / "LightNovelSelector"
+    return Path.home() / ".lightnovel_selector"
+
+
+def settings_path() -> Path:
+    return app_data_dir() / SETTINGS_FILE_NAME
+
+
+def app_settings_from_dict(data: dict) -> AppSettings:
+    rules = []
+    for item in data.get("custom_rules") or []:
+        if not isinstance(item, dict):
+            continue
+        pattern = collapse_spaces(str(item.get("pattern") or ""))
+        series = collapse_spaces(str(item.get("series") or ""))
+        if pattern and series:
+            rules.append(CustomRule(pattern=pattern, series=series))
+    return AppSettings(
+        use_network=bool(data.get("use_network", True)),
+        recursive=bool(data.get("recursive", False)),
+        auto_rename=bool(data.get("auto_rename", False)),
+        custom_rules=tuple(rules),
+    )
+
+
+def app_settings_to_dict(settings: AppSettings) -> dict:
+    return {
+        "use_network": settings.use_network,
+        "recursive": settings.recursive,
+        "auto_rename": settings.auto_rename,
+        "custom_rules": [
+            {"pattern": rule.pattern, "series": rule.series}
+            for rule in settings.custom_rules
+        ],
+    }
+
+
+def load_app_settings(path: Path | None = None) -> AppSettings:
+    path = path or settings_path()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return AppSettings()
+    if not isinstance(raw, dict):
+        return AppSettings()
+    return app_settings_from_dict(raw)
+
+
+def save_app_settings(settings: AppSettings, path: Path | None = None) -> None:
+    path = path or settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(app_settings_to_dict(settings), ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 class PersistentMetadataCache:
@@ -289,13 +366,22 @@ class ClassificationPlan:
     identity_query: str | None = None
     rename_to: str | None = None
     series_key: str | None = None
+    status: str = "ready"
+    note: str = ""
+    duplicate_of: Path | None = None
 
     @property
     def will_move(self) -> bool:
+        if self.status != "ready":
+            return False
         try:
             return self.source_path.resolve() != self.target_path.resolve()
         except OSError:
             return self.source_path != self.target_path
+
+    @property
+    def has_warning(self) -> bool:
+        return self.status != "ready" or bool(self.note)
 
 
 def collapse_spaces(value: str) -> str:
@@ -731,6 +817,55 @@ def read_local_cover_bytes(path: Path) -> bytes | None:
         return read_epub_cover_bytes(path)
     if suffix in {".cbz", ".zip"}:
         return read_archive_cover_bytes(path)
+    return None
+
+
+def file_fingerprint(path: Path) -> str:
+    stat = path.stat()
+    digest = hashlib.sha256()
+    digest.update(str(stat.st_size).encode("ascii"))
+    with path.open("rb") as handle:
+        digest.update(handle.read(FILE_FINGERPRINT_CHUNK_SIZE))
+        if stat.st_size > FILE_FINGERPRINT_CHUNK_SIZE:
+            handle.seek(max(0, stat.st_size - FILE_FINGERPRINT_CHUNK_SIZE))
+            digest.update(handle.read(FILE_FINGERPRINT_CHUNK_SIZE))
+    return f"{stat.st_size}:{digest.hexdigest()}"
+
+
+def find_duplicate_files(paths: Iterable[Path]) -> dict[Path, Path]:
+    seen: dict[str, Path] = {}
+    duplicates: dict[Path, Path] = {}
+    for path in paths:
+        try:
+            fingerprint = file_fingerprint(path)
+        except OSError:
+            continue
+        first_seen = seen.get(fingerprint)
+        if first_seen is None:
+            seen[fingerprint] = path
+        else:
+            duplicates[path] = first_seen
+    return duplicates
+
+
+def match_custom_rule(file_name: str, identity_query: str, rules: Iterable[CustomRule]) -> CustomRule | None:
+    candidates = [
+        file_name,
+        Path(file_name).stem,
+        identity_query,
+        normalize_for_match(file_name),
+        normalize_for_match(identity_query),
+    ]
+    for rule in rules:
+        pattern = rule.pattern
+        normalized_pattern = normalize_for_match(pattern)
+        for candidate in candidates:
+            if fnmatch.fnmatchcase(candidate.casefold(), pattern.casefold()):
+                return rule
+            if normalized_pattern and fnmatch.fnmatchcase(candidate, normalized_pattern):
+                return rule
+            if normalized_pattern and normalized_pattern in candidate:
+                return rule
     return None
 
 
@@ -1177,12 +1312,64 @@ def unique_target_path(target_path: Path, reserved: set[Path]) -> Path:
         counter += 1
 
 
+def classification_plan_to_report_item(
+    plan: ClassificationPlan,
+    *,
+    actual_target_path: Path | None = None,
+) -> dict:
+    return {
+        "source_path": str(plan.source_path),
+        "target_path": str(plan.target_path),
+        "actual_target_path": str(actual_target_path) if actual_target_path else None,
+        "series_name": plan.series_name,
+        "resolver_source": plan.resolver_source,
+        "confidence": round(plan.confidence, 4),
+        "status": plan.status,
+        "operation": "moved" if actual_target_path else "skipped",
+        "note": plan.note,
+        "duplicate_of": str(plan.duplicate_of) if plan.duplicate_of else None,
+        "rename_to": plan.rename_to,
+        "metadata_title": plan.metadata_title,
+        "metadata_url": plan.metadata_url,
+    }
+
+
+def write_classification_report(
+    plans: list[ClassificationPlan],
+    report_path: Path,
+    *,
+    moved: int,
+    skipped: int,
+    actual_targets: dict[Path, Path] | None = None,
+) -> None:
+    actual_targets = actual_targets or {}
+    report = {
+        "app": APP_NAME,
+        "version": APP_VERSION,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "summary": {
+            "total": len(plans),
+            "moved": moved,
+            "skipped": skipped,
+            "duplicates": sum(1 for plan in plans if plan.status == "duplicate"),
+            "errors": sum(1 for plan in plans if plan.status == "error"),
+        },
+        "items": [
+            classification_plan_to_report_item(plan, actual_target_path=actual_targets.get(plan.source_path))
+            for plan in plans
+        ],
+    }
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def build_classification_plan(
     root: Path,
     *,
     recursive: bool = False,
     use_network: bool = True,
     auto_rename: bool = False,
+    custom_rules: Iterable[CustomRule] | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> list[ClassificationPlan]:
     root = root.expanduser().resolve()
@@ -1192,6 +1379,8 @@ def build_classification_plan(
         raise NotADirectoryError(f"不是文件夹：{root}")
 
     files = find_novel_files(root, recursive=recursive)
+    duplicates = find_duplicate_files(files)
+    rules = tuple(custom_rules or ())
     resolver = SeriesResolver(use_network=use_network)
     plans: list[ClassificationPlan] = []
     reserved_targets: set[Path] = set()
@@ -1199,44 +1388,94 @@ def build_classification_plan(
     for index, path in enumerate(files, start=1):
         if progress:
             progress(f"[{index}/{len(files)}] 识别：{path.name}")
-        identity_hint = read_identity_hint(path)
-        identity_query = identity_query_for_path(path, identity_hint)
-        result = resolver.resolve(identity_query)
-        folder_name = safe_folder_name(result.series_name)
-        target_dir = root / folder_name
-        metadata = None
-        rename_to = None
-        target_name = path.name
-        if auto_rename and use_network:
-            metadata = resolver.resolve_book_metadata_for_query(identity_query, series_name=folder_name)
-            rename_to = suggest_renamed_filename(
-                path,
-                series_name=folder_name,
-                metadata=metadata,
-                identity_query=identity_query,
+        duplicate_of = duplicates.get(path)
+        if duplicate_of is not None:
+            local_guess = extract_series_guess(path.name)
+            folder_name = safe_folder_name(local_guess)
+            plans.append(
+                ClassificationPlan(
+                    source_path=path,
+                    series_name=folder_name,
+                    target_dir=root / folder_name,
+                    target_path=path,
+                    resolver_source="重复文件检测",
+                    confidence=1.0,
+                    local_guess=local_guess,
+                    identity_query=extract_book_lookup_query(path.name),
+                    series_key=folder_name,
+                    status="duplicate",
+                    note=f"与 {duplicate_of.name} 内容重复，默认跳过。",
+                    duplicate_of=duplicate_of,
+                )
             )
-            target_name = rename_to
-        target_path = unique_target_path(target_dir / target_name, reserved_targets)
-        plans.append(
-            ClassificationPlan(
-                source_path=path,
-                series_name=folder_name,
-                target_dir=target_dir,
-                target_path=target_path,
-                resolver_source=result.source,
-                confidence=result.confidence,
-                local_guess=result.local_guess,
-                metadata_title=(metadata.title if metadata else result.metadata_title),
-                metadata_summary=(metadata.summary if metadata else result.metadata_summary),
-                metadata_cover_url=(metadata.cover_url if metadata else result.metadata_cover_url),
-                metadata_url=(metadata.url if metadata else result.metadata_url),
-                local_cover_bytes=read_local_cover_bytes(path),
-                identity_hint=identity_hint,
-                identity_query=identity_query,
-                rename_to=rename_to,
-                series_key=folder_name,
+            continue
+
+        try:
+            identity_hint = read_identity_hint(path)
+            identity_query = identity_query_for_path(path, identity_hint)
+            custom_rule = match_custom_rule(path.name, identity_query, rules)
+            if custom_rule is not None:
+                result = ResolveResult(
+                    series_name=safe_folder_name(custom_rule.series),
+                    source="自定义规则",
+                    confidence=1.0,
+                    local_guess=identity_query,
+                )
+            else:
+                result = resolver.resolve(identity_query)
+            folder_name = safe_folder_name(result.series_name)
+            target_dir = root / folder_name
+            metadata = None
+            rename_to = None
+            target_name = path.name
+            if auto_rename and use_network:
+                metadata = resolver.resolve_book_metadata_for_query(identity_query, series_name=folder_name)
+                rename_to = suggest_renamed_filename(
+                    path,
+                    series_name=folder_name,
+                    metadata=metadata,
+                    identity_query=identity_query,
+                )
+                target_name = rename_to
+            target_path = unique_target_path(target_dir / target_name, reserved_targets)
+            plans.append(
+                ClassificationPlan(
+                    source_path=path,
+                    series_name=folder_name,
+                    target_dir=target_dir,
+                    target_path=target_path,
+                    resolver_source=result.source,
+                    confidence=result.confidence,
+                    local_guess=result.local_guess,
+                    metadata_title=(metadata.title if metadata else result.metadata_title),
+                    metadata_summary=(metadata.summary if metadata else result.metadata_summary),
+                    metadata_cover_url=(metadata.cover_url if metadata else result.metadata_cover_url),
+                    metadata_url=(metadata.url if metadata else result.metadata_url),
+                    local_cover_bytes=read_local_cover_bytes(path),
+                    identity_hint=identity_hint,
+                    identity_query=identity_query,
+                    rename_to=rename_to,
+                    series_key=folder_name,
+                )
             )
-        )
+        except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+            local_guess = extract_series_guess(path.name)
+            folder_name = safe_folder_name(local_guess)
+            plans.append(
+                ClassificationPlan(
+                    source_path=path,
+                    series_name=folder_name,
+                    target_dir=root / folder_name,
+                    target_path=path,
+                    resolver_source="文件读取失败",
+                    confidence=0.0,
+                    local_guess=local_guess,
+                    identity_query=extract_book_lookup_query(path.name),
+                    series_key=folder_name,
+                    status="error",
+                    note=str(exc),
+                )
+            )
 
     return plans
 
@@ -1245,9 +1484,11 @@ def execute_classification_plan(
     plans: list[ClassificationPlan],
     *,
     progress: Callable[[str], None] | None = None,
+    report_path: Path | None = None,
 ) -> tuple[int, int]:
     moved = 0
     skipped = 0
+    actual_targets: dict[Path, Path] = {}
     for index, plan in enumerate(plans, start=1):
         if not plan.will_move:
             skipped += 1
@@ -1257,8 +1498,49 @@ def execute_classification_plan(
         plan.target_dir.mkdir(parents=True, exist_ok=True)
         final_target = unique_target_path(plan.target_path, set()) if plan.target_path.exists() else plan.target_path
         shutil.move(str(plan.source_path), str(final_target))
+        actual_targets[plan.source_path] = final_target
         moved += 1
+    if report_path is not None:
+        write_classification_report(plans, report_path, moved=moved, skipped=skipped, actual_targets=actual_targets)
     return moved, skipped
+
+
+def undo_classification_report(
+    report_path: Path,
+    *,
+    progress: Callable[[str], None] | None = None,
+) -> tuple[int, int]:
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    items = report.get("items") or []
+    restored = 0
+    skipped = 0
+    for item in reversed(items):
+        if not isinstance(item, dict) or item.get("operation") != "moved":
+            continue
+        source_path = Path(str(item.get("source_path") or ""))
+        target_path = Path(str(item.get("actual_target_path") or item.get("target_path") or ""))
+        if not target_path.exists() or source_path.exists():
+            skipped += 1
+            continue
+        if progress:
+            progress(f"撤销：{target_path.name} -> {source_path}")
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(target_path), str(source_path))
+        restored += 1
+        try:
+            if not any(target_path.parent.iterdir()):
+                target_path.parent.rmdir()
+        except OSError:
+            pass
+    return restored, skipped
+
+
+def plan_status_label(status: str) -> str:
+    return {
+        "ready": "可执行",
+        "duplicate": "重复",
+        "error": "错误",
+    }.get(status, status)
 
 
 def print_plan(plans: list[ClassificationPlan]) -> None:
@@ -1267,26 +1549,35 @@ def print_plan(plans: list[ClassificationPlan]) -> None:
         return
     for plan in plans:
         marker = "MOVE" if plan.will_move else "SKIP"
+        note = f"\t{plan.note}" if plan.note else ""
         print(
             f"{marker}\t{plan.source_path.name}\t=>\t{plan.target_dir.name}\\{plan.target_path.name}"
-            f"\t[{plan.resolver_source}, {plan.confidence:.0%}]"
+            f"\t[{plan.resolver_source}, {plan.confidence:.0%}]{note}"
         )
 
 
 def run_cli(args: argparse.Namespace) -> int:
     root = Path(args.folder)
+    settings = load_app_settings()
     plans = build_classification_plan(
         root,
         recursive=args.recursive,
         use_network=not args.no_network,
         auto_rename=args.auto_rename,
+        custom_rules=settings.custom_rules,
         progress=None if args.quiet else print,
     )
     print_plan(plans)
     if args.dry_run:
         return 0
-    moved, skipped = execute_classification_plan(plans, progress=None if args.quiet else print)
+    report_path = root / REPORT_FILE_NAME
+    moved, skipped = execute_classification_plan(
+        plans,
+        progress=None if args.quiet else print,
+        report_path=report_path,
+    )
     print(f"完成：移动 {moved} 个文件，跳过 {skipped} 个文件。")
+    print(f"报告：{report_path}")
     return 0
 
 
@@ -1301,15 +1592,51 @@ def launch_gui() -> None:
         Image = None
         ImageTk = None
 
+    COLORS = {
+        "bg": "#f5f7fb",
+        "panel": "#eef2ff",
+        "sidebar": "#ffffff",
+        "card": "#ffffff",
+        "card_hover": "#f1f5ff",
+        "border": "#dbe3f0",
+        "muted": "#64748b",
+        "text": "#0f172a",
+        "accent": "#4f46e5",
+        "accent_soft": "#e0e7ff",
+        "accent_dark": "#3730a3",
+        "warning": "#d97706",
+        "warning_soft": "#fef3c7",
+        "danger": "#e11d48",
+        "danger_soft": "#ffe4e6",
+        "ok": "#059669",
+        "ok_soft": "#d1fae5",
+    }
+
+    def ease_out_cubic(t: float) -> float:
+        return 1 - pow(1 - t, 3)
+
+    def ease_in_out_quart(t: float) -> float:
+        if t < 0.5:
+            return 8 * t * t * t * t
+        return 1 - pow(-2 * t + 2, 4) / 2
+
+    def ease_out_back(t: float) -> float:
+        c1 = 1.70158
+        c3 = c1 + 1
+        return 1 + c3 * pow(t - 1, 3) + c1 * pow(t - 1, 2)
+
     class ClassifierApp:
         def __init__(self, master: tk.Tk) -> None:
             self.master = master
             self.master.title("轻小说联网分类工具")
-            self.master.geometry("1080x720")
+            self.master.geometry("1240x780")
+            self.master.minsize(1040, 680)
+            self.master.configure(bg=COLORS["bg"])
+            self.settings = load_app_settings()
             self.root_var = tk.StringVar()
-            self.network_var = tk.BooleanVar(value=True)
-            self.recursive_var = tk.BooleanVar(value=False)
-            self.auto_rename_var = tk.BooleanVar(value=False)
+            self.network_var = tk.BooleanVar(value=self.settings.use_network)
+            self.recursive_var = tk.BooleanVar(value=self.settings.recursive)
+            self.auto_rename_var = tk.BooleanVar(value=self.settings.auto_rename)
             self.series_filter_var = tk.StringVar(value="全部系列")
             self.status_var = tk.StringVar(value="请选择或新建大文件夹。")
             self.detail_title_var = tk.StringVar(value="Bangumi 信息")
@@ -1329,37 +1656,209 @@ def launch_gui() -> None:
             self.preload_total = 0
             self.preload_done = 0
             self.current_detail_url: str | None = None
+            self.progress_display_value = 0.0
+            self.toast_windows: list[tk.Toplevel] = []
+            self.last_report_path: Path | None = None
+            self.render_token = 0
+            self.stat_total_var = tk.StringVar(value="0")
+            self.stat_ready_var = tk.StringVar(value="0")
+            self.stat_duplicate_var = tk.StringVar(value="0")
+            self.stat_error_var = tk.StringVar(value="0")
+            self.progress_canvas = None
+            self.progress_fill = None
+            self.progress_glow = None
+            self.progress_text = None
+            self.progress_scan_job: str | None = None
+            self._configure_style()
             self._build_widgets()
+            self._animate_initial_cards()
             self._poll_events()
 
-        def _build_widgets(self) -> None:
-            self.master.columnconfigure(0, weight=1)
-            self.master.rowconfigure(2, weight=1)
+        def _configure_style(self) -> None:
+            style = ttk.Style(self.master)
+            if "clam" in style.theme_names():
+                style.theme_use("clam")
+            self.master.option_add("*Font", "{Microsoft YaHei UI} 9")
+            style.configure(".", background=COLORS["bg"], foreground=COLORS["text"], fieldbackground=COLORS["card"])
+            style.configure("App.TFrame", background=COLORS["bg"])
+            style.configure("Sidebar.TFrame", background=COLORS["sidebar"])
+            style.configure("Card.TFrame", background=COLORS["card"], relief="solid", borderwidth=1)
+            style.configure("Card.TLabelframe", background=COLORS["card"], foreground=COLORS["text"], borderwidth=0)
+            style.configure("Card.TLabelframe.Label", background=COLORS["card"], foreground=COLORS["text"])
+            style.configure("TLabel", background=COLORS["bg"], foreground=COLORS["text"])
+            style.configure("Muted.TLabel", background=COLORS["bg"], foreground=COLORS["muted"])
+            style.configure("Card.TLabel", background=COLORS["card"], foreground=COLORS["text"])
+            style.configure("Sidebar.TLabel", background=COLORS["sidebar"], foreground=COLORS["text"])
+            style.configure("SidebarMuted.TLabel", background=COLORS["sidebar"], foreground=COLORS["muted"])
+            style.configure("Accent.TLabel", background=COLORS["bg"], foreground=COLORS["accent"], font=("", 18, "bold"))
+            style.configure("Hero.TLabel", background=COLORS["bg"], foreground=COLORS["text"], font=("", 18, "bold"))
+            style.configure("TButton", padding=(12, 8), background=COLORS["card"], foreground=COLORS["text"], borderwidth=1, relief="flat")
+            style.map("TButton", background=[("active", COLORS["card_hover"]), ("pressed", COLORS["accent_soft"])], foreground=[("pressed", COLORS["accent_dark"])])
+            style.configure("Accent.TButton", background=COLORS["accent_dark"], foreground="#ffffff")
+            style.map("Accent.TButton", background=[("active", COLORS["accent"]), ("pressed", COLORS["accent_dark"])])
+            style.configure("Nav.TButton", padding=(14, 10), background=COLORS["sidebar"], foreground=COLORS["muted"], borderwidth=0, anchor="w")
+            style.map("Nav.TButton", background=[("active", COLORS["accent_soft"]), ("pressed", COLORS["accent_soft"])], foreground=[("active", COLORS["accent_dark"]), ("pressed", COLORS["accent_dark"])])
+            style.configure("TCheckbutton", background=COLORS["bg"], foreground=COLORS["text"])
+            style.map("TCheckbutton", background=[("active", COLORS["bg"])])
+            style.configure("TEntry", fieldbackground=COLORS["card"], foreground=COLORS["text"], insertcolor=COLORS["text"], bordercolor=COLORS["border"], lightcolor=COLORS["border"], darkcolor=COLORS["border"])
+            style.configure("TCombobox", fieldbackground=COLORS["card"], foreground=COLORS["text"], arrowcolor=COLORS["muted"], bordercolor=COLORS["border"])
+            style.configure("Treeview", background=COLORS["card"], fieldbackground=COLORS["card"], foreground=COLORS["text"], rowheight=34, borderwidth=0)
+            style.configure("Treeview.Heading", background=COLORS["panel"], foreground=COLORS["muted"], relief="flat", font=("", 9, "bold"))
+            style.map("Treeview", background=[("selected", COLORS["accent_dark"])], foreground=[("selected", "#ffffff")])
+            style.configure("Modern.Horizontal.TProgressbar", troughcolor=COLORS["panel"], background=COLORS["accent"], bordercolor=COLORS["panel"], lightcolor=COLORS["accent"], darkcolor=COLORS["accent"])
 
-            top = ttk.Frame(self.master, padding=(14, 12))
-            top.grid(row=0, column=0, sticky="ew")
+        def _nav_button(self, parent, text: str, command) -> ttk.Button:
+            button = ttk.Button(parent, text=text, style="Nav.TButton", command=lambda: self._button_press_feedback(button, command))
+            return button
+
+        def _button_press_feedback(self, button, command) -> None:
+            original = button.cget("style") or "TButton"
+            button.configure(style="Accent.TButton")
+            self.master.after(90, lambda: button.configure(style=original))
+            self.master.after(140, lambda: button.configure(style="Nav.TButton" if original == "Nav.TButton" else original))
+            command()
+
+        def focus_workspace(self) -> None:
+            self.show_toast("工作台已就绪")
+
+        def open_settings(self) -> None:
+            dialog = tk.Toplevel(self.master)
+            dialog.title("设置")
+            dialog.configure(bg=COLORS["bg"])
+            dialog.geometry("520x480")
+            dialog.transient(self.master)
+            dialog.grab_set()
+            frame = ttk.Frame(dialog, style="Card.TFrame", padding=18)
+            frame.pack(fill="both", expand=True, padx=14, pady=14)
+            ttk.Label(frame, text="用户偏好", style="Card.TLabel", font=("", 13, "bold")).pack(anchor="w", pady=(0, 12))
+            ttk.Checkbutton(frame, text="联网识别系列名", variable=self.network_var).pack(anchor="w", pady=4)
+            ttk.Checkbutton(frame, text="包含子文件夹", variable=self.recursive_var).pack(anchor="w", pady=4)
+            ttk.Checkbutton(frame, text="自动重命名", variable=self.auto_rename_var).pack(anchor="w", pady=4)
+            ttk.Label(frame, text="自定义规则（每行：匹配模式 => 系列名）", style="Card.TLabel", font=("", 11, "bold")).pack(anchor="w", pady=(16, 6))
+            rules_text = ScrolledText(frame, height=10, wrap="word", bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", borderwidth=0)
+            rules_text.pack(fill="both", expand=True)
+            rules_text.insert(
+                "1.0",
+                "\n".join(f"{rule.pattern} => {rule.series}" for rule in self.settings.custom_rules),
+            )
+            ttk.Label(frame, text="示例：*SAO* => Sword Art Online。规则保存到用户目录，扫描时优先于联网识别。", style="Card.TLabel", wraplength=460).pack(anchor="w", pady=(10, 10))
+
+            def save_and_close() -> None:
+                rules = []
+                for raw_line in rules_text.get("1.0", "end").splitlines():
+                    line = raw_line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=>" not in line:
+                        self.show_toast(f"规则格式不正确：{line}", kind="warning")
+                        return
+                    pattern, series = [part.strip() for part in line.split("=>", 1)]
+                    if pattern and series:
+                        rules.append(CustomRule(pattern=pattern, series=series))
+                self.settings = AppSettings(
+                    use_network=self.network_var.get(),
+                    recursive=self.recursive_var.get(),
+                    auto_rename=self.auto_rename_var.get(),
+                    custom_rules=tuple(rules),
+                )
+                save_app_settings(self.settings)
+                self.show_toast("设置已保存")
+                dialog.destroy()
+
+            ttk.Button(frame, text="保存", style="Accent.TButton", command=save_and_close).pack(anchor="e")
+
+        def open_last_report(self) -> None:
+            if self.last_report_path and self.last_report_path.exists():
+                os.startfile(self.last_report_path)
+                return
+            folder = self.root_var.get().strip()
+            report_path = Path(folder) / REPORT_FILE_NAME if folder else None
+            if report_path and report_path.exists():
+                self.last_report_path = report_path
+                os.startfile(report_path)
+            else:
+                self.show_toast("还没有生成分类报告", kind="warning")
+
+        def undo_last_report(self) -> None:
+            report_path = self.last_report_path
+            if not report_path or not report_path.exists():
+                folder = self.root_var.get().strip()
+                report_path = Path(folder) / REPORT_FILE_NAME if folder else None
+            if not report_path or not report_path.exists():
+                self.show_toast("找不到可撤销的报告", kind="warning")
+                return
+            if not messagebox.askyesno("撤销分类", f"将按报告恢复文件位置：\n{report_path}\n\n继续吗？"):
+                return
+            try:
+                restored, skipped = undo_classification_report(report_path, progress=self.log_message)
+            except Exception as exc:
+                messagebox.showerror("撤销失败", str(exc))
+                return
+            self.show_toast(f"撤销完成：恢复 {restored} 个，跳过 {skipped} 个")
+            self.log_message(f"撤销完成：恢复 {restored} 个文件，跳过 {skipped} 个文件。")
+
+        def _build_widgets(self) -> None:
+            self.master.columnconfigure(0, minsize=210)
+            self.master.columnconfigure(1, weight=1)
+            self.master.rowconfigure(0, weight=1)
+
+            sidebar = ttk.Frame(self.master, style="Sidebar.TFrame", padding=(20, 20))
+            sidebar.grid(row=0, column=0, sticky="nsew")
+            sidebar.rowconfigure(8, weight=1)
+            ttk.Label(sidebar, text="Light Novel", style="Sidebar.TLabel", font=("", 16, "bold")).grid(row=0, column=0, sticky="w")
+            ttk.Label(sidebar, text="Selector", style="SidebarMuted.TLabel", font=("", 11)).grid(row=1, column=0, sticky="w", pady=(0, 24))
+            self._nav_button(sidebar, "工作台", self.focus_workspace).grid(row=2, column=0, sticky="ew", pady=(0, 8))
+            self._nav_button(sidebar, "设置", self.open_settings).grid(row=3, column=0, sticky="ew", pady=(0, 8))
+            self._nav_button(sidebar, "报告", self.open_last_report).grid(row=4, column=0, sticky="ew", pady=(0, 8))
+            self._nav_button(sidebar, "撤销上次", self.undo_last_report).grid(row=5, column=0, sticky="ew", pady=(0, 8))
+            ttk.Label(sidebar, text=f"v{APP_VERSION}", style="SidebarMuted.TLabel").grid(row=9, column=0, sticky="w")
+
+            self.main_frame = ttk.Frame(self.master, style="App.TFrame", padding=(22, 20))
+            self.main_frame.grid(row=0, column=1, sticky="nsew")
+            self.main_frame.columnconfigure(0, weight=1)
+            self.main_frame.rowconfigure(4, weight=1)
+
+            header = ttk.Frame(self.main_frame, style="App.TFrame")
+            header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+            header.columnconfigure(0, weight=1)
+            ttk.Label(header, text="轻小说整理工作台", style="Hero.TLabel").grid(row=0, column=0, sticky="w")
+            ttk.Label(header, text="扫描、识别、修正并安全移动你的轻小说文件。", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
+
+            top = ttk.Frame(self.main_frame, style="Card.TFrame", padding=(16, 14))
+            top.grid(row=1, column=0, sticky="ew", pady=(0, 12))
             top.columnconfigure(1, weight=1)
 
-            ttk.Button(top, text="选择大文件夹", command=self.select_folder).grid(row=0, column=0, padx=(0, 8))
-            ttk.Entry(top, textvariable=self.root_var).grid(row=0, column=1, sticky="ew", padx=(0, 8))
-            ttk.Button(top, text="新建大文件夹", command=self.create_folder).grid(row=0, column=2, padx=(0, 8))
-            ttk.Button(top, text="打开", command=self.open_folder).grid(row=0, column=3)
+            ttk.Label(top, text="文件导入", style="Card.TLabel", font=("", 12, "bold")).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
+            ttk.Button(top, text="选择大文件夹", command=self.select_folder, style="Accent.TButton").grid(row=1, column=0, padx=(0, 8), sticky="w")
+            ttk.Entry(top, textvariable=self.root_var).grid(row=1, column=1, sticky="ew", padx=(0, 8))
+            ttk.Button(top, text="新建大文件夹", command=self.create_folder).grid(row=1, column=2, padx=(0, 8))
+            ttk.Button(top, text="打开", command=self.open_folder).grid(row=1, column=3)
 
-            options = ttk.Frame(self.master, padding=(14, 0, 14, 8))
-            options.grid(row=1, column=0, sticky="ew")
+            stats = ttk.Frame(self.main_frame, style="App.TFrame")
+            stats.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+            for col in range(4):
+                stats.columnconfigure(col, weight=1)
+            self._stat_card(stats, "文件总数", self.stat_total_var, COLORS["accent_soft"], 0)
+            self._stat_card(stats, "可执行", self.stat_ready_var, COLORS["ok_soft"], 1)
+            self._stat_card(stats, "重复", self.stat_duplicate_var, COLORS["warning_soft"], 2)
+            self._stat_card(stats, "错误", self.stat_error_var, COLORS["danger_soft"], 3)
+
+            options = ttk.Frame(self.main_frame, style="App.TFrame", padding=(0, 12, 0, 12))
+            options.grid(row=3, column=0, sticky="ew")
             ttk.Checkbutton(options, text="联网识别系列名", variable=self.network_var).pack(side="left", padx=(0, 18))
             ttk.Checkbutton(options, text="包含子文件夹", variable=self.recursive_var).pack(side="left", padx=(0, 18))
             ttk.Checkbutton(options, text="自动重命名", variable=self.auto_rename_var).pack(side="left", padx=(0, 18))
-            ttk.Button(options, text="扫描并预览", command=self.scan).pack(side="left", padx=(0, 8))
+            ttk.Button(options, text="扫描并预览", command=self.scan, style="Accent.TButton").pack(side="left", padx=(0, 8))
+            ttk.Button(options, text="修正分类", command=self.edit_selected_plan).pack(side="left", padx=(0, 8))
             ttk.Button(options, text="执行分类", command=self.apply_plan).pack(side="left")
 
-            content = ttk.Frame(self.master, padding=(14, 0, 14, 8))
-            content.grid(row=2, column=0, sticky="nsew")
+            content = ttk.Frame(self.main_frame, style="App.TFrame", padding=(0, 0, 0, 8))
+            content.grid(row=4, column=0, sticky="nsew")
             content.columnconfigure(0, minsize=310)
             content.columnconfigure(1, weight=1)
             content.rowconfigure(0, weight=1)
 
-            detail_frame = ttk.Frame(content, padding=(0, 0, 12, 0))
+            detail_frame = ttk.Frame(content, style="Card.TFrame", padding=(14, 14))
             detail_frame.grid(row=0, column=0, sticky="nsew")
             detail_frame.columnconfigure(0, weight=1)
             detail_frame.rowconfigure(4, weight=1)
@@ -1383,19 +1882,19 @@ def launch_gui() -> None:
             self.open_subject_button.pack(side="left")
             self.summary_text = ScrolledText(detail_frame, width=34, height=18, wrap="word")
             self.summary_text.grid(row=4, column=0, sticky="nsew")
-            self.summary_text.configure(state="disabled")
+            self.summary_text.configure(state="disabled", bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", borderwidth=0)
 
-            right_frame = ttk.Frame(content)
+            right_frame = ttk.Frame(content, style="App.TFrame")
             right_frame.grid(row=0, column=1, sticky="nsew")
             right_frame.columnconfigure(0, weight=1)
             right_frame.rowconfigure(1, weight=1)
             right_frame.rowconfigure(2, weight=0)
 
-            table_frame = ttk.Frame(right_frame)
+            table_frame = ttk.Frame(right_frame, style="Card.TFrame", padding=(10, 10))
             table_frame.columnconfigure(0, weight=1)
             table_frame.rowconfigure(0, weight=1)
 
-            series_bar = ttk.Frame(right_frame)
+            series_bar = ttk.Frame(right_frame, style="App.TFrame")
             series_bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
             series_bar.columnconfigure(1, weight=1)
             ttk.Label(series_bar, text="系列筛选").grid(row=0, column=0, sticky="w", padx=(0, 8))
@@ -1411,41 +1910,69 @@ def launch_gui() -> None:
 
             table_frame.grid(row=1, column=0, sticky="nsew")
 
-            columns = ("file", "rename", "series", "target", "source", "detail")
+            columns = ("file", "rename", "series", "target", "source", "status", "detail")
             self.tree = ttk.Treeview(table_frame, columns=columns, show="headings")
             self.tree.heading("file", text="文件")
             self.tree.heading("rename", text="新文件名")
             self.tree.heading("series", text="系列名")
             self.tree.heading("target", text="目标文件夹")
             self.tree.heading("source", text="识别来源")
+            self.tree.heading("status", text="状态")
             self.tree.heading("detail", text="详情")
             self.tree.column("file", width=260, anchor="w")
             self.tree.column("rename", width=280, anchor="w")
             self.tree.column("series", width=230, anchor="w")
             self.tree.column("target", width=230, anchor="w")
             self.tree.column("source", width=130, anchor="w")
-            self.tree.column("detail", width=90, anchor="center")
+            self.tree.column("status", width=90, anchor="center")
+            self.tree.column("detail", width=150, anchor="center")
             self.tree.grid(row=0, column=0, sticky="nsew")
 
             scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
             scrollbar.grid(row=0, column=1, sticky="ns")
             self.tree.configure(yscrollcommand=scrollbar.set)
             self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
+            self.tree.tag_configure("ready", background="#ffffff")
+            self.tree.tag_configure("duplicate", background=COLORS["warning_soft"])
+            self.tree.tag_configure("error", background=COLORS["danger_soft"])
+            self.tree.tag_configure("manual", background=COLORS["accent_soft"])
 
-            bottom = ttk.Frame(right_frame, padding=(0, 8, 0, 0))
+            bottom = ttk.Frame(right_frame, style="Card.TFrame", padding=(12, 10))
             bottom.grid(row=2, column=0, sticky="ew")
             bottom.columnconfigure(0, weight=1)
-            bottom.columnconfigure(1, minsize=180)
+            bottom.columnconfigure(1, minsize=240)
             ttk.Label(bottom, textvariable=self.status_var).grid(row=0, column=0, sticky="w", pady=(0, 6))
-            self.progress = ttk.Progressbar(bottom, mode="determinate", length=180)
-            self.progress.grid(row=0, column=1, sticky="ew", padx=(8, 0), pady=(0, 6))
+            self.progress = ttk.Progressbar(bottom, mode="determinate", length=1, style="Modern.Horizontal.TProgressbar")
+            self.progress_canvas = tk.Canvas(bottom, height=16, bg=COLORS["card"], highlightthickness=0)
+            self.progress_canvas.grid(row=0, column=1, sticky="ew", padx=(12, 0), pady=(0, 6))
+            self.progress_canvas.bind("<Configure>", lambda _event: self.draw_progress_canvas(self.progress_display_value, 1))
             self.log = ScrolledText(bottom, height=6, wrap="word")
             self.log.grid(row=1, column=0, columnspan=2, sticky="ew")
-            self.log.configure(state="disabled")
+            self.log.configure(state="disabled", bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", borderwidth=0)
             self.bind_mousewheel(self.tree, lambda units: self.tree.yview_scroll(units, "units"))
             self.bind_mousewheel(self.summary_text, lambda units: self.summary_text.yview_scroll(units, "units"))
             self.bind_mousewheel(self.log, lambda units: self.log.yview_scroll(units, "units"))
             self.show_empty_detail("扫描后在右侧选择一本小说。")
+
+        def _stat_card(self, parent, title: str, value_var: tk.StringVar, color: str, column: int) -> None:
+            frame = tk.Frame(parent, bg=COLORS["card"], highlightthickness=1, highlightbackground=COLORS["border"])
+            frame.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 8, 0))
+            color_bar = tk.Frame(frame, bg=color, height=4)
+            color_bar.pack(fill="x", side="top")
+            body = tk.Frame(frame, bg=COLORS["card"], padx=14, pady=10)
+            body.pack(fill="both", expand=True)
+            tk.Label(body, text=title, bg=COLORS["card"], fg=COLORS["muted"], font=("Microsoft YaHei UI", 9)).pack(anchor="w")
+            tk.Label(body, textvariable=value_var, bg=COLORS["card"], fg=COLORS["text"], font=("Microsoft YaHei UI", 18, "bold")).pack(anchor="w", pady=(2, 0))
+
+        def update_stats(self) -> None:
+            total = len(self.plans)
+            ready = sum(1 for plan in self.plans if plan.status == "ready")
+            duplicate = sum(1 for plan in self.plans if plan.status == "duplicate")
+            error = sum(1 for plan in self.plans if plan.status == "error")
+            self.stat_total_var.set(str(total))
+            self.stat_ready_var.set(str(ready))
+            self.stat_duplicate_var.set(str(duplicate))
+            self.stat_error_var.set(str(error))
 
         def bind_mousewheel(self, widget, scroll_command) -> None:
             def on_mousewheel(event):
@@ -1524,26 +2051,150 @@ def launch_gui() -> None:
             if hasattr(self, "progress"):
                 self.progress.stop()
                 self.progress.configure(mode="determinate", maximum=1, value=0)
+                self.progress_display_value = 0.0
+                self.stop_scanning_animation()
+                self.draw_progress_canvas(0, 1)
 
         def set_progress_scanning(self) -> None:
             if hasattr(self, "progress"):
                 self.progress.configure(mode="indeterminate")
                 self.progress.start(12)
+                self.start_scanning_animation()
 
         def set_progress_preloading(self, done: int, total: int) -> None:
             if not hasattr(self, "progress"):
                 return
             self.progress.stop()
-            self.progress.configure(mode="determinate", maximum=max(total, 1), value=min(done, max(total, 1)))
+            maximum = max(total, 1)
+            self.progress.configure(mode="determinate", maximum=maximum)
+            self.animate_progress_to(min(done, maximum), maximum)
+
+        def animate_progress_to(self, target: float, maximum: float, *, duration_ms: int = 420) -> None:
+            start = self.progress_display_value
+            delta = target - start
+            if abs(delta) < 0.01:
+                self.progress.configure(value=target)
+                self.progress_display_value = target
+                self.draw_progress_canvas(target, maximum)
+                return
+            steps = 18
+
+            def step(frame: int = 0) -> None:
+                t = min(frame / steps, 1.0)
+                value = start + delta * ease_out_cubic(t)
+                self.progress.configure(maximum=maximum, value=value)
+                self.progress_display_value = value
+                self.draw_progress_canvas(value, maximum)
+                if frame < steps:
+                    self.master.after(max(1, duration_ms // steps), lambda: step(frame + 1))
+
+            step()
+
+        def draw_progress_canvas(self, value: float, maximum: float) -> None:
+            if self.progress_canvas is None:
+                return
+            canvas = self.progress_canvas
+            width = max(canvas.winfo_width(), 1)
+            height = max(canvas.winfo_height(), 1)
+            canvas.delete("all")
+            pad = 1
+            radius = height // 2
+            canvas.create_rectangle(pad + radius, pad, width - radius - pad, height - pad, fill=COLORS["panel"], outline="")
+            canvas.create_oval(pad, pad, pad + radius * 2, height - pad, fill=COLORS["panel"], outline="")
+            canvas.create_oval(width - radius * 2 - pad, pad, width - pad, height - pad, fill=COLORS["panel"], outline="")
+            ratio = 0 if maximum <= 0 else max(0.0, min(value / maximum, 1.0))
+            fill_width = max(radius * 2, int(width * ratio)) if ratio else 0
+            if fill_width:
+                canvas.create_rectangle(pad + radius, pad, fill_width - radius, height - pad, fill=COLORS["accent"], outline="")
+                canvas.create_oval(pad, pad, pad + radius * 2, height - pad, fill=COLORS["accent"], outline="")
+                canvas.create_oval(fill_width - radius * 2, pad, fill_width, height - pad, fill=COLORS["accent"], outline="")
+            canvas.create_text(width // 2, height // 2, text=f"{ratio:.0%}", fill=COLORS["text"], font=("Microsoft YaHei UI", 8, "bold"))
+
+        def start_scanning_animation(self) -> None:
+            self.stop_scanning_animation()
+            frame_count = 48
+
+            def tick(frame: int = 0) -> None:
+                if self.progress_canvas is None:
+                    return
+                canvas = self.progress_canvas
+                width = max(canvas.winfo_width(), 1)
+                height = max(canvas.winfo_height(), 1)
+                canvas.delete("all")
+                radius = height // 2
+                canvas.create_rectangle(radius, 1, width - radius, height - 1, fill=COLORS["panel"], outline="")
+                canvas.create_oval(1, 1, radius * 2, height - 1, fill=COLORS["panel"], outline="")
+                canvas.create_oval(width - radius * 2 - 1, 1, width - 1, height - 1, fill=COLORS["panel"], outline="")
+                t = (frame % frame_count) / frame_count
+                eased = ease_in_out_quart(t)
+                block_width = max(52, width // 4)
+                x0 = int(-block_width + (width + block_width * 2) * eased)
+                x1 = x0 + block_width
+                canvas.create_rectangle(max(radius, x0), 1, min(width - radius, x1), height - 1, fill=COLORS["accent"], outline="")
+                canvas.create_text(width // 2, height // 2, text="扫描中", fill=COLORS["text"], font=("Microsoft YaHei UI", 8, "bold"))
+                self.progress_scan_job = self.master.after(28, lambda: tick(frame + 1))
+
+            tick()
+
+        def stop_scanning_animation(self) -> None:
+            if self.progress_scan_job:
+                try:
+                    self.master.after_cancel(self.progress_scan_job)
+                except tk.TclError:
+                    pass
+                self.progress_scan_job = None
+
+        def _animate_initial_cards(self) -> None:
+            for delay, widget in enumerate((self.main_frame,), start=1):
+                self.master.after(delay * 80, lambda item=widget: item.configure(padding=(16, 14)))
+
+        def show_toast(self, message: str, *, kind: str = "info") -> None:
+            toast = tk.Toplevel(self.master)
+            toast.overrideredirect(True)
+            toast.configure(bg=COLORS["card"])
+            toast.attributes("-alpha", 0.0)
+            color = COLORS["accent"] if kind == "info" else COLORS["warning"] if kind == "warning" else COLORS["danger"]
+            label = tk.Label(toast, text=message, bg=COLORS["card"], fg=COLORS["text"], padx=18, pady=10, font=("Microsoft YaHei UI", 10, "bold"))
+            label.pack(side="left")
+            marker = tk.Frame(toast, width=4, bg=color)
+            marker.pack(side="left", fill="y")
+            self.master.update_idletasks()
+            target_x = self.master.winfo_rootx() + self.master.winfo_width() - 360
+            start_x = target_x + 52
+            y = self.master.winfo_rooty() + 42 + len(self.toast_windows) * 56
+            toast.geometry(f"320x44+{start_x}+{y}")
+            self.toast_windows.append(toast)
+
+            def fade(frame: int = 0, direction: int = 1) -> None:
+                steps = 12
+                t = min(frame / steps, 1.0)
+                alpha = ease_in_out_quart(t)
+                if direction < 0:
+                    alpha = 1.0 - alpha
+                    x = int(target_x + 24 * ease_in_out_quart(t))
+                else:
+                    x = int(start_x + (target_x - start_x) * ease_out_back(t))
+                toast.geometry(f"320x44+{x}+{y}")
+                toast.attributes("-alpha", max(0.0, min(alpha, 0.98)))
+                if frame < steps:
+                    toast.after(18, lambda: fade(frame + 1, direction))
+                elif direction > 0:
+                    toast.after(2200, lambda: fade(0, -1))
+                else:
+                    if toast in self.toast_windows:
+                        self.toast_windows.remove(toast)
+                    toast.destroy()
+
+            fade()
 
         def set_tree_detail_status(self, index: int, status: str) -> None:
             item_id = str(index)
             if not self.tree.exists(item_id):
                 return
             values = list(self.tree.item(item_id, "values"))
-            while len(values) < 6:
+            while len(values) < 7:
                 values.append("")
-            values[5] = status
+            values[6] = status
             self.tree.item(item_id, values=values)
 
         def show_empty_detail(self, message: str) -> None:
@@ -1585,6 +2236,53 @@ def launch_gui() -> None:
             if index < 0 or index >= len(self.plans):
                 return
             self.show_plan_detail(index)
+
+        def edit_selected_plan(self) -> None:
+            selection = self.tree.selection()
+            if not selection:
+                self.show_toast("请先选择一条分类结果", kind="warning")
+                return
+            try:
+                index = int(selection[0])
+            except ValueError:
+                return
+            if index < 0 or index >= len(self.plans):
+                return
+            plan = self.plans[index]
+            new_series = simpledialog.askstring(
+                "修正分类",
+                "请输入新的系列名：",
+                initialvalue=plan.series_name,
+                parent=self.master,
+            )
+            if not new_series:
+                return
+            folder_name = safe_folder_name(new_series)
+            target_dir = Path(self.root_var.get().strip()) / folder_name
+            target_name = plan.rename_to or plan.source_path.name
+            self.plans[index] = ClassificationPlan(
+                source_path=plan.source_path,
+                series_name=folder_name,
+                target_dir=target_dir,
+                target_path=target_dir / target_name,
+                resolver_source="手动修正",
+                confidence=1.0,
+                local_guess=plan.local_guess,
+                metadata_title=plan.metadata_title,
+                metadata_summary=plan.metadata_summary,
+                metadata_cover_url=plan.metadata_cover_url,
+                metadata_url=plan.metadata_url,
+                local_cover_bytes=plan.local_cover_bytes,
+                identity_hint=plan.identity_hint,
+                identity_query=plan.identity_query,
+                rename_to=plan.rename_to,
+                series_key=folder_name,
+                status="ready",
+                note="用户手动修正分类。",
+            )
+            self._render_plans()
+            self.tree.selection_set(str(index))
+            self.show_toast("分类已修正")
 
         def show_plan_detail(self, index: int) -> None:
             plan = self.plans[index]
@@ -1818,10 +2516,18 @@ def launch_gui() -> None:
             folder = self._current_root()
             if not folder or self.worker and self.worker.is_alive():
                 return
+            self.settings = AppSettings(
+                use_network=self.network_var.get(),
+                recursive=self.recursive_var.get(),
+                auto_rename=self.auto_rename_var.get(),
+                custom_rules=self.settings.custom_rules,
+            )
+            save_app_settings(self.settings)
             self.scan_token += 1
             token = self.scan_token
             self.tree.delete(*self.tree.get_children())
             self.plans = []
+            self.update_stats()
             with self.detail_lock:
                 self.detail_cache.clear()
                 self.detail_worker_keys.clear()
@@ -1839,6 +2545,7 @@ def launch_gui() -> None:
                         recursive=self.recursive_var.get(),
                         use_network=self.network_var.get(),
                         auto_rename=self.auto_rename_var.get(),
+                        custom_rules=self.settings.custom_rules,
                         progress=lambda msg: self.events.put(("log", msg)),
                     )
                     self.events.put(("plans", (token, plans)))
@@ -1862,11 +2569,13 @@ def launch_gui() -> None:
 
             def work() -> None:
                 try:
+                    report_path = Path(self.root_var.get().strip()) / REPORT_FILE_NAME
                     result = execute_classification_plan(
                         self.plans,
                         progress=lambda msg: self.events.put(("log", msg)),
+                        report_path=report_path,
                     )
-                    self.events.put(("done", result))
+                    self.events.put(("done", (*result, report_path)))
                 except Exception as exc:
                     self.events.put(("error", exc))
 
@@ -1928,10 +2637,12 @@ def launch_gui() -> None:
                             else:
                                 self.clear_cover("封面加载失败")
                     elif event == "done":
-                        moved, skipped = payload  # type: ignore[misc]
+                        moved, skipped, report_path = payload  # type: ignore[misc]
+                        self.last_report_path = report_path
                         self.set_progress_idle()
                         self._set_busy(False)
-                        self.log_message(f"分类完成：移动 {moved} 个文件，跳过 {skipped} 个文件。")
+                        self.log_message(f"分类完成：移动 {moved} 个文件，跳过 {skipped} 个文件。报告：{report_path}")
+                        self.show_toast("分类完成，报告已生成")
                         messagebox.showinfo("完成", f"分类完成：移动 {moved} 个文件，跳过 {skipped} 个文件。")
                     elif event == "error":
                         if isinstance(payload, tuple) and len(payload) == 2:
@@ -1949,6 +2660,7 @@ def launch_gui() -> None:
 
         def _render_plans(self) -> None:
             self.refresh_series_filter()
+            self.update_stats()
             self.tree.delete(*self.tree.get_children())
             visible_indices = self.filtered_plan_indices()
             for index in visible_indices:
@@ -1967,16 +2679,22 @@ def launch_gui() -> None:
                     detail_status = "已缓存" if cached_detail is not None else "无详情"
                 else:
                     detail_status = "待预取"
+                status_text = plan_status_label(plan.status)
+                if plan.note and plan.status == "ready":
+                    detail_status = plan.note
+                row_tag = "manual" if plan.resolver_source == "手动修正" else plan.status
                 self.tree.insert(
                     "",
                     "end",
                     iid=str(index),
+                    tags=(row_tag,),
                     values=(
                         plan.source_path.name,
                         plan.target_path.name if plan.rename_to else "",
                         plan.series_name,
                         plan.target_dir.name,
                         source,
+                        status_text,
                         detail_status,
                     ),
                 )
@@ -2007,6 +2725,7 @@ def launch_gui() -> None:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="轻小说联网分类工具")
     parser.add_argument("folder", nargs="?", help="要分类的大文件夹；不提供时启动窗口界面")
+    parser.add_argument("--undo-report", help="按 classification_report.json 撤销一次分类移动")
     parser.add_argument("--dry-run", action="store_true", help="只预览，不移动文件")
     parser.add_argument("--no-network", action="store_true", help="关闭联网识别，只使用本地文件名规则")
     parser.add_argument("--recursive", action="store_true", help="包含子文件夹中的小说文件")
@@ -2024,6 +2743,10 @@ def configure_stdio() -> None:
 def main(argv: list[str] | None = None) -> int:
     configure_stdio()
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    if args.undo_report:
+        restored, skipped = undo_classification_report(Path(args.undo_report), progress=None if args.quiet else print)
+        print(f"撤销完成：恢复 {restored} 个文件，跳过 {skipped} 个文件。")
+        return 0
     if args.folder:
         return run_cli(args)
     launch_gui()
