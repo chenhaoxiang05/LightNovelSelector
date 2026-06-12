@@ -108,3 +108,28 @@ git commit -m "Update light novel selector"
 - Bangumi 不一定每一本都有独立单卷条目；没有匹配时会回退显示系列简介。
 - 自动重命名只会在执行分类时移动/改名，扫描预览阶段不会修改原文件。
 - PDF 封面提取暂未启用，优先支持 EPUB、ZIP、CBZ。
+
+## 最近优化
+
+- 扫描时会基于文件大小和首尾内容指纹检测重复文件，重复项默认跳过，避免误移动重复副本。
+- 执行分类后会在目标大文件夹生成 `classification_report.json`，记录移动、跳过、重复、错误和识别置信度。
+- 界面增加深色现代主题、左侧导航、状态列、Toast 提示、非线性进度动画和手动修正分类入口。
+- 如果自动识别结果不准确，可以在预览表格选择条目后点击“修正分类”，手动指定系列名。
+- 设置页会保存联网识别、递归扫描、自动重命名和自定义规则到 `%LOCALAPPDATA%\LightNovelSelector\settings.json`。
+- 自定义规则格式为 `匹配模式 => 系列名`，例如 `*SAO* => Sword Art Online`，命中后优先于联网识别。
+- 可以用报告撤销一次分类移动：
+
+```powershell
+.\.venv-build\Scripts\python.exe .\lightnovel_classifier.py --undo-report "D:\你的大文件夹\classification_report.json"
+```
+
+## 环境修复
+
+如果重装系统或更换用户名导致 `.venv-build` 指向旧 Python，`build_exe.bat` 会检测虚拟环境是否可运行。坏环境会被移动到 `archive_old_code`，然后用当前可用 Python 自动重建。
+
+## 开发验证
+
+```powershell
+C:\Users\25963\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest discover -s tests -v
+C:\Users\25963\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m py_compile lightnovel_classifier.py tests\test_classifier.py
+```

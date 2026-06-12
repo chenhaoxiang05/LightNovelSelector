@@ -4,9 +4,11 @@ chcp 65001 >nul
 cd /d "%~dp0"
 
 set "PYTHON_EXE="
+set "BASE_PYTHON="
 
 if exist "%~dp0.venv-build\Scripts\python.exe" (
-    set "PYTHON_EXE=%~dp0.venv-build\Scripts\python.exe"
+    "%~dp0.venv-build\Scripts\python.exe" --version >nul 2>nul
+    if not errorlevel 1 set "PYTHON_EXE=%~dp0.venv-build\Scripts\python.exe"
 )
 
 if not defined PYTHON_EXE (
@@ -20,8 +22,9 @@ if not defined PYTHON_EXE if not defined BASE_PYTHON (
 )
 
 if not defined PYTHON_EXE if not defined BASE_PYTHON (
-    if exist "C:\Users\Administrator\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" (
-        set "BASE_PYTHON=C:\Users\Administrator\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
+    if exist "%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" (
+        "%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" --version >nul 2>nul
+        if not errorlevel 1 set "BASE_PYTHON=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
     )
 )
 
@@ -31,7 +34,15 @@ if not defined PYTHON_EXE if not defined BASE_PYTHON (
     exit /b 1
 )
 
-if not exist "%~dp0.venv-build\Scripts\python.exe" (
+if not defined PYTHON_EXE if exist "%~dp0.venv-build" (
+    echo Existing build environment is broken. Moving it to archive_old_code...
+    if not exist "%~dp0archive_old_code" mkdir "%~dp0archive_old_code"
+    for /f %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "BROKEN_STAMP=%%T"
+    move "%~dp0.venv-build" "%~dp0archive_old_code\.venv-build-broken-%BROKEN_STAMP%" >nul
+    if errorlevel 1 exit /b 1
+)
+
+if not defined PYTHON_EXE if not exist "%~dp0.venv-build\Scripts\python.exe" (
     echo Creating build environment...
     %BASE_PYTHON% -m venv "%~dp0.venv-build"
     if errorlevel 1 exit /b 1
@@ -66,4 +77,4 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo Done: %~dp0dist\%APP_EXE_NAME%.exe
-pause
+if /i not "%LN_SELECTOR_NO_PAUSE%"=="1" pause

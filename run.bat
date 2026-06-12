@@ -6,7 +6,8 @@ cd /d "%~dp0"
 set "PYTHON_EXE="
 
 if exist "%~dp0.venv\Scripts\python.exe" (
-    set "PYTHON_EXE=%~dp0.venv\Scripts\python.exe"
+    "%~dp0.venv\Scripts\python.exe" --version >nul 2>nul
+    if not errorlevel 1 set "PYTHON_EXE=%~dp0.venv\Scripts\python.exe"
 )
 
 if not defined PYTHON_EXE (
@@ -20,8 +21,9 @@ if not defined PYTHON_EXE (
 )
 
 if not defined PYTHON_EXE (
-    if exist "C:\Users\Administrator\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" (
-        set "PYTHON_EXE=C:\Users\Administrator\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
+    if exist "%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" (
+        "%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" --version >nul 2>nul
+        if not errorlevel 1 set "PYTHON_EXE=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
     )
 )
 
