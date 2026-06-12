@@ -104,7 +104,7 @@ PyInstaller build: 通过
 最新打包文件：
 
 ```text
-dist\LightNovelSelector-v1.1.0-20260612-144909.exe
+dist\LightNovelSelector-v1.2.0-20260612-165140.exe
 ```
 
 ## 注意事项

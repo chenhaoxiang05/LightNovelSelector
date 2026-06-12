@@ -19,7 +19,7 @@ py .\lightnovel_classifier.py
 打包后的程序在：
 
 ```text
-D:\selector\dist\LightNovelSelector-v1.1.0-20260610-230000.exe
+D:\selector\dist\LightNovelSelector-v1.2.0-20260612-最新构建时间.exe
 ```
 
 ## 基本使用
@@ -87,7 +87,7 @@ build_exe.bat
 脚本会自动创建 `.venv-build` 构建环境，安装/更新 PyInstaller 和 Pillow，然后生成带版本号和时间戳的 exe：
 
 ```text
-dist\LightNovelSelector-v1.1.0-20260610-230000.exe
+dist\LightNovelSelector-v1.2.0-20260612-最新构建时间.exe
 ```
 
 每次构建都会生成新文件，不会直接覆盖上一个版本。把最新的 exe 发给没有 Python 环境的人即可。使用者不需要安装 Python；只有打包电脑需要联网安装依赖。
