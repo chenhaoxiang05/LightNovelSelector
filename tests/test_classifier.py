@@ -8,6 +8,7 @@ from lightnovel_classifier import (
     BookMetadata,
     AppSettings,
     CustomRule,
+    FILE_FINGERPRINT_CHUNK_SIZE,
     PersistentMetadataCache,
     bangumi_cover_url,
     bangumi_title_candidates,
@@ -15,6 +16,7 @@ from lightnovel_classifier import (
     book_metadata_to_dict,
     build_classification_plan,
     clean_summary,
+    count_plan_statuses,
     execute_classification_plan,
     extract_book_lookup_query,
     extract_series_guess,
@@ -29,6 +31,7 @@ from lightnovel_classifier import (
     load_app_settings,
     save_app_settings,
     suggest_renamed_filename,
+    try_save_app_settings,
     undo_classification_report,
 )
 
@@ -172,6 +175,20 @@ class MovePlanTests(unittest.TestCase):
 
             self.assertEqual(duplicates, {same: first})
 
+    def test_duplicate_detection_checks_full_file_content(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A.txt"
+            second = root / "B.txt"
+            shared_head = b"h" * FILE_FINGERPRINT_CHUNK_SIZE
+            shared_tail = b"t" * FILE_FINGERPRINT_CHUNK_SIZE
+            first.write_bytes(shared_head + b"middle-one" + shared_tail)
+            second.write_bytes(shared_head + b"middle-two" + shared_tail)
+
+            duplicates = find_duplicate_files([first, second])
+
+            self.assertEqual(duplicates, {})
+
     def test_custom_rule_overrides_local_guess(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -203,6 +220,14 @@ class MovePlanTests(unittest.TestCase):
 
             self.assertEqual(loaded, settings)
 
+    def test_try_save_app_settings_returns_os_error(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            parent_file = Path(temp_dir) / "not-a-directory"
+            parent_file.write_text("blocks directory creation", encoding="utf-8")
+            error = try_save_app_settings(AppSettings(), parent_file / "settings.json")
+
+            self.assertIsInstance(error, OSError)
+
     def test_undo_classification_report_restores_moved_file(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -221,11 +246,50 @@ class MovePlanTests(unittest.TestCase):
             self.assertTrue(book.exists())
             self.assertEqual(book.read_text(encoding="utf-8"), "one")
 
+    def test_failed_move_writes_partial_report_for_undo(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A Sword.Art.Online.Vol.01.txt"
+            missing = root / "B Sword.Art.Online.Vol.02.txt"
+            first.write_text("one", encoding="utf-8")
+            missing.write_text("two", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            plans = build_classification_plan(root, use_network=False)
+            missing.unlink()
+
+            with self.assertRaises(FileNotFoundError):
+                execute_classification_plan(plans, report_path=report_path)
+
+            self.assertTrue(report_path.exists())
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["summary"]["moved"], 1)
+            self.assertEqual(report["items"][0]["operation"], "moved")
+
+            restored, skipped = undo_classification_report(report_path)
+
+            self.assertEqual((restored, skipped), (1, 0))
+            self.assertTrue(first.exists())
+
     def test_plan_status_label(self) -> None:
         self.assertEqual(plan_status_label("ready"), "可执行")
         self.assertEqual(plan_status_label("duplicate"), "重复")
         self.assertEqual(plan_status_label("error"), "错误")
         self.assertEqual(plan_status_label("custom"), "custom")
+
+    def test_count_plan_statuses(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "Sword.Art.Online.Vol.01.txt"
+            duplicate = root / "Sword.Art.Online.Vol.02.txt"
+            first.write_text("same", encoding="utf-8")
+            duplicate.write_text("same", encoding="utf-8")
+
+            plans = build_classification_plan(root, use_network=False)
+
+            self.assertEqual(
+                count_plan_statuses(plans),
+                {"total": 2, "ready": 1, "duplicate": 1, "error": 0},
+            )
 
 
 class LocalCoverTests(unittest.TestCase):

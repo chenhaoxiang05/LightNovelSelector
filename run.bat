@@ -33,4 +33,8 @@ if not defined PYTHON_EXE (
     exit /b 1
 )
 
-%PYTHON_EXE% "%~dp0lightnovel_classifier.py"
+if exist "%PYTHON_EXE%" (
+    "%PYTHON_EXE%" "%~dp0lightnovel_classifier.py"
+) else (
+    %PYTHON_EXE% "%~dp0lightnovel_classifier.py"
+)
