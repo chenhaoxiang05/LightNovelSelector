@@ -100,7 +100,10 @@ dist\LightNovelSelector-v1.2.0-20260612-最新构建时间.exe
 git status
 git add .
 git commit -m "Update light novel selector"
+git push origin main
 ```
+
+之后每次由 Codex 完成修改并验证后，会默认提交到本地 Git 并推送到 GitHub，方便随时回档。
 
 ## 说明与限制
 
@@ -111,11 +114,13 @@ git commit -m "Update light novel selector"
 
 ## 最近优化
 
-- 扫描时会基于文件大小和首尾内容指纹检测重复文件，重复项默认跳过，避免误移动重复副本。
+- 扫描时会基于文件大小和完整 SHA-256 内容哈希检测重复文件，重复项默认跳过，避免误移动重复副本。
 - 执行分类后会在目标大文件夹生成 `classification_report.json`，记录移动、跳过、重复、错误和识别置信度。
-- 界面增加深色现代主题、左侧导航、状态列、Toast 提示、非线性进度动画和手动修正分类入口。
+- 界面增加深色现代主题、左侧导航、状态胶囊、下一步提示、详情状态面板、Toast 提示、非线性进度动画和手动修正分类入口。
 - 如果自动识别结果不准确，可以在预览表格选择条目后点击“修正分类”，手动指定系列名。
+- 也可以双击表格行快速修正分类。
 - 设置页会保存联网识别、递归扫描、自动重命名和自定义规则到 `%LOCALAPPDATA%\LightNovelSelector\settings.json`。
+- 设置保存失败不会阻断扫描主流程，会提示并写入日志。
 - 自定义规则格式为 `匹配模式 => 系列名`，例如 `*SAO* => Sword Art Online`，命中后优先于联网识别。
 - 可以用报告撤销一次分类移动：
 
@@ -130,6 +135,8 @@ git commit -m "Update light novel selector"
 ## 开发验证
 
 ```powershell
-C:\Users\25963\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest discover -s tests -v
-C:\Users\25963\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m py_compile lightnovel_classifier.py tests\test_classifier.py
+.\.venv-build\Scripts\python.exe -m py_compile lightnovel_classifier.py tests\test_classifier.py
+.\.venv-build\Scripts\python.exe -m pytest -q
+.\.venv-build\Scripts\python.exe -m ruff check .
+.\.venv-build\Scripts\python.exe -m vulture lightnovel_classifier.py tests --min-confidence 80
 ```
