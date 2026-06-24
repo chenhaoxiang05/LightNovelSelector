@@ -188,64 +188,9 @@ py .\lightnovel_classifier.py --undo-report "D:\你的轻小说大文件夹\clas
 
 封面读取目前优先支持 EPUB、ZIP、CBZ。PDF 封面提取暂未启用。
 
-## 打包 EXE
+## 开发与打包
 
-运行：
-
-```powershell
-.\build_exe.bat
-```
-
-脚本会自动创建或修复 `.venv-build` 构建环境，安装 PyInstaller 和 Pillow，然后生成：
-
-```text
-dist\LightNovelSelector-v1.3.0-构建时间.exe
-```
-
-每次构建都会生成带时间戳的新文件，不会覆盖旧版本。
-
-如果重装系统或更换用户名导致 `.venv-build` 指向旧 Python，`build_exe.bat` 会检测虚拟环境是否可运行。坏环境会移动到 `archive_old_code`，然后用当前可用 Python 自动重建。
-
-## 开发与验证
-
-推荐验证命令：
-
-```powershell
-.\.venv-build\Scripts\python.exe -m py_compile lightnovel_classifier.py tests\test_classifier.py
-.\.venv-build\Scripts\python.exe -m pytest -q
-.\.venv-build\Scripts\python.exe -m ruff check .
-.\.venv-build\Scripts\python.exe -m vulture lightnovel_classifier.py tests --min-confidence 80
-```
-
-当前测试覆盖重点：
-
-- 文件名解析
-- 系列名提取
-- 重复文件检测
-- 自定义规则优先级
-- 设置读写和保存失败容错
-- 分类报告生成
-- 分类失败时部分报告写入
-- 按报告撤销
-- UI 使用的状态统计逻辑
-
-## Git 工作流
-
-本项目已经连接 GitHub 仓库：
-
-```text
-https://github.com/chenhaoxiang05/LightNovelSelector
-```
-
-后续维护改动默认执行：
-
-```powershell
-git add .
-git commit -m "..."
-git push origin main
-```
-
-这样每次改动都能在 GitHub 上回档。
+普通用户只需要下载 exe。源码开发、测试、打包和发布流程见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 
 ## 版本历史
 
