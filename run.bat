@@ -20,12 +20,6 @@ if not defined PYTHON_EXE (
     if not errorlevel 1 set "PYTHON_EXE=python"
 )
 
-if not defined PYTHON_EXE (
-    if exist "%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" (
-        "%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" --version >nul 2>nul
-        if not errorlevel 1 set "PYTHON_EXE=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
-    )
-)
 
 if not defined PYTHON_EXE (
     echo Cannot find Python. Please install Python 3.10+ or create .venv\Scripts\python.exe.
@@ -38,3 +32,4 @@ if exist "%PYTHON_EXE%" (
 ) else (
     %PYTHON_EXE% "%~dp0lightnovel_classifier.py"
 )
+

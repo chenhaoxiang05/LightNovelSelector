@@ -21,12 +21,6 @@ if not defined PYTHON_EXE if not defined BASE_PYTHON (
     if not errorlevel 1 set "BASE_PYTHON=python"
 )
 
-if not defined PYTHON_EXE if not defined BASE_PYTHON (
-    if exist "%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" (
-        "%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" --version >nul 2>nul
-        if not errorlevel 1 set "BASE_PYTHON=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
-    )
-)
 
 if not defined PYTHON_EXE if not defined BASE_PYTHON (
     echo Cannot find Python. Install Python 3.10+ on the build computer, then run this again.
@@ -78,3 +72,4 @@ if errorlevel 1 exit /b 1
 echo.
 echo Done: %~dp0dist\%APP_EXE_NAME%.exe
 if /i not "%LN_SELECTOR_NO_PAUSE%"=="1" pause
+

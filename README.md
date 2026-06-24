@@ -78,7 +78,7 @@ LightNovelSelector-v1.3.0-构建时间.exe
 py .\lightnovel_classifier.py
 ```
 
-如果 `py` 不可用，脚本会尝试使用系统 `python` 或 Codex 运行时 Python。
+如果 `py` 不可用，脚本会尝试使用系统 `python`。
 
 ## 基本使用流程
 
@@ -237,7 +237,7 @@ dist\LightNovelSelector-v1.3.0-构建时间.exe
 https://github.com/chenhaoxiang05/LightNovelSelector
 ```
 
-之后由 Codex 完成的修改会默认执行：
+后续维护改动默认执行：
 
 ```powershell
 git add .
@@ -271,3 +271,4 @@ git push origin main
 - Bangumi 不一定每一本都有独立单卷条目；无匹配时会回退显示系列简介。
 - 自动重命名只会在执行分类时移动或改名，扫描预览阶段不会修改原文件。
 - 拖拽导入和 HTML 报告尚未实现。
+
