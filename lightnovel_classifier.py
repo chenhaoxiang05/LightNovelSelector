@@ -837,19 +837,42 @@ def file_fingerprint(path: Path) -> str:
     return f"{stat.st_size}:{digest.hexdigest()}"
 
 
+def file_quick_signature(path: Path) -> str:
+    stat = path.stat()
+    digest = hashlib.sha256()
+    digest.update(str(stat.st_size).encode("ascii"))
+    with path.open("rb") as handle:
+        digest.update(handle.read(FILE_FINGERPRINT_CHUNK_SIZE))
+        if stat.st_size > FILE_FINGERPRINT_CHUNK_SIZE:
+            handle.seek(max(0, stat.st_size - FILE_FINGERPRINT_CHUNK_SIZE))
+            digest.update(handle.read(FILE_FINGERPRINT_CHUNK_SIZE))
+    return f"{stat.st_size}:{digest.hexdigest()}"
+
+
 def find_duplicate_files(paths: Iterable[Path]) -> dict[Path, Path]:
-    seen: dict[str, Path] = {}
+    candidates: dict[str, list[Path]] = {}
     duplicates: dict[Path, Path] = {}
     for path in paths:
         try:
-            fingerprint = file_fingerprint(path)
+            signature = file_quick_signature(path)
         except OSError:
             continue
-        first_seen = seen.get(fingerprint)
-        if first_seen is None:
-            seen[fingerprint] = path
-        else:
-            duplicates[path] = first_seen
+        candidates.setdefault(signature, []).append(path)
+
+    for group in candidates.values():
+        if len(group) < 2:
+            continue
+        seen: dict[str, Path] = {}
+        for path in group:
+            try:
+                fingerprint = file_fingerprint(path)
+            except OSError:
+                continue
+            first_seen = seen.get(fingerprint)
+            if first_seen is None:
+                seen[fingerprint] = path
+            else:
+                duplicates[path] = first_seen
     return duplicates
 
 
@@ -1616,6 +1639,7 @@ def launch_gui() -> None:
         "panel": "#181b20",
         "sidebar": "#121317",
         "card": "#181b20",
+        "card_alt": "#15181d",
         "card_hover": "#20252d",
         "border": "#2b313a",
         "muted": "#a1a7b3",
@@ -1680,6 +1704,7 @@ def launch_gui() -> None:
             self.scan_token = 0
             self.preload_total = 0
             self.preload_done = 0
+            self.metadata_preload_started_token: int | None = None
             self.current_detail_url: str | None = None
             self.progress_display_value = 0.0
             self.toast_windows: list[tk.Toplevel] = []
@@ -1999,6 +2024,7 @@ def launch_gui() -> None:
             self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
             self.tree.bind("<Double-1>", lambda _event: self.edit_selected_plan())
             self.tree.tag_configure("ready", background=COLORS["card"])
+            self.tree.tag_configure("ready_alt", background=COLORS["card_alt"])
             self.tree.tag_configure("duplicate", background=COLORS["warning_soft"])
             self.tree.tag_configure("error", background=COLORS["danger_soft"])
             self.tree.tag_configure("manual", background=COLORS["accent_soft"])
@@ -2515,6 +2541,9 @@ def launch_gui() -> None:
         def start_metadata_preload(self) -> None:
             if not self.network_var.get() or not self.plans:
                 return
+            if self.metadata_preload_started_token == self.scan_token:
+                return
+            self.metadata_preload_started_token = self.scan_token
             plans_snapshot = list(enumerate(self.plans))
             token = self.scan_token
             total = len(plans_snapshot)
@@ -2689,6 +2718,7 @@ def launch_gui() -> None:
             with self.detail_lock:
                 self.detail_cache.clear()
                 self.detail_worker_keys.clear()
+            self.metadata_preload_started_token = None
             with self.cover_lock:
                 self.cover_worker_urls.clear()
             self.show_empty_detail("正在扫描 Bangumi 信息。")
@@ -2833,7 +2863,7 @@ def launch_gui() -> None:
             self.update_stats()
             self.tree.delete(*self.tree.get_children())
             visible_indices = self.filtered_plan_indices()
-            for index in visible_indices:
+            for row_number, index in enumerate(visible_indices):
                 plan = self.plans[index]
                 source = f"{plan.resolver_source} {plan.confidence:.0%}"
                 cache_key = str(plan.source_path)
@@ -2852,7 +2882,12 @@ def launch_gui() -> None:
                 status_text = plan_status_label(plan.status)
                 if plan.note and plan.status == "ready":
                     detail_status = plan.note
-                row_tag = "manual" if plan.resolver_source == "手动修正" else plan.status
+                if plan.resolver_source == "手动修正":
+                    row_tag = "manual"
+                elif plan.status == "ready" and row_number % 2 == 1:
+                    row_tag = "ready_alt"
+                else:
+                    row_tag = plan.status
                 self.tree.insert(
                     "",
                     "end",

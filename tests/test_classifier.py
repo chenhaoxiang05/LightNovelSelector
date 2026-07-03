@@ -1,9 +1,11 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
+from unittest.mock import patch
 import unittest
 from zipfile import ZIP_DEFLATED, ZipFile
 
+import lightnovel_classifier
 from lightnovel_classifier import (
     BookMetadata,
     AppSettings,
@@ -188,6 +190,20 @@ class MovePlanTests(unittest.TestCase):
             duplicates = find_duplicate_files([first, second])
 
             self.assertEqual(duplicates, {})
+
+    def test_duplicate_detection_skips_full_hash_for_unique_signatures(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A.txt"
+            second = root / "B.txt"
+            first.write_text("short", encoding="utf-8")
+            second.write_text("longer unique content", encoding="utf-8")
+
+            with patch.object(lightnovel_classifier, "file_fingerprint", wraps=lightnovel_classifier.file_fingerprint) as full_hash:
+                duplicates = find_duplicate_files([first, second])
+
+            self.assertEqual(duplicates, {})
+            self.assertEqual(full_hash.call_count, 0)
 
     def test_custom_rule_overrides_local_guess(self) -> None:
         with TemporaryDirectory() as temp_dir:
