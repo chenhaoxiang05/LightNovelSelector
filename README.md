@@ -4,6 +4,8 @@ LightNovelSelector 是一个 Windows 桌面工具，用来批量整理轻小说�
 
 当前版本：`v1.3.0`
 
+当前分支包含 `UI_test` 实验版界面：以 Apple/macOS 风格为目标，优先使用浅色层级、系统蓝、原生对勾复选框、卡片式工具栏和更克制的控件反馈。普通稳定版请使用 `main` 分支 Release。
+
 ## 适合解决的问题
 
 - 下载的轻小说文件名来源混乱，想按作品系列归档。
@@ -195,6 +197,20 @@ py .\lightnovel_classifier.py --undo-report "D:\你的轻小说大文件夹\clas
 
 普通用户只需要下载 exe。源码开发、测试、打包和发布流程见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 
+UI_test 实验版可运行：
+
+```powershell
+.\build_ui_test_exe.bat
+```
+
+实验版 exe 会输出到：
+
+```text
+dlist\
+```
+
+该目录只用于 UI_test 本地打包产物，不会和 main 分支常规 `dist\` 目录混在一起。
+
 ## 版本历史
 
 ### main 分支
@@ -226,4 +242,3 @@ py .\lightnovel_classifier.py --undo-report "D:\你的轻小说大文件夹\clas
 - Bangumi 不一定每一本都有独立单卷条目；无匹配时会回退显示系列简介。
 - 自动重命名只会在执行分类时移动或改名，扫描预览阶段不会修改原文件。
 - 拖拽导入和 HTML 报告尚未实现。
-

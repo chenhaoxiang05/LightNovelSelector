@@ -71,6 +71,22 @@ dist\LightNovelSelector-v1.3.0-构建时间.exe
 
 如果重装系统或更换用户名导致 `.venv-build` 指向旧 Python，`build_exe.bat` 会检测虚拟环境是否可运行。坏环境会移动到 `archive_old_code`，然后用当前可用 Python 自动重建。
 
+## UI_test 实验版打包
+
+UI_test 分支使用独立打包脚本：
+
+```powershell
+.\build_ui_test_exe.bat
+```
+
+输出目录固定为：
+
+```text
+dlist\
+```
+
+这样不会和 main 分支常规 `dist\` 产物混淆。`dlist/` 已加入 `.gitignore`，只保留本地构建结果。
+
 ## Git 工作流
 
 本项目主分支为 `main`。维护改动默认按以下顺序处理：
