@@ -1635,32 +1635,37 @@ def launch_gui() -> None:
         ImageTk = None
 
     COLORS = {
-        "bg": "#f5f5f7",
-        "panel": "#eef0f4",
-        "sidebar": "#eceef3",
+        "bg": "#f8fafc",
+        "bg_tint": "#eef5ff",
+        "panel": "#f1f5fd",
+        "sidebar": "#eef4ff",
+        "sidebar_active": "#ffffff",
         "card": "#ffffff",
-        "card_alt": "#f7f8fb",
-        "card_hover": "#f2f6ff",
-        "border": "#d8dce3",
-        "separator": "#e6e8ee",
-        "muted": "#6e6e73",
-        "text": "#1d1d1f",
-        "accent": "#007aff",
-        "accent_soft": "#e5f1ff",
-        "accent_dark": "#005ecb",
-        "warning": "#ff9f0a",
-        "warning_soft": "#fff4df",
-        "danger": "#ff3b30",
-        "danger_soft": "#ffe8e6",
-        "ok": "#34c759",
-        "ok_soft": "#e5f8ea",
+        "card_alt": "#f8fbff",
+        "card_hover": "#eef6ff",
+        "border": "#dce7f8",
+        "separator": "#e4ecfc",
+        "muted": "#64748b",
+        "text": "#0f172a",
+        "accent": "#2563eb",
+        "accent_soft": "#dbeafe",
+        "accent_dark": "#1d4ed8",
+        "file": "#d97706",
+        "file_soft": "#fef3c7",
+        "warning": "#d97706",
+        "warning_soft": "#fef3c7",
+        "danger": "#dc2626",
+        "danger_soft": "#fee2e2",
+        "ok": "#16a34a",
+        "ok_soft": "#dcfce7",
     }
 
     FONT_FAMILY = "Segoe UI"
-    HERO_FONT = ("Segoe UI", 20, "bold")
+    HERO_FONT = ("Segoe UI", 22, "bold")
     TITLE_FONT = ("Segoe UI", 13, "bold")
     BODY_FONT = ("Segoe UI", 9)
     CAPTION_FONT = ("Segoe UI", 8)
+    REDUCED_MOTION = os.environ.get("LN_SELECTOR_REDUCED_MOTION") == "1"
 
     def ease_out_cubic(t: float) -> float:
         return 1 - pow(1 - t, 3)
@@ -1679,8 +1684,8 @@ def launch_gui() -> None:
         def __init__(self, master: tk.Tk) -> None:
             self.master = master
             self.master.title("轻小说联网分类工具")
-            self.master.geometry("1240x780")
-            self.master.minsize(1040, 680)
+            self.master.geometry("1320x820")
+            self.master.minsize(1120, 720)
             self.master.configure(bg=COLORS["bg"])
             self.settings = load_app_settings()
             self.root_var = tk.StringVar()
@@ -1723,6 +1728,7 @@ def launch_gui() -> None:
             self.stat_error_var = tk.StringVar(value="0")
             self.stat_values = {"total": 0, "ready": 0, "duplicate": 0, "error": 0}
             self.stat_animation_jobs: dict[str, str] = {}
+            self.busy_controls: list[ttk.Button] = []
             self.progress_canvas = None
             self.progress_fill = None
             self.progress_glow = None
@@ -1731,40 +1737,57 @@ def launch_gui() -> None:
             self._configure_style()
             self._build_widgets()
             self._bind_shortcuts()
-            self._animate_initial_cards()
+            if not REDUCED_MOTION:
+                self._animate_initial_cards()
             self._poll_events()
 
         def _configure_style(self) -> None:
             style = ttk.Style(self.master)
-            if "clam" in style.theme_names():
-                style.theme_use("clam")
+            available_themes = set(style.theme_names())
+            for preferred_theme in ("vista", "xpnative", "aqua", "default", "clam"):
+                if preferred_theme in available_themes:
+                    style.theme_use(preferred_theme)
+                    break
             self.master.option_add("*Font", f"{{{FONT_FAMILY}}} 9")
             style.configure(".", background=COLORS["bg"], foreground=COLORS["text"], fieldbackground=COLORS["card"])
             style.configure("App.TFrame", background=COLORS["bg"])
+            style.configure("Tint.TFrame", background=COLORS["bg_tint"])
             style.configure("Sidebar.TFrame", background=COLORS["sidebar"])
             style.configure("Card.TFrame", background=COLORS["card"], relief="flat", borderwidth=1, bordercolor=COLORS["separator"])
+            style.configure("Toolbar.TFrame", background=COLORS["card"], relief="flat", borderwidth=1, bordercolor=COLORS["separator"])
             style.configure("Card.TLabelframe", background=COLORS["card"], foreground=COLORS["text"], borderwidth=0, bordercolor=COLORS["separator"])
             style.configure("Card.TLabelframe.Label", background=COLORS["card"], foreground=COLORS["text"])
             style.configure("TLabel", background=COLORS["bg"], foreground=COLORS["text"])
             style.configure("Muted.TLabel", background=COLORS["bg"], foreground=COLORS["muted"])
             style.configure("Card.TLabel", background=COLORS["card"], foreground=COLORS["text"])
             style.configure("CardMuted.TLabel", background=COLORS["card"], foreground=COLORS["muted"])
+            style.configure("Section.TLabel", background=COLORS["card"], foreground=COLORS["text"], font=TITLE_FONT)
+            style.configure("Toolbar.TLabel", background=COLORS["card"], foreground=COLORS["text"])
             style.configure("Pill.TLabel", background=COLORS["accent_soft"], foreground=COLORS["accent_dark"], padding=(12, 5), font=(FONT_FAMILY, 9, "bold"))
+            style.configure("FilePill.TLabel", background=COLORS["file_soft"], foreground=COLORS["file"], padding=(12, 5), font=(FONT_FAMILY, 9, "bold"))
             style.configure("Sidebar.TLabel", background=COLORS["sidebar"], foreground=COLORS["text"])
             style.configure("SidebarMuted.TLabel", background=COLORS["sidebar"], foreground=COLORS["muted"])
             style.configure("Accent.TLabel", background=COLORS["bg"], foreground=COLORS["accent"], font=(FONT_FAMILY, 18, "bold"))
             style.configure("Hero.TLabel", background=COLORS["bg"], foreground=COLORS["text"], font=HERO_FONT)
-            style.configure("TButton", padding=(13, 8), background=COLORS["card"], foreground=COLORS["text"], borderwidth=1, relief="flat")
-            style.map("TButton", background=[("active", COLORS["card_hover"]), ("pressed", COLORS["accent_soft"])], foreground=[("pressed", COLORS["accent_dark"])])
-            style.configure("Accent.TButton", padding=(14, 8), background=COLORS["accent"], foreground="#ffffff", borderwidth=0)
+            style.configure("TButton", padding=(13, 9), background=COLORS["card"], foreground=COLORS["text"], borderwidth=1, relief="flat")
+            style.map(
+                "TButton",
+                background=[("disabled", COLORS["panel"]), ("active", COLORS["card_hover"]), ("pressed", COLORS["accent_soft"])],
+                foreground=[("disabled", COLORS["muted"]), ("pressed", COLORS["accent_dark"])],
+            )
+            style.configure("Accent.TButton", padding=(15, 9), background=COLORS["accent"], foreground="#ffffff", borderwidth=0)
             style.map("Accent.TButton", background=[("active", COLORS["accent_dark"]), ("pressed", COLORS["accent_dark"])], foreground=[("active", "#ffffff"), ("pressed", "#ffffff")])
-            style.configure("Nav.TButton", padding=(14, 10), background=COLORS["sidebar"], foreground=COLORS["muted"], borderwidth=0, anchor="w")
-            style.map("Nav.TButton", background=[("active", COLORS["card"]), ("pressed", COLORS["accent_soft"])], foreground=[("active", COLORS["text"]), ("pressed", COLORS["accent_dark"])])
-            style.configure("TCheckbutton", background=COLORS["bg"], foreground=COLORS["text"])
+            style.configure("Warn.TButton", padding=(15, 9), background=COLORS["file"], foreground="#ffffff", borderwidth=0)
+            style.map("Warn.TButton", background=[("active", "#b45309"), ("pressed", "#92400e")], foreground=[("active", "#ffffff"), ("pressed", "#ffffff")])
+            style.configure("Nav.TButton", padding=(15, 11), background=COLORS["sidebar"], foreground=COLORS["muted"], borderwidth=0, anchor="w")
+            style.map("Nav.TButton", background=[("active", COLORS["sidebar_active"]), ("pressed", COLORS["accent_soft"])], foreground=[("active", COLORS["text"]), ("pressed", COLORS["accent_dark"])])
+            style.configure("TCheckbutton", background=COLORS["bg"], foreground=COLORS["text"], padding=(4, 4))
+            style.configure("Card.TCheckbutton", background=COLORS["card"], foreground=COLORS["text"], padding=(4, 4))
             style.map("TCheckbutton", background=[("active", COLORS["bg"])], foreground=[("active", COLORS["text"])])
+            style.map("Card.TCheckbutton", background=[("active", COLORS["card_hover"])], foreground=[("active", COLORS["text"])])
             style.configure("TEntry", fieldbackground=COLORS["card"], foreground=COLORS["text"], insertcolor=COLORS["text"], bordercolor=COLORS["separator"], lightcolor=COLORS["separator"], darkcolor=COLORS["separator"])
             style.configure("TCombobox", fieldbackground=COLORS["card"], foreground=COLORS["text"], arrowcolor=COLORS["muted"], bordercolor=COLORS["separator"])
-            style.configure("Treeview", background=COLORS["card"], fieldbackground=COLORS["card"], foreground=COLORS["text"], rowheight=36, borderwidth=0)
+            style.configure("Treeview", background=COLORS["card"], fieldbackground=COLORS["card"], foreground=COLORS["text"], rowheight=38, borderwidth=0)
             style.configure("Treeview.Heading", background=COLORS["card_alt"], foreground=COLORS["muted"], relief="flat", font=(FONT_FAMILY, 9, "bold"))
             style.map("Treeview", background=[("selected", COLORS["accent"])], foreground=[("selected", "#ffffff")])
             style.configure("Modern.Horizontal.TProgressbar", troughcolor=COLORS["panel"], background=COLORS["accent"], bordercolor=COLORS["panel"], lightcolor=COLORS["accent"], darkcolor=COLORS["accent"])
@@ -1773,8 +1796,20 @@ def launch_gui() -> None:
             button = ttk.Button(parent, text=text, style="Nav.TButton", command=lambda: self._button_press_feedback(button, command))
             return button
 
+        def _action_button(self, parent, text: str, command, *, style: str = "TButton", busy_sensitive: bool = True) -> ttk.Button:
+            button = ttk.Button(parent, text=text, style=style, command=lambda: self._button_press_feedback(button, command))
+            button.configure(cursor="hand2")
+            if busy_sensitive:
+                self.busy_controls.append(button)
+            return button
+
         def _button_press_feedback(self, button, command) -> None:
             original = button.cget("style") or "TButton"
+            if button.instate(["disabled"]):
+                return
+            if REDUCED_MOTION:
+                command()
+                return
             button.configure(style="Accent.TButton")
             self.master.after(90, lambda: button.configure(style=original))
             self.master.after(140, lambda: button.configure(style="Nav.TButton" if original == "Nav.TButton" else original))
@@ -1816,9 +1851,9 @@ def launch_gui() -> None:
             frame = ttk.Frame(dialog, style="Card.TFrame", padding=18)
             frame.pack(fill="both", expand=True, padx=14, pady=14)
             ttk.Label(frame, text="用户偏好", style="Card.TLabel", font=TITLE_FONT).pack(anchor="w", pady=(0, 12))
-            ttk.Checkbutton(frame, text="联网识别系列名", variable=self.network_var).pack(anchor="w", pady=4)
-            ttk.Checkbutton(frame, text="包含子文件夹", variable=self.recursive_var).pack(anchor="w", pady=4)
-            ttk.Checkbutton(frame, text="自动重命名", variable=self.auto_rename_var).pack(anchor="w", pady=4)
+            ttk.Checkbutton(frame, text="联网识别系列名", variable=self.network_var, style="Card.TCheckbutton").pack(anchor="w", pady=4)
+            ttk.Checkbutton(frame, text="包含子文件夹", variable=self.recursive_var, style="Card.TCheckbutton").pack(anchor="w", pady=4)
+            ttk.Checkbutton(frame, text="自动重命名", variable=self.auto_rename_var, style="Card.TCheckbutton").pack(anchor="w", pady=4)
             ttk.Label(frame, text="自定义规则（每行：匹配模式 => 系列名）", style="Card.TLabel", font=(FONT_FAMILY, 11, "bold")).pack(anchor="w", pady=(16, 6))
             rules_text = ScrolledText(frame, height=10, wrap="word", bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", borderwidth=0)
             rules_text.pack(fill="both", expand=True)
@@ -1854,7 +1889,7 @@ def launch_gui() -> None:
                     self.show_toast("设置已保存")
                 dialog.destroy()
 
-            ttk.Button(frame, text="保存", style="Accent.TButton", command=save_and_close).pack(anchor="e")
+            self._action_button(frame, "保存", save_and_close, style="Accent.TButton", busy_sensitive=False).pack(anchor="e")
 
         def open_last_report(self) -> None:
             if self.last_report_path and self.last_report_path.exists():
@@ -1887,22 +1922,23 @@ def launch_gui() -> None:
             self.log_message(f"撤销完成：恢复 {restored} 个文件，跳过 {skipped} 个文件。")
 
         def _build_widgets(self) -> None:
-            self.master.columnconfigure(0, minsize=224)
+            self.master.columnconfigure(0, minsize=238)
             self.master.columnconfigure(1, weight=1)
             self.master.rowconfigure(0, weight=1)
 
-            sidebar = ttk.Frame(self.master, style="Sidebar.TFrame", padding=(22, 24))
+            sidebar = ttk.Frame(self.master, style="Sidebar.TFrame", padding=(24, 26))
             sidebar.grid(row=0, column=0, sticky="nsew")
             sidebar.rowconfigure(8, weight=1)
-            ttk.Label(sidebar, text="Light Novel", style="Sidebar.TLabel", font=(FONT_FAMILY, 17, "bold")).grid(row=0, column=0, sticky="w")
-            ttk.Label(sidebar, text="Selector", style="SidebarMuted.TLabel", font=(FONT_FAMILY, 11)).grid(row=1, column=0, sticky="w", pady=(0, 26))
-            self._nav_button(sidebar, "工作台", self.focus_workspace).grid(row=2, column=0, sticky="ew", pady=(0, 8))
-            self._nav_button(sidebar, "设置", self.open_settings).grid(row=3, column=0, sticky="ew", pady=(0, 8))
-            self._nav_button(sidebar, "报告", self.open_last_report).grid(row=4, column=0, sticky="ew", pady=(0, 8))
-            self._nav_button(sidebar, "撤销上次", self.undo_last_report).grid(row=5, column=0, sticky="ew", pady=(0, 8))
+            ttk.Label(sidebar, text="Light Novel", style="Sidebar.TLabel", font=(FONT_FAMILY, 18, "bold")).grid(row=0, column=0, sticky="w")
+            ttk.Label(sidebar, text="Selector UI", style="SidebarMuted.TLabel", font=(FONT_FAMILY, 11)).grid(row=1, column=0, sticky="w", pady=(0, 28))
+            self._nav_button(sidebar, "工作台 / 预览", self.focus_workspace).grid(row=2, column=0, sticky="ew", pady=(0, 8))
+            self._nav_button(sidebar, "设置 / 规则", self.open_settings).grid(row=3, column=0, sticky="ew", pady=(0, 8))
+            self._nav_button(sidebar, "报告 / 打开", self.open_last_report).grid(row=4, column=0, sticky="ew", pady=(0, 8))
+            self._nav_button(sidebar, "撤销上次移动", self.undo_last_report).grid(row=5, column=0, sticky="ew", pady=(0, 8))
+            ttk.Label(sidebar, text="先预览，再执行", style="SidebarMuted.TLabel").grid(row=7, column=0, sticky="w", pady=(26, 2))
             ttk.Label(sidebar, text=f"v{APP_VERSION}", style="SidebarMuted.TLabel").grid(row=9, column=0, sticky="w")
 
-            self.main_frame = ttk.Frame(self.master, style="App.TFrame", padding=(28, 24))
+            self.main_frame = ttk.Frame(self.master, style="App.TFrame", padding=(30, 24))
             self.main_frame.grid(row=0, column=1, sticky="nsew")
             self.main_frame.columnconfigure(0, weight=1)
             self.main_frame.rowconfigure(4, weight=1)
@@ -1912,19 +1948,27 @@ def launch_gui() -> None:
             header.columnconfigure(0, weight=1)
             header.columnconfigure(1, weight=0)
             ttk.Label(header, text="轻小说整理工作台", style="Hero.TLabel").grid(row=0, column=0, sticky="w")
-            ttk.Label(header, text="扫描、识别、修正并安全移动你的轻小说文件。", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
-            ttk.Label(header, textvariable=self.health_var, style="Pill.TLabel").grid(row=0, column=1, rowspan=2, sticky="e", padx=(18, 0))
+            ttk.Label(header, text="导入目录、预览识别、人工修正、生成可撤销分类报告。", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
+            status_cluster = ttk.Frame(header, style="App.TFrame")
+            status_cluster.grid(row=0, column=1, rowspan=2, sticky="e", padx=(18, 0))
+            ttk.Label(status_cluster, textvariable=self.health_var, style="Pill.TLabel").pack(side="left", padx=(0, 8))
+            ttk.Label(status_cluster, text="ui 分支", style="FilePill.TLabel").pack(side="left")
 
-            top = ttk.Frame(self.main_frame, style="Card.TFrame", padding=(18, 16))
+            top = ttk.Frame(self.main_frame, style="Card.TFrame", padding=(20, 18))
             top.grid(row=1, column=0, sticky="ew", pady=(0, 14))
             top.columnconfigure(1, weight=1)
 
-            ttk.Label(top, text="文件导入", style="Card.TLabel", font=TITLE_FONT).grid(row=0, column=0, columnspan=4, sticky="w")
-            ttk.Label(top, text="支持拖入后的批量目录整理：先预览，确认后再移动。", style="CardMuted.TLabel").grid(row=1, column=0, columnspan=4, sticky="w", pady=(4, 12))
-            ttk.Button(top, text="选择大文件夹", command=self.select_folder, style="Accent.TButton").grid(row=2, column=0, padx=(0, 8), sticky="w")
+            ttk.Label(top, text="文件导入", style="Section.TLabel").grid(row=0, column=0, columnspan=4, sticky="w")
+            ttk.Label(top, text="选择存放轻小说的大文件夹。扫描阶段不会移动原文件，执行前仍会二次确认。", style="CardMuted.TLabel").grid(
+                row=1, column=0, columnspan=4, sticky="w", pady=(4, 14)
+            )
+            self.select_folder_button = self._action_button(top, "选择大文件夹", self.select_folder, style="Accent.TButton")
+            self.select_folder_button.grid(row=2, column=0, padx=(0, 10), sticky="w")
             ttk.Entry(top, textvariable=self.root_var).grid(row=2, column=1, sticky="ew", padx=(0, 8))
-            ttk.Button(top, text="新建大文件夹", command=self.create_folder).grid(row=2, column=2, padx=(0, 8))
-            ttk.Button(top, text="打开", command=self.open_folder).grid(row=2, column=3)
+            self.create_folder_button = self._action_button(top, "新建大文件夹", self.create_folder)
+            self.create_folder_button.grid(row=2, column=2, padx=(0, 8))
+            self.open_folder_button = self._action_button(top, "打开", self.open_folder, busy_sensitive=False)
+            self.open_folder_button.grid(row=2, column=3)
 
             stats = ttk.Frame(self.main_frame, style="App.TFrame")
             stats.grid(row=2, column=0, sticky="ew", pady=(0, 14))
@@ -1932,21 +1976,29 @@ def launch_gui() -> None:
                 stats.columnconfigure(col, weight=1)
             self._stat_card(stats, "文件总数", self.stat_total_var, "扫描到的支持格式", COLORS["accent"], 0)
             self._stat_card(stats, "可执行", self.stat_ready_var, "确认后会移动", COLORS["ok"], 1)
-            self._stat_card(stats, "重复", self.stat_duplicate_var, "默认安全跳过", COLORS["warning"], 2)
+            self._stat_card(stats, "重复", self.stat_duplicate_var, "默认安全跳过", COLORS["file"], 2)
             self._stat_card(stats, "错误", self.stat_error_var, "需要人工处理", COLORS["danger"], 3)
 
-            options = ttk.Frame(self.main_frame, style="App.TFrame", padding=(0, 10, 0, 14))
-            options.grid(row=3, column=0, sticky="ew")
-            ttk.Checkbutton(options, text="联网识别系列名", variable=self.network_var).pack(side="left", padx=(0, 18))
-            ttk.Checkbutton(options, text="包含子文件夹", variable=self.recursive_var).pack(side="left", padx=(0, 18))
-            ttk.Checkbutton(options, text="自动重命名", variable=self.auto_rename_var).pack(side="left", padx=(0, 18))
-            ttk.Button(options, text="扫描并预览", command=self.scan, style="Accent.TButton").pack(side="left", padx=(0, 8))
-            ttk.Button(options, text="修正分类", command=self.edit_selected_plan).pack(side="left", padx=(0, 8))
-            ttk.Button(options, text="执行分类", command=self.apply_plan).pack(side="left")
+            options = ttk.Frame(self.main_frame, style="Toolbar.TFrame", padding=(16, 12))
+            options.grid(row=3, column=0, sticky="ew", pady=(0, 14))
+            options.columnconfigure(0, weight=1)
+            option_group = ttk.Frame(options, style="Toolbar.TFrame")
+            option_group.grid(row=0, column=0, sticky="w")
+            ttk.Checkbutton(option_group, text="联网识别系列名", variable=self.network_var, style="Card.TCheckbutton").pack(side="left", padx=(0, 16))
+            ttk.Checkbutton(option_group, text="包含子文件夹", variable=self.recursive_var, style="Card.TCheckbutton").pack(side="left", padx=(0, 16))
+            ttk.Checkbutton(option_group, text="自动重命名", variable=self.auto_rename_var, style="Card.TCheckbutton").pack(side="left", padx=(0, 16))
+            action_group = ttk.Frame(options, style="Toolbar.TFrame")
+            action_group.grid(row=0, column=1, sticky="e")
+            self.scan_button = self._action_button(action_group, "扫描并预览", self.scan, style="Accent.TButton")
+            self.scan_button.pack(side="left", padx=(0, 8))
+            self.edit_button = self._action_button(action_group, "修正分类", self.edit_selected_plan)
+            self.edit_button.pack(side="left", padx=(0, 8))
+            self.apply_button = self._action_button(action_group, "执行分类", self.apply_plan, style="Warn.TButton")
+            self.apply_button.pack(side="left")
 
             content = ttk.Frame(self.main_frame, style="App.TFrame", padding=(0, 0, 0, 8))
             content.grid(row=4, column=0, sticky="nsew")
-            content.columnconfigure(0, minsize=310)
+            content.columnconfigure(0, minsize=320)
             content.columnconfigure(1, weight=1)
             content.rowconfigure(0, weight=1)
 
@@ -1955,7 +2007,7 @@ def launch_gui() -> None:
             detail_frame.columnconfigure(0, weight=1)
             detail_frame.rowconfigure(6, weight=1)
 
-            ttk.Label(detail_frame, text="详情面板", style="Card.TLabel", font=TITLE_FONT).grid(row=0, column=0, sticky="w", pady=(0, 12))
+            ttk.Label(detail_frame, text="详情面板", style="Section.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 12))
             self.cover_label = ttk.Label(detail_frame, text="暂无封面", anchor="center", style="CardMuted.TLabel")
             self.cover_label.grid(row=1, column=0, sticky="ew", pady=(0, 10))
             ttk.Label(detail_frame, textvariable=self.detail_title_var, style="Card.TLabel", font=("", 12, "bold"), wraplength=280).grid(
@@ -1973,9 +2025,9 @@ def launch_gui() -> None:
             self.open_subject_button = ttk.Button(
                 detail_actions,
                 text="打开条目",
-                command=self.open_current_subject,
                 state="disabled",
             )
+            self.open_subject_button.configure(command=lambda: self._button_press_feedback(self.open_subject_button, self.open_current_subject))
             self.open_subject_button.pack(side="left")
             self.summary_text = ScrolledText(detail_frame, width=34, height=18, wrap="word")
             self.summary_text.grid(row=6, column=0, sticky="nsew")
@@ -1987,14 +2039,14 @@ def launch_gui() -> None:
             right_frame.rowconfigure(1, weight=1)
             right_frame.rowconfigure(2, weight=0)
 
-            table_frame = ttk.Frame(right_frame, style="Card.TFrame", padding=(12, 12))
+            table_frame = ttk.Frame(right_frame, style="Card.TFrame", padding=(14, 14))
             table_frame.columnconfigure(0, weight=1)
-            table_frame.rowconfigure(0, weight=1)
+            table_frame.rowconfigure(1, weight=1)
 
-            series_bar = ttk.Frame(right_frame, style="App.TFrame")
-            series_bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+            series_bar = ttk.Frame(right_frame, style="Toolbar.TFrame", padding=(14, 10))
+            series_bar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
             series_bar.columnconfigure(1, weight=1)
-            ttk.Label(series_bar, text="系列筛选").grid(row=0, column=0, sticky="w", padx=(0, 8))
+            ttk.Label(series_bar, text="系列筛选", style="Toolbar.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 10))
             self.series_filter = ttk.Combobox(
                 series_bar,
                 textvariable=self.series_filter_var,
@@ -2003,9 +2055,11 @@ def launch_gui() -> None:
             )
             self.series_filter.grid(row=0, column=1, sticky="ew", padx=(0, 8))
             self.series_filter.bind("<<ComboboxSelected>>", self.on_series_filter_changed)
-            ttk.Button(series_bar, text="系列介绍", command=self.show_selected_series_intro).grid(row=0, column=2)
+            self.series_intro_button = self._action_button(series_bar, "系列介绍", self.show_selected_series_intro, busy_sensitive=False)
+            self.series_intro_button.grid(row=0, column=2)
 
             table_frame.grid(row=1, column=0, sticky="nsew")
+            ttk.Label(table_frame, text="分类预览", style="Section.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 10))
 
             columns = ("file", "rename", "series", "target", "source", "status", "detail")
             self.tree = ttk.Treeview(table_frame, columns=columns, show="headings")
@@ -2016,17 +2070,17 @@ def launch_gui() -> None:
             self.tree.heading("source", text="识别来源")
             self.tree.heading("status", text="状态")
             self.tree.heading("detail", text="详情")
-            self.tree.column("file", width=260, anchor="w")
-            self.tree.column("rename", width=280, anchor="w")
-            self.tree.column("series", width=230, anchor="w")
-            self.tree.column("target", width=230, anchor="w")
+            self.tree.column("file", width=250, anchor="w")
+            self.tree.column("rename", width=260, anchor="w")
+            self.tree.column("series", width=220, anchor="w")
+            self.tree.column("target", width=210, anchor="w")
             self.tree.column("source", width=130, anchor="w")
             self.tree.column("status", width=90, anchor="center")
             self.tree.column("detail", width=150, anchor="center")
-            self.tree.grid(row=0, column=0, sticky="nsew")
+            self.tree.grid(row=1, column=0, sticky="nsew")
 
             scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
-            scrollbar.grid(row=0, column=1, sticky="ns")
+            scrollbar.grid(row=1, column=1, sticky="ns")
             self.tree.configure(yscrollcommand=scrollbar.set)
             self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
             self.tree.bind("<Double-1>", lambda _event: self.edit_selected_plan())
@@ -2046,7 +2100,7 @@ def launch_gui() -> None:
             self.progress_canvas = tk.Canvas(bottom, height=16, bg=COLORS["card"], highlightthickness=0)
             self.progress_canvas.grid(row=0, column=1, rowspan=2, sticky="ew", padx=(12, 0), pady=(0, 8))
             self.progress_canvas.bind("<Configure>", lambda _event: self.draw_progress_canvas(self.progress_display_value, 1))
-            self.log = ScrolledText(bottom, height=6, wrap="word")
+            self.log = ScrolledText(bottom, height=5, wrap="word")
             self.log.grid(row=2, column=0, columnspan=2, sticky="ew")
             self.log.configure(state="disabled", bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", borderwidth=0)
             self.bind_mousewheel(self.tree, lambda units: self.tree.yview_scroll(units, "units"))
@@ -2095,8 +2149,9 @@ def launch_gui() -> None:
                     pass
             start = self.stat_values.get(key, 0)
             delta = target - start
-            if delta == 0:
+            if REDUCED_MOTION or delta == 0:
                 value_var.set(str(target))
+                self.stat_values[key] = target
                 return
             steps = 14
 
@@ -2223,7 +2278,7 @@ def launch_gui() -> None:
         def animate_progress_to(self, target: float, maximum: float, *, duration_ms: int = 420) -> None:
             start = self.progress_display_value
             delta = target - start
-            if abs(delta) < 0.01:
+            if REDUCED_MOTION or abs(delta) < 0.01:
                 self.progress.configure(value=target)
                 self.progress_display_value = target
                 self.draw_progress_canvas(target, maximum)
@@ -2263,6 +2318,9 @@ def launch_gui() -> None:
 
         def start_scanning_animation(self) -> None:
             self.stop_scanning_animation()
+            if REDUCED_MOTION:
+                self.draw_progress_canvas(0, 1)
+                return
             frame_count = 48
 
             def tick(frame: int = 0) -> None:
@@ -2329,6 +2387,16 @@ def launch_gui() -> None:
             y = self.master.winfo_rooty() + 42 + len(self.toast_windows) * 56
             toast.geometry(f"320x44+{start_x}+{y}")
             self.toast_windows.append(toast)
+            if REDUCED_MOTION:
+                def destroy_reduced_toast() -> None:
+                    if toast in self.toast_windows:
+                        self.toast_windows.remove(toast)
+                    toast.destroy()
+
+                toast.geometry(f"320x44+{target_x}+{y}")
+                toast.attributes("-alpha", 0.98)
+                toast.after(2200, destroy_reduced_toast)
+                return
 
             def fade(frame: int = 0, direction: int = 1) -> None:
                 steps = 12
@@ -2701,6 +2769,11 @@ def launch_gui() -> None:
 
         def _set_busy(self, busy: bool) -> None:
             self.master.configure(cursor="watch" if busy else "")
+            for control in self.busy_controls:
+                try:
+                    control.configure(state="disabled" if busy else "normal")
+                except tk.TclError:
+                    pass
 
         def scan(self) -> None:
             folder = self._current_root()

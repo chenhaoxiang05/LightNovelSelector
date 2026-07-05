@@ -53,6 +53,14 @@ py .\lightnovel_classifier.py
 - 主题色改为系统蓝，背景改为浅灰，侧栏使用灰白层级，卡片改为白底和柔和分隔线。
 - 统一 UI 字体、卡片间距、按钮 padding、表格行高、Toast 和进度文字样式。
 
+### ui 分支
+
+- `ui` 分支用于验证重置后的桌面界面，主逻辑保持和稳定版一致。
+- 视觉方向为浅色玻璃拟态：蓝色主色、琥珀辅助色、浅灰背景、分层卡片和工具栏。
+- 复选框优先使用 Windows 原生主题，选中状态显示对勾。
+- 扫描和执行期间会禁用主操作按钮，避免重复触发。
+- 可通过 `LN_SELECTOR_REDUCED_MOTION=1` 关闭非必要动效。
+
 ## 打包 EXE
 
 运行：
@@ -71,6 +79,22 @@ dist\LightNovelSelector-v1.3.0-构建时间.exe
 
 如果重装系统或更换用户名导致 `.venv-build` 指向旧 Python，`build_exe.bat` 会检测虚拟环境是否可运行。坏环境会移动到 `archive_old_code`，然后用当前可用 Python 自动重建。
 
+## ui 分支实验版打包
+
+运行：
+
+```powershell
+.\build_ui_test_exe.bat
+```
+
+脚本会生成：
+
+```text
+dlist\LightNovelSelector-ui-v1.3.0-构建时间.exe
+```
+
+`dlist/` 已加入 `.gitignore`，只用于本地实验版构建产物，不和 `main` 分支的 `dist\` 混用。
+
 ## Git 工作流
 
 本项目主分支为 `main`。维护改动默认按以下顺序处理：
@@ -80,6 +104,12 @@ git status
 git add .
 git commit -m "..."
 git push origin main
+```
+
+`ui` 分支用于界面实验。相关改动只提交并推送到：
+
+```powershell
+git push origin ui
 ```
 
 发布新版本时：
