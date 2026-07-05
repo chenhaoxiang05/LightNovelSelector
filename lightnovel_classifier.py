@@ -1635,33 +1635,38 @@ def launch_gui() -> None:
         ImageTk = None
 
     COLORS = {
-        "bg": "#f8fafc",
-        "bg_tint": "#eef5ff",
-        "panel": "#f1f5fd",
-        "sidebar": "#eef4ff",
-        "sidebar_active": "#ffffff",
-        "card": "#ffffff",
-        "card_alt": "#f8fbff",
-        "card_hover": "#eef6ff",
-        "border": "#dce7f8",
-        "separator": "#e4ecfc",
-        "muted": "#64748b",
-        "text": "#0f172a",
-        "accent": "#2563eb",
-        "accent_soft": "#dbeafe",
-        "accent_dark": "#1d4ed8",
-        "file": "#d97706",
-        "file_soft": "#fef3c7",
-        "warning": "#d97706",
-        "warning_soft": "#fef3c7",
-        "danger": "#dc2626",
-        "danger_soft": "#fee2e2",
-        "ok": "#16a34a",
-        "ok_soft": "#dcfce7",
+        "bg": "#070b18",
+        "bg_tint": "#0e1730",
+        "panel": "#101a33",
+        "sidebar": "#0b1224",
+        "sidebar_active": "#17264a",
+        "card": "#111b34",
+        "card_alt": "#162440",
+        "card_hover": "#1d3159",
+        "border": "#28436f",
+        "separator": "#20385f",
+        "muted": "#9fb3d9",
+        "text": "#eaf2ff",
+        "accent": "#38bdf8",
+        "accent_soft": "#123756",
+        "accent_dark": "#0ea5e9",
+        "violet": "#a78bfa",
+        "violet_soft": "#281f4d",
+        "file": "#f59e0b",
+        "file_soft": "#3b2a0f",
+        "warning": "#f59e0b",
+        "warning_soft": "#3b2a0f",
+        "danger": "#fb7185",
+        "danger_soft": "#3d1420",
+        "ok": "#34d399",
+        "ok_soft": "#123b2d",
+        "button_text": "#06111f",
+        "button_secondary": "#1c2d50",
+        "button_secondary_hover": "#29406f",
     }
 
     FONT_FAMILY = "Segoe UI"
-    HERO_FONT = ("Segoe UI", 22, "bold")
+    HERO_FONT = ("Segoe UI", 23, "bold")
     TITLE_FONT = ("Segoe UI", 13, "bold")
     BODY_FONT = ("Segoe UI", 9)
     CAPTION_FONT = ("Segoe UI", 8)
@@ -1684,8 +1689,8 @@ def launch_gui() -> None:
         def __init__(self, master: tk.Tk) -> None:
             self.master = master
             self.master.title("轻小说联网分类工具")
-            self.master.geometry("1320x820")
-            self.master.minsize(1120, 720)
+            self.master.geometry("1360x840")
+            self.master.minsize(1160, 740)
             self.master.configure(bg=COLORS["bg"])
             self.settings = load_app_settings()
             self.root_var = tk.StringVar()
@@ -1728,7 +1733,7 @@ def launch_gui() -> None:
             self.stat_error_var = tk.StringVar(value="0")
             self.stat_values = {"total": 0, "ready": 0, "duplicate": 0, "error": 0}
             self.stat_animation_jobs: dict[str, str] = {}
-            self.busy_controls: list[ttk.Button] = []
+            self.busy_controls: list[object] = []
             self.progress_canvas = None
             self.progress_fill = None
             self.progress_glow = None
@@ -1744,7 +1749,7 @@ def launch_gui() -> None:
         def _configure_style(self) -> None:
             style = ttk.Style(self.master)
             available_themes = set(style.theme_names())
-            for preferred_theme in ("vista", "xpnative", "aqua", "default", "clam"):
+            for preferred_theme in ("clam", "vista", "xpnative", "aqua", "default"):
                 if preferred_theme in available_themes:
                     style.theme_use(preferred_theme)
                     break
@@ -1761,9 +1766,10 @@ def launch_gui() -> None:
             style.configure("Muted.TLabel", background=COLORS["bg"], foreground=COLORS["muted"])
             style.configure("Card.TLabel", background=COLORS["card"], foreground=COLORS["text"])
             style.configure("CardMuted.TLabel", background=COLORS["card"], foreground=COLORS["muted"])
+            style.configure("CardAccent.TLabel", background=COLORS["card"], foreground=COLORS["accent"], font=(FONT_FAMILY, 9, "bold"))
             style.configure("Section.TLabel", background=COLORS["card"], foreground=COLORS["text"], font=TITLE_FONT)
             style.configure("Toolbar.TLabel", background=COLORS["card"], foreground=COLORS["text"])
-            style.configure("Pill.TLabel", background=COLORS["accent_soft"], foreground=COLORS["accent_dark"], padding=(12, 5), font=(FONT_FAMILY, 9, "bold"))
+            style.configure("Pill.TLabel", background=COLORS["accent_soft"], foreground=COLORS["accent"], padding=(12, 5), font=(FONT_FAMILY, 9, "bold"))
             style.configure("FilePill.TLabel", background=COLORS["file_soft"], foreground=COLORS["file"], padding=(12, 5), font=(FONT_FAMILY, 9, "bold"))
             style.configure("Sidebar.TLabel", background=COLORS["sidebar"], foreground=COLORS["text"])
             style.configure("SidebarMuted.TLabel", background=COLORS["sidebar"], foreground=COLORS["muted"])
@@ -1785,34 +1791,95 @@ def launch_gui() -> None:
             style.configure("Card.TCheckbutton", background=COLORS["card"], foreground=COLORS["text"], padding=(4, 4))
             style.map("TCheckbutton", background=[("active", COLORS["bg"])], foreground=[("active", COLORS["text"])])
             style.map("Card.TCheckbutton", background=[("active", COLORS["card_hover"])], foreground=[("active", COLORS["text"])])
-            style.configure("TEntry", fieldbackground=COLORS["card"], foreground=COLORS["text"], insertcolor=COLORS["text"], bordercolor=COLORS["separator"], lightcolor=COLORS["separator"], darkcolor=COLORS["separator"])
-            style.configure("TCombobox", fieldbackground=COLORS["card"], foreground=COLORS["text"], arrowcolor=COLORS["muted"], bordercolor=COLORS["separator"])
+            style.configure("TEntry", fieldbackground=COLORS["panel"], foreground=COLORS["text"], insertcolor=COLORS["text"], bordercolor=COLORS["accent"], lightcolor=COLORS["separator"], darkcolor=COLORS["separator"])
+            style.configure("TCombobox", fieldbackground=COLORS["panel"], foreground=COLORS["text"], arrowcolor=COLORS["accent"], bordercolor=COLORS["separator"])
             style.configure("Treeview", background=COLORS["card"], fieldbackground=COLORS["card"], foreground=COLORS["text"], rowheight=38, borderwidth=0)
-            style.configure("Treeview.Heading", background=COLORS["card_alt"], foreground=COLORS["muted"], relief="flat", font=(FONT_FAMILY, 9, "bold"))
-            style.map("Treeview", background=[("selected", COLORS["accent"])], foreground=[("selected", "#ffffff")])
+            style.configure("Treeview.Heading", background=COLORS["card_alt"], foreground=COLORS["accent"], relief="flat", font=(FONT_FAMILY, 9, "bold"))
+            style.map("Treeview", background=[("selected", COLORS["accent_soft"])], foreground=[("selected", COLORS["text"])])
             style.configure("Modern.Horizontal.TProgressbar", troughcolor=COLORS["panel"], background=COLORS["accent"], bordercolor=COLORS["panel"], lightcolor=COLORS["accent"], darkcolor=COLORS["accent"])
 
-        def _nav_button(self, parent, text: str, command) -> ttk.Button:
-            button = ttk.Button(parent, text=text, style="Nav.TButton", command=lambda: self._button_press_feedback(button, command))
+        def _nav_button(self, parent, text: str, command) -> tk.Button:
+            button = tk.Button(
+                parent,
+                text=text,
+                bg=COLORS["sidebar"],
+                fg=COLORS["muted"],
+                activebackground=COLORS["sidebar_active"],
+                activeforeground=COLORS["text"],
+                relief="flat",
+                bd=0,
+                padx=16,
+                pady=11,
+                anchor="w",
+                font=(FONT_FAMILY, 10, "bold"),
+                cursor="hand2",
+                command=lambda: self._button_press_feedback(button, command),
+            )
             return button
 
-        def _action_button(self, parent, text: str, command, *, style: str = "TButton", busy_sensitive: bool = True) -> ttk.Button:
-            button = ttk.Button(parent, text=text, style=style, command=lambda: self._button_press_feedback(button, command))
-            button.configure(cursor="hand2")
+        def _action_button(self, parent, text: str, command, *, style: str = "TButton", busy_sensitive: bool = True) -> tk.Button:
+            if style == "Accent.TButton":
+                bg, fg, active_bg = COLORS["accent"], COLORS["button_text"], "#7dd3fc"
+            elif style == "Warn.TButton":
+                bg, fg, active_bg = COLORS["file"], "#1f1300", "#fbbf24"
+            else:
+                bg, fg, active_bg = COLORS["button_secondary"], COLORS["text"], COLORS["button_secondary_hover"]
+            button = tk.Button(
+                parent,
+                text=text,
+                bg=bg,
+                fg=fg,
+                activebackground=active_bg,
+                activeforeground=fg,
+                disabledforeground=COLORS["muted"],
+                relief="flat",
+                bd=0,
+                padx=18,
+                pady=10,
+                font=(FONT_FAMILY, 10, "bold"),
+                cursor="hand2",
+                command=lambda: self._button_press_feedback(button, command),
+            )
             if busy_sensitive:
                 self.busy_controls.append(button)
             return button
 
+        def _checkbutton(self, parent, text: str, variable: tk.BooleanVar) -> tk.Checkbutton:
+            checkbutton = tk.Checkbutton(
+                parent,
+                text=text,
+                variable=variable,
+                bg=COLORS["card"],
+                fg=COLORS["text"],
+                activebackground=COLORS["card_hover"],
+                activeforeground=COLORS["text"],
+                selectcolor=COLORS["accent_soft"],
+                relief="flat",
+                bd=0,
+                padx=6,
+                pady=4,
+                font=(FONT_FAMILY, 10, "bold"),
+                cursor="hand2",
+            )
+            return checkbutton
+
         def _button_press_feedback(self, button, command) -> None:
-            original = button.cget("style") or "TButton"
-            if button.instate(["disabled"]):
+            if hasattr(button, "instate") and button.instate(["disabled"]):
+                return
+            if str(button.cget("state")) == "disabled":
                 return
             if REDUCED_MOTION:
                 command()
                 return
-            button.configure(style="Accent.TButton")
-            self.master.after(90, lambda: button.configure(style=original))
-            self.master.after(140, lambda: button.configure(style="Nav.TButton" if original == "Nav.TButton" else original))
+            if isinstance(button, tk.Button):
+                original_bg = button.cget("background")
+                button.configure(bg=COLORS["violet"])
+                self.master.after(110, lambda: button.configure(bg=original_bg))
+            else:
+                original = button.cget("style") or "TButton"
+                button.configure(style="Accent.TButton")
+                self.master.after(90, lambda: button.configure(style=original))
+                self.master.after(140, lambda: button.configure(style="Nav.TButton" if original == "Nav.TButton" else original))
             command()
 
         def _bind_shortcuts(self) -> None:
@@ -1832,7 +1899,7 @@ def launch_gui() -> None:
                 self.master.bind_all(sequence, lambda _event, action=command: run(action))
 
         def _mark_clickable_controls(self, widget) -> None:
-            if isinstance(widget, ttk.Button):
+            if isinstance(widget, (ttk.Button, tk.Button)):
                 widget.configure(cursor="hand2")
             for child in widget.winfo_children():
                 self._mark_clickable_controls(child)
@@ -1851,9 +1918,9 @@ def launch_gui() -> None:
             frame = ttk.Frame(dialog, style="Card.TFrame", padding=18)
             frame.pack(fill="both", expand=True, padx=14, pady=14)
             ttk.Label(frame, text="用户偏好", style="Card.TLabel", font=TITLE_FONT).pack(anchor="w", pady=(0, 12))
-            ttk.Checkbutton(frame, text="联网识别系列名", variable=self.network_var, style="Card.TCheckbutton").pack(anchor="w", pady=4)
-            ttk.Checkbutton(frame, text="包含子文件夹", variable=self.recursive_var, style="Card.TCheckbutton").pack(anchor="w", pady=4)
-            ttk.Checkbutton(frame, text="自动重命名", variable=self.auto_rename_var, style="Card.TCheckbutton").pack(anchor="w", pady=4)
+            self._checkbutton(frame, "联网识别系列名", self.network_var).pack(anchor="w", pady=4)
+            self._checkbutton(frame, "包含子文件夹", self.recursive_var).pack(anchor="w", pady=4)
+            self._checkbutton(frame, "自动重命名", self.auto_rename_var).pack(anchor="w", pady=4)
             ttk.Label(frame, text="自定义规则（每行：匹配模式 => 系列名）", style="Card.TLabel", font=(FONT_FAMILY, 11, "bold")).pack(anchor="w", pady=(16, 6))
             rules_text = ScrolledText(frame, height=10, wrap="word", bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", borderwidth=0)
             rules_text.pack(fill="both", expand=True)
@@ -1928,14 +1995,15 @@ def launch_gui() -> None:
 
             sidebar = ttk.Frame(self.master, style="Sidebar.TFrame", padding=(24, 26))
             sidebar.grid(row=0, column=0, sticky="nsew")
-            sidebar.rowconfigure(8, weight=1)
-            ttk.Label(sidebar, text="Light Novel", style="Sidebar.TLabel", font=(FONT_FAMILY, 18, "bold")).grid(row=0, column=0, sticky="w")
-            ttk.Label(sidebar, text="Selector UI", style="SidebarMuted.TLabel", font=(FONT_FAMILY, 11)).grid(row=1, column=0, sticky="w", pady=(0, 28))
+            sidebar.rowconfigure(6, weight=1)
+            ttk.Label(sidebar, text="LIGHT NOVEL", style="Sidebar.TLabel", font=(FONT_FAMILY, 18, "bold")).grid(row=0, column=0, sticky="w")
+            ttk.Label(sidebar, text="CYBER SELECTOR", style="SidebarMuted.TLabel", font=(FONT_FAMILY, 10, "bold")).grid(row=1, column=0, sticky="w", pady=(0, 28))
             self._nav_button(sidebar, "工作台 / 预览", self.focus_workspace).grid(row=2, column=0, sticky="ew", pady=(0, 8))
             self._nav_button(sidebar, "设置 / 规则", self.open_settings).grid(row=3, column=0, sticky="ew", pady=(0, 8))
             self._nav_button(sidebar, "报告 / 打开", self.open_last_report).grid(row=4, column=0, sticky="ew", pady=(0, 8))
             self._nav_button(sidebar, "撤销上次移动", self.undo_last_report).grid(row=5, column=0, sticky="ew", pady=(0, 8))
-            ttk.Label(sidebar, text="先预览，再执行", style="SidebarMuted.TLabel").grid(row=7, column=0, sticky="w", pady=(26, 2))
+            ttk.Label(sidebar, text="SAFE MODE", style="SidebarMuted.TLabel").grid(row=7, column=0, sticky="w", pady=(26, 2))
+            ttk.Label(sidebar, text="先预览，再执行", style="SidebarMuted.TLabel").grid(row=8, column=0, sticky="w")
             ttk.Label(sidebar, text=f"v{APP_VERSION}", style="SidebarMuted.TLabel").grid(row=9, column=0, sticky="w")
 
             self.main_frame = ttk.Frame(self.master, style="App.TFrame", padding=(30, 24))
@@ -1947,8 +2015,8 @@ def launch_gui() -> None:
             header.grid(row=0, column=0, sticky="ew", pady=(0, 18))
             header.columnconfigure(0, weight=1)
             header.columnconfigure(1, weight=0)
-            ttk.Label(header, text="轻小说整理工作台", style="Hero.TLabel").grid(row=0, column=0, sticky="w")
-            ttk.Label(header, text="导入目录、预览识别、人工修正、生成可撤销分类报告。", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
+            ttk.Label(header, text="轻小说分类控制台", style="Hero.TLabel").grid(row=0, column=0, sticky="w")
+            ttk.Label(header, text="高对比暗色 HUD：导入目录、预览识别、人工修正、生成可撤销分类报告。", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
             status_cluster = ttk.Frame(header, style="App.TFrame")
             status_cluster.grid(row=0, column=1, rowspan=2, sticky="e", padx=(18, 0))
             ttk.Label(status_cluster, textvariable=self.health_var, style="Pill.TLabel").pack(side="left", padx=(0, 8))
@@ -1958,7 +2026,7 @@ def launch_gui() -> None:
             top.grid(row=1, column=0, sticky="ew", pady=(0, 14))
             top.columnconfigure(1, weight=1)
 
-            ttk.Label(top, text="文件导入", style="Section.TLabel").grid(row=0, column=0, columnspan=4, sticky="w")
+            ttk.Label(top, text="文件导入 / SOURCE", style="Section.TLabel").grid(row=0, column=0, columnspan=4, sticky="w")
             ttk.Label(top, text="选择存放轻小说的大文件夹。扫描阶段不会移动原文件，执行前仍会二次确认。", style="CardMuted.TLabel").grid(
                 row=1, column=0, columnspan=4, sticky="w", pady=(4, 14)
             )
@@ -1984,9 +2052,9 @@ def launch_gui() -> None:
             options.columnconfigure(0, weight=1)
             option_group = ttk.Frame(options, style="Toolbar.TFrame")
             option_group.grid(row=0, column=0, sticky="w")
-            ttk.Checkbutton(option_group, text="联网识别系列名", variable=self.network_var, style="Card.TCheckbutton").pack(side="left", padx=(0, 16))
-            ttk.Checkbutton(option_group, text="包含子文件夹", variable=self.recursive_var, style="Card.TCheckbutton").pack(side="left", padx=(0, 16))
-            ttk.Checkbutton(option_group, text="自动重命名", variable=self.auto_rename_var, style="Card.TCheckbutton").pack(side="left", padx=(0, 16))
+            self._checkbutton(option_group, "联网识别系列名", self.network_var).pack(side="left", padx=(0, 16))
+            self._checkbutton(option_group, "包含子文件夹", self.recursive_var).pack(side="left", padx=(0, 16))
+            self._checkbutton(option_group, "自动重命名", self.auto_rename_var).pack(side="left", padx=(0, 16))
             action_group = ttk.Frame(options, style="Toolbar.TFrame")
             action_group.grid(row=0, column=1, sticky="e")
             self.scan_button = self._action_button(action_group, "扫描并预览", self.scan, style="Accent.TButton")
@@ -2007,7 +2075,7 @@ def launch_gui() -> None:
             detail_frame.columnconfigure(0, weight=1)
             detail_frame.rowconfigure(6, weight=1)
 
-            ttk.Label(detail_frame, text="详情面板", style="Section.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 12))
+            ttk.Label(detail_frame, text="详情面板 / DETAIL", style="Section.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 12))
             self.cover_label = ttk.Label(detail_frame, text="暂无封面", anchor="center", style="CardMuted.TLabel")
             self.cover_label.grid(row=1, column=0, sticky="ew", pady=(0, 10))
             ttk.Label(detail_frame, textvariable=self.detail_title_var, style="Card.TLabel", font=("", 12, "bold"), wraplength=280).grid(
@@ -2022,12 +2090,13 @@ def launch_gui() -> None:
                 ttk.Label(detail_status, textvariable=variable, style="CardMuted.TLabel", wraplength=280).grid(row=row, column=0, sticky="w", pady=(0 if row == 0 else 3, 0))
             detail_actions = ttk.Frame(detail_frame, style="Card.TFrame")
             detail_actions.grid(row=5, column=0, sticky="ew", pady=(0, 8))
-            self.open_subject_button = ttk.Button(
+            self.open_subject_button = self._action_button(
                 detail_actions,
-                text="打开条目",
-                state="disabled",
+                "打开条目",
+                self.open_current_subject,
+                busy_sensitive=False,
             )
-            self.open_subject_button.configure(command=lambda: self._button_press_feedback(self.open_subject_button, self.open_current_subject))
+            self.open_subject_button.configure(state="disabled")
             self.open_subject_button.pack(side="left")
             self.summary_text = ScrolledText(detail_frame, width=34, height=18, wrap="word")
             self.summary_text.grid(row=6, column=0, sticky="nsew")
@@ -2059,7 +2128,7 @@ def launch_gui() -> None:
             self.series_intro_button.grid(row=0, column=2)
 
             table_frame.grid(row=1, column=0, sticky="nsew")
-            ttk.Label(table_frame, text="分类预览", style="Section.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 10))
+            ttk.Label(table_frame, text="分类预览 / CLASSIFICATION QUEUE", style="Section.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 10))
 
             columns = ("file", "rename", "series", "target", "source", "status", "detail")
             self.tree = ttk.Treeview(table_frame, columns=columns, show="headings")
@@ -2088,7 +2157,7 @@ def launch_gui() -> None:
             self.tree.tag_configure("ready_alt", background=COLORS["card_alt"])
             self.tree.tag_configure("duplicate", background=COLORS["warning_soft"])
             self.tree.tag_configure("error", background=COLORS["danger_soft"])
-            self.tree.tag_configure("manual", background=COLORS["accent_soft"])
+            self.tree.tag_configure("manual", background=COLORS["violet_soft"])
 
             bottom = ttk.Frame(right_frame, style="Card.TFrame", padding=(14, 12))
             bottom.grid(row=2, column=0, sticky="ew")
