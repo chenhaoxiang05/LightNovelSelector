@@ -1635,25 +1635,32 @@ def launch_gui() -> None:
         ImageTk = None
 
     COLORS = {
-        "bg": "#101114",
-        "panel": "#181b20",
-        "sidebar": "#121317",
-        "card": "#181b20",
-        "card_alt": "#15181d",
-        "card_hover": "#20252d",
-        "border": "#2b313a",
-        "muted": "#a1a7b3",
-        "text": "#f4f7fb",
-        "accent": "#38bdf8",
-        "accent_soft": "#17384a",
-        "accent_dark": "#0284c7",
-        "warning": "#f59e0b",
-        "warning_soft": "#3a2a12",
-        "danger": "#fb7185",
-        "danger_soft": "#3a1620",
-        "ok": "#34d399",
-        "ok_soft": "#102c24",
+        "bg": "#f5f5f7",
+        "panel": "#eef0f4",
+        "sidebar": "#eceef3",
+        "card": "#ffffff",
+        "card_alt": "#f7f8fb",
+        "card_hover": "#f2f6ff",
+        "border": "#d8dce3",
+        "separator": "#e6e8ee",
+        "muted": "#6e6e73",
+        "text": "#1d1d1f",
+        "accent": "#007aff",
+        "accent_soft": "#e5f1ff",
+        "accent_dark": "#005ecb",
+        "warning": "#ff9f0a",
+        "warning_soft": "#fff4df",
+        "danger": "#ff3b30",
+        "danger_soft": "#ffe8e6",
+        "ok": "#34c759",
+        "ok_soft": "#e5f8ea",
     }
+
+    FONT_FAMILY = "Segoe UI"
+    HERO_FONT = ("Segoe UI", 20, "bold")
+    TITLE_FONT = ("Segoe UI", 13, "bold")
+    BODY_FONT = ("Segoe UI", 9)
+    CAPTION_FONT = ("Segoe UI", 8)
 
     def ease_out_cubic(t: float) -> float:
         return 1 - pow(1 - t, 3)
@@ -1731,35 +1738,35 @@ def launch_gui() -> None:
             style = ttk.Style(self.master)
             if "clam" in style.theme_names():
                 style.theme_use("clam")
-            self.master.option_add("*Font", "{Microsoft YaHei UI} 9")
+            self.master.option_add("*Font", f"{{{FONT_FAMILY}}} 9")
             style.configure(".", background=COLORS["bg"], foreground=COLORS["text"], fieldbackground=COLORS["card"])
             style.configure("App.TFrame", background=COLORS["bg"])
             style.configure("Sidebar.TFrame", background=COLORS["sidebar"])
-            style.configure("Card.TFrame", background=COLORS["card"], relief="solid", borderwidth=1)
-            style.configure("Card.TLabelframe", background=COLORS["card"], foreground=COLORS["text"], borderwidth=0)
+            style.configure("Card.TFrame", background=COLORS["card"], relief="flat", borderwidth=1, bordercolor=COLORS["separator"])
+            style.configure("Card.TLabelframe", background=COLORS["card"], foreground=COLORS["text"], borderwidth=0, bordercolor=COLORS["separator"])
             style.configure("Card.TLabelframe.Label", background=COLORS["card"], foreground=COLORS["text"])
             style.configure("TLabel", background=COLORS["bg"], foreground=COLORS["text"])
             style.configure("Muted.TLabel", background=COLORS["bg"], foreground=COLORS["muted"])
             style.configure("Card.TLabel", background=COLORS["card"], foreground=COLORS["text"])
             style.configure("CardMuted.TLabel", background=COLORS["card"], foreground=COLORS["muted"])
-            style.configure("Pill.TLabel", background=COLORS["accent_soft"], foreground=COLORS["text"], padding=(10, 4))
+            style.configure("Pill.TLabel", background=COLORS["accent_soft"], foreground=COLORS["accent_dark"], padding=(12, 5), font=(FONT_FAMILY, 9, "bold"))
             style.configure("Sidebar.TLabel", background=COLORS["sidebar"], foreground=COLORS["text"])
             style.configure("SidebarMuted.TLabel", background=COLORS["sidebar"], foreground=COLORS["muted"])
-            style.configure("Accent.TLabel", background=COLORS["bg"], foreground=COLORS["accent"], font=("", 18, "bold"))
-            style.configure("Hero.TLabel", background=COLORS["bg"], foreground=COLORS["text"], font=("", 18, "bold"))
-            style.configure("TButton", padding=(12, 8), background=COLORS["card"], foreground=COLORS["text"], borderwidth=1, relief="flat")
+            style.configure("Accent.TLabel", background=COLORS["bg"], foreground=COLORS["accent"], font=(FONT_FAMILY, 18, "bold"))
+            style.configure("Hero.TLabel", background=COLORS["bg"], foreground=COLORS["text"], font=HERO_FONT)
+            style.configure("TButton", padding=(13, 8), background=COLORS["card"], foreground=COLORS["text"], borderwidth=1, relief="flat")
             style.map("TButton", background=[("active", COLORS["card_hover"]), ("pressed", COLORS["accent_soft"])], foreground=[("pressed", COLORS["accent_dark"])])
-            style.configure("Accent.TButton", background=COLORS["accent_dark"], foreground="#ffffff")
-            style.map("Accent.TButton", background=[("active", COLORS["accent"]), ("pressed", COLORS["accent_dark"])])
+            style.configure("Accent.TButton", padding=(14, 8), background=COLORS["accent"], foreground="#ffffff", borderwidth=0)
+            style.map("Accent.TButton", background=[("active", COLORS["accent_dark"]), ("pressed", COLORS["accent_dark"])], foreground=[("active", "#ffffff"), ("pressed", "#ffffff")])
             style.configure("Nav.TButton", padding=(14, 10), background=COLORS["sidebar"], foreground=COLORS["muted"], borderwidth=0, anchor="w")
-            style.map("Nav.TButton", background=[("active", COLORS["accent_soft"]), ("pressed", COLORS["accent_soft"])], foreground=[("active", COLORS["accent_dark"]), ("pressed", COLORS["accent_dark"])])
+            style.map("Nav.TButton", background=[("active", COLORS["card"]), ("pressed", COLORS["accent_soft"])], foreground=[("active", COLORS["text"]), ("pressed", COLORS["accent_dark"])])
             style.configure("TCheckbutton", background=COLORS["bg"], foreground=COLORS["text"])
             style.map("TCheckbutton", background=[("active", COLORS["bg"])], foreground=[("active", COLORS["text"])])
-            style.configure("TEntry", fieldbackground=COLORS["card"], foreground=COLORS["text"], insertcolor=COLORS["text"], bordercolor=COLORS["border"], lightcolor=COLORS["border"], darkcolor=COLORS["border"])
-            style.configure("TCombobox", fieldbackground=COLORS["card"], foreground=COLORS["text"], arrowcolor=COLORS["muted"], bordercolor=COLORS["border"])
-            style.configure("Treeview", background=COLORS["card"], fieldbackground=COLORS["card"], foreground=COLORS["text"], rowheight=34, borderwidth=0)
-            style.configure("Treeview.Heading", background=COLORS["panel"], foreground=COLORS["muted"], relief="flat", font=("", 9, "bold"))
-            style.map("Treeview", background=[("selected", COLORS["accent_dark"])], foreground=[("selected", "#ffffff")])
+            style.configure("TEntry", fieldbackground=COLORS["card"], foreground=COLORS["text"], insertcolor=COLORS["text"], bordercolor=COLORS["separator"], lightcolor=COLORS["separator"], darkcolor=COLORS["separator"])
+            style.configure("TCombobox", fieldbackground=COLORS["card"], foreground=COLORS["text"], arrowcolor=COLORS["muted"], bordercolor=COLORS["separator"])
+            style.configure("Treeview", background=COLORS["card"], fieldbackground=COLORS["card"], foreground=COLORS["text"], rowheight=36, borderwidth=0)
+            style.configure("Treeview.Heading", background=COLORS["card_alt"], foreground=COLORS["muted"], relief="flat", font=(FONT_FAMILY, 9, "bold"))
+            style.map("Treeview", background=[("selected", COLORS["accent"])], foreground=[("selected", "#ffffff")])
             style.configure("Modern.Horizontal.TProgressbar", troughcolor=COLORS["panel"], background=COLORS["accent"], bordercolor=COLORS["panel"], lightcolor=COLORS["accent"], darkcolor=COLORS["accent"])
 
         def _nav_button(self, parent, text: str, command) -> ttk.Button:
@@ -1808,11 +1815,11 @@ def launch_gui() -> None:
             dialog.grab_set()
             frame = ttk.Frame(dialog, style="Card.TFrame", padding=18)
             frame.pack(fill="both", expand=True, padx=14, pady=14)
-            ttk.Label(frame, text="用户偏好", style="Card.TLabel", font=("", 13, "bold")).pack(anchor="w", pady=(0, 12))
+            ttk.Label(frame, text="用户偏好", style="Card.TLabel", font=TITLE_FONT).pack(anchor="w", pady=(0, 12))
             ttk.Checkbutton(frame, text="联网识别系列名", variable=self.network_var).pack(anchor="w", pady=4)
             ttk.Checkbutton(frame, text="包含子文件夹", variable=self.recursive_var).pack(anchor="w", pady=4)
             ttk.Checkbutton(frame, text="自动重命名", variable=self.auto_rename_var).pack(anchor="w", pady=4)
-            ttk.Label(frame, text="自定义规则（每行：匹配模式 => 系列名）", style="Card.TLabel", font=("", 11, "bold")).pack(anchor="w", pady=(16, 6))
+            ttk.Label(frame, text="自定义规则（每行：匹配模式 => 系列名）", style="Card.TLabel", font=(FONT_FAMILY, 11, "bold")).pack(anchor="w", pady=(16, 6))
             rules_text = ScrolledText(frame, height=10, wrap="word", bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", borderwidth=0)
             rules_text.pack(fill="both", expand=True)
             rules_text.insert(
@@ -1880,39 +1887,39 @@ def launch_gui() -> None:
             self.log_message(f"撤销完成：恢复 {restored} 个文件，跳过 {skipped} 个文件。")
 
         def _build_widgets(self) -> None:
-            self.master.columnconfigure(0, minsize=210)
+            self.master.columnconfigure(0, minsize=224)
             self.master.columnconfigure(1, weight=1)
             self.master.rowconfigure(0, weight=1)
 
-            sidebar = ttk.Frame(self.master, style="Sidebar.TFrame", padding=(20, 20))
+            sidebar = ttk.Frame(self.master, style="Sidebar.TFrame", padding=(22, 24))
             sidebar.grid(row=0, column=0, sticky="nsew")
             sidebar.rowconfigure(8, weight=1)
-            ttk.Label(sidebar, text="Light Novel", style="Sidebar.TLabel", font=("", 16, "bold")).grid(row=0, column=0, sticky="w")
-            ttk.Label(sidebar, text="Selector", style="SidebarMuted.TLabel", font=("", 11)).grid(row=1, column=0, sticky="w", pady=(0, 24))
+            ttk.Label(sidebar, text="Light Novel", style="Sidebar.TLabel", font=(FONT_FAMILY, 17, "bold")).grid(row=0, column=0, sticky="w")
+            ttk.Label(sidebar, text="Selector", style="SidebarMuted.TLabel", font=(FONT_FAMILY, 11)).grid(row=1, column=0, sticky="w", pady=(0, 26))
             self._nav_button(sidebar, "工作台", self.focus_workspace).grid(row=2, column=0, sticky="ew", pady=(0, 8))
             self._nav_button(sidebar, "设置", self.open_settings).grid(row=3, column=0, sticky="ew", pady=(0, 8))
             self._nav_button(sidebar, "报告", self.open_last_report).grid(row=4, column=0, sticky="ew", pady=(0, 8))
             self._nav_button(sidebar, "撤销上次", self.undo_last_report).grid(row=5, column=0, sticky="ew", pady=(0, 8))
             ttk.Label(sidebar, text=f"v{APP_VERSION}", style="SidebarMuted.TLabel").grid(row=9, column=0, sticky="w")
 
-            self.main_frame = ttk.Frame(self.master, style="App.TFrame", padding=(22, 20))
+            self.main_frame = ttk.Frame(self.master, style="App.TFrame", padding=(28, 24))
             self.main_frame.grid(row=0, column=1, sticky="nsew")
             self.main_frame.columnconfigure(0, weight=1)
             self.main_frame.rowconfigure(4, weight=1)
 
             header = ttk.Frame(self.main_frame, style="App.TFrame")
-            header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+            header.grid(row=0, column=0, sticky="ew", pady=(0, 18))
             header.columnconfigure(0, weight=1)
             header.columnconfigure(1, weight=0)
             ttk.Label(header, text="轻小说整理工作台", style="Hero.TLabel").grid(row=0, column=0, sticky="w")
             ttk.Label(header, text="扫描、识别、修正并安全移动你的轻小说文件。", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
             ttk.Label(header, textvariable=self.health_var, style="Pill.TLabel").grid(row=0, column=1, rowspan=2, sticky="e", padx=(18, 0))
 
-            top = ttk.Frame(self.main_frame, style="Card.TFrame", padding=(16, 14))
-            top.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+            top = ttk.Frame(self.main_frame, style="Card.TFrame", padding=(18, 16))
+            top.grid(row=1, column=0, sticky="ew", pady=(0, 14))
             top.columnconfigure(1, weight=1)
 
-            ttk.Label(top, text="文件导入", style="Card.TLabel", font=("", 12, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
+            ttk.Label(top, text="文件导入", style="Card.TLabel", font=TITLE_FONT).grid(row=0, column=0, columnspan=4, sticky="w")
             ttk.Label(top, text="支持拖入后的批量目录整理：先预览，确认后再移动。", style="CardMuted.TLabel").grid(row=1, column=0, columnspan=4, sticky="w", pady=(4, 12))
             ttk.Button(top, text="选择大文件夹", command=self.select_folder, style="Accent.TButton").grid(row=2, column=0, padx=(0, 8), sticky="w")
             ttk.Entry(top, textvariable=self.root_var).grid(row=2, column=1, sticky="ew", padx=(0, 8))
@@ -1920,7 +1927,7 @@ def launch_gui() -> None:
             ttk.Button(top, text="打开", command=self.open_folder).grid(row=2, column=3)
 
             stats = ttk.Frame(self.main_frame, style="App.TFrame")
-            stats.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+            stats.grid(row=2, column=0, sticky="ew", pady=(0, 14))
             for col in range(4):
                 stats.columnconfigure(col, weight=1)
             self._stat_card(stats, "文件总数", self.stat_total_var, "扫描到的支持格式", COLORS["accent"], 0)
@@ -1928,7 +1935,7 @@ def launch_gui() -> None:
             self._stat_card(stats, "重复", self.stat_duplicate_var, "默认安全跳过", COLORS["warning"], 2)
             self._stat_card(stats, "错误", self.stat_error_var, "需要人工处理", COLORS["danger"], 3)
 
-            options = ttk.Frame(self.main_frame, style="App.TFrame", padding=(0, 12, 0, 12))
+            options = ttk.Frame(self.main_frame, style="App.TFrame", padding=(0, 10, 0, 14))
             options.grid(row=3, column=0, sticky="ew")
             ttk.Checkbutton(options, text="联网识别系列名", variable=self.network_var).pack(side="left", padx=(0, 18))
             ttk.Checkbutton(options, text="包含子文件夹", variable=self.recursive_var).pack(side="left", padx=(0, 18))
@@ -1943,12 +1950,12 @@ def launch_gui() -> None:
             content.columnconfigure(1, weight=1)
             content.rowconfigure(0, weight=1)
 
-            detail_frame = ttk.Frame(content, style="Card.TFrame", padding=(14, 14))
+            detail_frame = ttk.Frame(content, style="Card.TFrame", padding=(16, 16))
             detail_frame.grid(row=0, column=0, sticky="nsew")
             detail_frame.columnconfigure(0, weight=1)
             detail_frame.rowconfigure(6, weight=1)
 
-            ttk.Label(detail_frame, text="详情面板", style="Card.TLabel", font=("", 12, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 10))
+            ttk.Label(detail_frame, text="详情面板", style="Card.TLabel", font=TITLE_FONT).grid(row=0, column=0, sticky="w", pady=(0, 12))
             self.cover_label = ttk.Label(detail_frame, text="暂无封面", anchor="center", style="CardMuted.TLabel")
             self.cover_label.grid(row=1, column=0, sticky="ew", pady=(0, 10))
             ttk.Label(detail_frame, textvariable=self.detail_title_var, style="Card.TLabel", font=("", 12, "bold"), wraplength=280).grid(
@@ -1980,7 +1987,7 @@ def launch_gui() -> None:
             right_frame.rowconfigure(1, weight=1)
             right_frame.rowconfigure(2, weight=0)
 
-            table_frame = ttk.Frame(right_frame, style="Card.TFrame", padding=(10, 10))
+            table_frame = ttk.Frame(right_frame, style="Card.TFrame", padding=(12, 12))
             table_frame.columnconfigure(0, weight=1)
             table_frame.rowconfigure(0, weight=1)
 
@@ -2029,7 +2036,7 @@ def launch_gui() -> None:
             self.tree.tag_configure("error", background=COLORS["danger_soft"])
             self.tree.tag_configure("manual", background=COLORS["accent_soft"])
 
-            bottom = ttk.Frame(right_frame, style="Card.TFrame", padding=(12, 10))
+            bottom = ttk.Frame(right_frame, style="Card.TFrame", padding=(14, 12))
             bottom.grid(row=2, column=0, sticky="ew")
             bottom.columnconfigure(0, weight=1)
             bottom.columnconfigure(1, minsize=240)
@@ -2050,20 +2057,20 @@ def launch_gui() -> None:
 
         def _stat_card(self, parent, title: str, value_var: tk.StringVar, caption: str, color: str, column: int) -> None:
             frame = tk.Frame(parent, bg=COLORS["card"], highlightthickness=1, highlightbackground=COLORS["border"])
-            frame.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 8, 0))
-            color_bar = tk.Frame(frame, bg=color, height=4)
+            frame.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 10, 0))
+            color_bar = tk.Frame(frame, bg=color, height=3)
             color_bar.pack(fill="x", side="top")
-            body = tk.Frame(frame, bg=COLORS["card"], padx=14, pady=10)
+            body = tk.Frame(frame, bg=COLORS["card"], padx=16, pady=12)
             body.pack(fill="both", expand=True)
-            title_label = tk.Label(body, text=title, bg=COLORS["card"], fg=COLORS["muted"], font=("Microsoft YaHei UI", 9))
-            value_label = tk.Label(body, textvariable=value_var, bg=COLORS["card"], fg=COLORS["text"], font=("Microsoft YaHei UI", 20, "bold"))
-            caption_label = tk.Label(body, text=caption, bg=COLORS["card"], fg=COLORS["muted"], font=("Microsoft YaHei UI", 8))
+            title_label = tk.Label(body, text=title, bg=COLORS["card"], fg=COLORS["muted"], font=BODY_FONT)
+            value_label = tk.Label(body, textvariable=value_var, bg=COLORS["card"], fg=COLORS["text"], font=(FONT_FAMILY, 22, "bold"))
+            caption_label = tk.Label(body, text=caption, bg=COLORS["card"], fg=COLORS["muted"], font=CAPTION_FONT)
             title_label.pack(anchor="w")
             value_label.pack(anchor="w", pady=(2, 0))
             caption_label.pack(anchor="w", pady=(2, 0))
 
             def set_card_bg(bg: str) -> None:
-                frame.configure(bg=bg, highlightbackground=color if bg == COLORS["card_hover"] else COLORS["border"])
+                frame.configure(bg=bg, highlightbackground=COLORS["accent"] if bg == COLORS["card_hover"] else COLORS["border"])
                 body.configure(bg=bg)
                 for label in (title_label, value_label, caption_label):
                     label.configure(bg=bg)
@@ -2252,7 +2259,7 @@ def launch_gui() -> None:
                 canvas.create_rectangle(pad + radius, pad, fill_width - radius, height - pad, fill=COLORS["accent"], outline="")
                 canvas.create_oval(pad, pad, pad + radius * 2, height - pad, fill=COLORS["accent"], outline="")
                 canvas.create_oval(fill_width - radius * 2, pad, fill_width, height - pad, fill=COLORS["accent"], outline="")
-            canvas.create_text(width // 2, height // 2, text=f"{ratio:.0%}", fill=COLORS["text"], font=("Microsoft YaHei UI", 8, "bold"))
+            canvas.create_text(width // 2, height // 2, text=f"{ratio:.0%}", fill=COLORS["text"], font=(FONT_FAMILY, 8, "bold"))
 
         def start_scanning_animation(self) -> None:
             self.stop_scanning_animation()
@@ -2275,7 +2282,7 @@ def launch_gui() -> None:
                 x0 = int(-block_width + (width + block_width * 2) * eased)
                 x1 = x0 + block_width
                 canvas.create_rectangle(max(radius, x0), 1, min(width - radius, x1), height - 1, fill=COLORS["accent"], outline="")
-                canvas.create_text(width // 2, height // 2, text="扫描中", fill=COLORS["text"], font=("Microsoft YaHei UI", 8, "bold"))
+                canvas.create_text(width // 2, height // 2, text="扫描中", fill=COLORS["text"], font=(FONT_FAMILY, 8, "bold"))
                 self.progress_scan_job = self.master.after(28, lambda: tick(frame + 1))
 
             tick()
@@ -2289,8 +2296,8 @@ def launch_gui() -> None:
                 self.progress_scan_job = None
 
         def _animate_initial_cards(self) -> None:
-            start_x, start_y = 34, 28
-            end_x, end_y = 22, 20
+            start_x, start_y = 40, 30
+            end_x, end_y = 28, 24
             steps = 16
             self.main_frame.configure(padding=(start_x, start_y))
 
@@ -2314,7 +2321,7 @@ def launch_gui() -> None:
             color = COLORS["accent"] if kind == "info" else COLORS["warning"] if kind == "warning" else COLORS["danger"]
             marker = tk.Frame(toast, width=4, bg=color)
             marker.pack(side="left", fill="y")
-            label = tk.Label(toast, text=message, bg=COLORS["card"], fg=COLORS["text"], padx=18, pady=10, font=("Microsoft YaHei UI", 10, "bold"))
+            label = tk.Label(toast, text=message, bg=COLORS["card"], fg=COLORS["text"], padx=18, pady=10, font=(FONT_FAMILY, 10, "bold"))
             label.pack(side="left", fill="both", expand=True)
             self.master.update_idletasks()
             target_x = self.master.winfo_rootx() + self.master.winfo_width() - 360
