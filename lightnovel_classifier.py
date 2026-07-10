@@ -20,7 +20,7 @@ import urllib.request
 import webbrowser
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from difflib import SequenceMatcher
 from html.parser import HTMLParser
@@ -206,7 +206,7 @@ def resolve_result_from_dict(data: dict) -> ResolveResult | None:
     try:
         return ResolveResult(
             series_name=str(data["series_name"]),
-            source=str(data.get("source") or "缂撳瓨"),
+            source=str(data.get("source") or "缓存"),
             confidence=float(data.get("confidence") or 0.0),
             local_guess=str(data.get("local_guess") or data["series_name"]),
             metadata_title=data.get("metadata_title"),
@@ -236,6 +236,23 @@ def app_data_dir() -> Path:
 
 def settings_path() -> Path:
     return app_data_dir() / SETTINGS_FILE_NAME
+
+
+def write_json_atomic(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        with temporary_path.open("w", encoding="utf-8", newline="\n") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def app_settings_from_dict(data: dict) -> AppSettings:
@@ -280,8 +297,7 @@ def load_app_settings(path: Path | None = None) -> AppSettings:
 
 def save_app_settings(settings: AppSettings, path: Path | None = None) -> None:
     path = path or settings_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(app_settings_to_dict(settings), ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_atomic(path, app_settings_to_dict(settings))
 
 
 def try_save_app_settings(settings: AppSettings, path: Path | None = None) -> OSError | None:
@@ -303,6 +319,8 @@ class PersistentMetadataCache:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             raw = {}
+        if not isinstance(raw, dict):
+            raw = {}
         if raw.get("version") != METADATA_CACHE_VERSION:
             return {"version": METADATA_CACHE_VERSION, "entries": {}}
         entries = raw.get("entries")
@@ -312,8 +330,7 @@ class PersistentMetadataCache:
 
     def _save(self) -> None:
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(self.data, ensure_ascii=False, indent=2), encoding="utf-8")
+            write_json_atomic(self.path, self.data)
         except OSError:
             pass
 
@@ -1387,8 +1404,7 @@ def write_classification_report(
             for plan in plans
         ],
     }
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_atomic(report_path, report)
 
 
 def build_classification_plan(
@@ -1465,7 +1481,19 @@ def build_classification_plan(
                     identity_query=identity_query,
                 )
                 target_name = rename_to
-            target_path = unique_target_path(target_dir / target_name, reserved_targets)
+            proposed_target_path = target_dir / target_name
+            try:
+                already_classified = path.resolve() == proposed_target_path.resolve()
+            except OSError:
+                already_classified = path.absolute() == proposed_target_path.absolute()
+            if already_classified:
+                target_path = path
+                status = "unchanged"
+                note = "文件已在正确的系列目录中，无需移动。"
+            else:
+                target_path = unique_target_path(proposed_target_path, reserved_targets)
+                status = "ready"
+                note = ""
             plans.append(
                 ClassificationPlan(
                     source_path=path,
@@ -1484,6 +1512,8 @@ def build_classification_plan(
                     identity_query=identity_query,
                     rename_to=rename_to,
                     series_key=folder_name,
+                    status=status,
+                    note=note,
                 )
             )
         except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
@@ -1512,15 +1542,20 @@ def execute_classification_plan(
     plans: list[ClassificationPlan],
     *,
     progress: Callable[[str], None] | None = None,
+    progress_count: Callable[[int, int], None] | None = None,
     report_path: Path | None = None,
 ) -> tuple[int, int]:
     moved = 0
     skipped = 0
     actual_targets: dict[Path, Path] = {}
+    if report_path is not None:
+        write_classification_report(plans, report_path, moved=0, skipped=0, actual_targets=actual_targets)
     try:
         for index, plan in enumerate(plans, start=1):
             if not plan.will_move:
                 skipped += 1
+                if progress_count:
+                    progress_count(index, len(plans))
                 continue
             if progress:
                 progress(f"[{index}/{len(plans)}] 移动：{plan.source_path.name} -> {plan.target_dir.name}")
@@ -1529,6 +1564,8 @@ def execute_classification_plan(
             shutil.move(str(plan.source_path), str(final_target))
             actual_targets[plan.source_path] = final_target
             moved += 1
+            if progress_count:
+                progress_count(index, len(plans))
     except Exception:
         if report_path is not None:
             write_classification_report(plans, report_path, moved=moved, skipped=skipped, actual_targets=actual_targets)
@@ -1542,18 +1579,28 @@ def undo_classification_report(
     report_path: Path,
     *,
     progress: Callable[[str], None] | None = None,
+    progress_count: Callable[[int, int], None] | None = None,
 ) -> tuple[int, int]:
     report = json.loads(report_path.read_text(encoding="utf-8"))
+    if not isinstance(report, dict):
+        raise ValueError("撤销报告格式无效：根节点必须是对象。")
     items = report.get("items") or []
+    if not isinstance(items, list):
+        raise ValueError("撤销报告格式无效：items 必须是数组。")
+    moved_items = [
+        item
+        for item in reversed(items)
+        if isinstance(item, dict) and item.get("operation") == "moved"
+    ]
     restored = 0
     skipped = 0
-    for item in reversed(items):
-        if not isinstance(item, dict) or item.get("operation") != "moved":
-            continue
+    for index, item in enumerate(moved_items, start=1):
         source_path = Path(str(item.get("source_path") or ""))
         target_path = Path(str(item.get("actual_target_path") or item.get("target_path") or ""))
         if not target_path.exists() or source_path.exists():
             skipped += 1
+            if progress_count:
+                progress_count(index, len(moved_items))
             continue
         if progress:
             progress(f"撤销：{target_path.name} -> {source_path}")
@@ -1565,6 +1612,8 @@ def undo_classification_report(
                 target_path.parent.rmdir()
         except OSError:
             pass
+        if progress_count:
+            progress_count(index, len(moved_items))
     return restored, skipped
 
 
@@ -1573,6 +1622,8 @@ def plan_status_label(status: str) -> str:
         "ready": "可执行",
         "duplicate": "重复",
         "error": "错误",
+        "moved": "已移动",
+        "unchanged": "无需移动",
     }.get(status, status)
 
 
@@ -1635,32 +1686,41 @@ def launch_gui() -> None:
         ImageTk = None
 
     COLORS = {
-        "bg": "#f5f5f7",
-        "panel": "#eef0f4",
-        "sidebar": "#eceef3",
-        "card": "#ffffff",
-        "card_alt": "#f7f8fb",
-        "card_hover": "#f2f6ff",
-        "border": "#d8dce3",
-        "separator": "#e6e8ee",
-        "muted": "#6e6e73",
-        "text": "#1d1d1f",
-        "accent": "#007aff",
-        "accent_soft": "#e5f1ff",
-        "accent_dark": "#005ecb",
-        "warning": "#ff9f0a",
-        "warning_soft": "#fff4df",
-        "danger": "#ff3b30",
-        "danger_soft": "#ffe8e6",
-        "ok": "#34c759",
-        "ok_soft": "#e5f8ea",
+        "bg": "#090b10",
+        "panel": "#171b24",
+        "sidebar": "#0d1016",
+        "sidebar_active": "#1c2733",
+        "card": "#121720",
+        "card_alt": "#171e29",
+        "card_hover": "#1d2835",
+        "border": "#303b4a",
+        "separator": "#242d3a",
+        "muted": "#a6b1c0",
+        "text": "#f4f7fb",
+        "accent": "#4cc9f0",
+        "accent_soft": "#123543",
+        "accent_dark": "#22afd8",
+        "violet": "#b197fc",
+        "violet_soft": "#2b2242",
+        "file": "#f6ad3c",
+        "file_soft": "#3a2a12",
+        "warning": "#f6ad3c",
+        "warning_soft": "#3a2a12",
+        "danger": "#ff6b7a",
+        "danger_soft": "#3d1820",
+        "ok": "#45d69a",
+        "ok_soft": "#15392d",
+        "button_text": "#071116",
+        "button_secondary": "#202936",
+        "button_secondary_hover": "#2b3747",
     }
 
     FONT_FAMILY = "Segoe UI"
-    HERO_FONT = ("Segoe UI", 20, "bold")
+    HERO_FONT = ("Segoe UI", 23, "bold")
     TITLE_FONT = ("Segoe UI", 13, "bold")
     BODY_FONT = ("Segoe UI", 9)
     CAPTION_FONT = ("Segoe UI", 8)
+    REDUCED_MOTION = os.environ.get("LN_SELECTOR_REDUCED_MOTION") == "1"
 
     def ease_out_cubic(t: float) -> float:
         return 1 - pow(1 - t, 3)
@@ -1679,8 +1739,8 @@ def launch_gui() -> None:
         def __init__(self, master: tk.Tk) -> None:
             self.master = master
             self.master.title("轻小说联网分类工具")
-            self.master.geometry("1240x780")
-            self.master.minsize(1040, 680)
+            self.master.geometry("1360x840")
+            self.master.minsize(1160, 720)
             self.master.configure(bg=COLORS["bg"])
             self.settings = load_app_settings()
             self.root_var = tk.StringVar()
@@ -1700,6 +1760,10 @@ def launch_gui() -> None:
             self.plans: list[ClassificationPlan] = []
             self.events: queue.Queue[tuple[str, object]] = queue.Queue()
             self.worker: threading.Thread | None = None
+            self.is_busy = False
+            self.is_closing = False
+            self.active_operation: str | None = None
+            self.operation_token = 0
             self.selected_plan_index: int | None = None
             self.cover_bytes_cache: dict[str, bytes | None] = {}
             self.cover_worker_urls: set[str] = set()
@@ -1714,70 +1778,209 @@ def launch_gui() -> None:
             self.metadata_preload_started_token: int | None = None
             self.current_detail_url: str | None = None
             self.progress_display_value = 0.0
+            self.progress_maximum = 1.0
+            self.progress_label: str | None = None
             self.toast_windows: list[tk.Toplevel] = []
             self.last_report_path: Path | None = None
-            self.render_token = 0
             self.stat_total_var = tk.StringVar(value="0")
             self.stat_ready_var = tk.StringVar(value="0")
             self.stat_duplicate_var = tk.StringVar(value="0")
             self.stat_error_var = tk.StringVar(value="0")
             self.stat_values = {"total": 0, "ready": 0, "duplicate": 0, "error": 0}
             self.stat_animation_jobs: dict[str, str] = {}
+            self.busy_controls: list[object] = []
+            self._suspend_preview_invalidation = False
             self.progress_canvas = None
-            self.progress_fill = None
-            self.progress_glow = None
-            self.progress_text = None
             self.progress_scan_job: str | None = None
             self._configure_style()
             self._build_widgets()
             self._bind_shortcuts()
-            self._animate_initial_cards()
+            self._bind_preview_invalidation()
+            self.master.protocol("WM_DELETE_WINDOW", self.on_close)
+            if not REDUCED_MOTION:
+                self._animate_initial_cards()
+            self._refresh_action_states()
             self._poll_events()
 
         def _configure_style(self) -> None:
             style = ttk.Style(self.master)
-            if "clam" in style.theme_names():
-                style.theme_use("clam")
+            available_themes = set(style.theme_names())
+            for preferred_theme in ("clam", "vista", "xpnative", "default"):
+                if preferred_theme in available_themes:
+                    style.theme_use(preferred_theme)
+                    break
             self.master.option_add("*Font", f"{{{FONT_FAMILY}}} 9")
             style.configure(".", background=COLORS["bg"], foreground=COLORS["text"], fieldbackground=COLORS["card"])
             style.configure("App.TFrame", background=COLORS["bg"])
             style.configure("Sidebar.TFrame", background=COLORS["sidebar"])
             style.configure("Card.TFrame", background=COLORS["card"], relief="flat", borderwidth=1, bordercolor=COLORS["separator"])
+            style.configure("Toolbar.TFrame", background=COLORS["card"], relief="flat", borderwidth=1, bordercolor=COLORS["separator"])
             style.configure("Card.TLabelframe", background=COLORS["card"], foreground=COLORS["text"], borderwidth=0, bordercolor=COLORS["separator"])
             style.configure("Card.TLabelframe.Label", background=COLORS["card"], foreground=COLORS["text"])
             style.configure("TLabel", background=COLORS["bg"], foreground=COLORS["text"])
             style.configure("Muted.TLabel", background=COLORS["bg"], foreground=COLORS["muted"])
             style.configure("Card.TLabel", background=COLORS["card"], foreground=COLORS["text"])
             style.configure("CardMuted.TLabel", background=COLORS["card"], foreground=COLORS["muted"])
-            style.configure("Pill.TLabel", background=COLORS["accent_soft"], foreground=COLORS["accent_dark"], padding=(12, 5), font=(FONT_FAMILY, 9, "bold"))
+            style.configure("Section.TLabel", background=COLORS["card"], foreground=COLORS["text"], font=TITLE_FONT)
+            style.configure("Toolbar.TLabel", background=COLORS["card"], foreground=COLORS["text"])
+            style.configure("StatusIdle.TLabel", background=COLORS["panel"], foreground=COLORS["muted"], padding=(12, 6), font=(FONT_FAMILY, 9, "bold"))
+            style.configure("StatusBusy.TLabel", background=COLORS["accent_soft"], foreground=COLORS["accent"], padding=(12, 6), font=(FONT_FAMILY, 9, "bold"))
+            style.configure("StatusSuccess.TLabel", background=COLORS["ok_soft"], foreground=COLORS["ok"], padding=(12, 6), font=(FONT_FAMILY, 9, "bold"))
+            style.configure("StatusWarning.TLabel", background=COLORS["warning_soft"], foreground=COLORS["warning"], padding=(12, 6), font=(FONT_FAMILY, 9, "bold"))
+            style.configure("StatusError.TLabel", background=COLORS["danger_soft"], foreground=COLORS["danger"], padding=(12, 6), font=(FONT_FAMILY, 9, "bold"))
             style.configure("Sidebar.TLabel", background=COLORS["sidebar"], foreground=COLORS["text"])
             style.configure("SidebarMuted.TLabel", background=COLORS["sidebar"], foreground=COLORS["muted"])
             style.configure("Accent.TLabel", background=COLORS["bg"], foreground=COLORS["accent"], font=(FONT_FAMILY, 18, "bold"))
             style.configure("Hero.TLabel", background=COLORS["bg"], foreground=COLORS["text"], font=HERO_FONT)
-            style.configure("TButton", padding=(13, 8), background=COLORS["card"], foreground=COLORS["text"], borderwidth=1, relief="flat")
-            style.map("TButton", background=[("active", COLORS["card_hover"]), ("pressed", COLORS["accent_soft"])], foreground=[("pressed", COLORS["accent_dark"])])
-            style.configure("Accent.TButton", padding=(14, 8), background=COLORS["accent"], foreground="#ffffff", borderwidth=0)
-            style.map("Accent.TButton", background=[("active", COLORS["accent_dark"]), ("pressed", COLORS["accent_dark"])], foreground=[("active", "#ffffff"), ("pressed", "#ffffff")])
-            style.configure("Nav.TButton", padding=(14, 10), background=COLORS["sidebar"], foreground=COLORS["muted"], borderwidth=0, anchor="w")
-            style.map("Nav.TButton", background=[("active", COLORS["card"]), ("pressed", COLORS["accent_soft"])], foreground=[("active", COLORS["text"]), ("pressed", COLORS["accent_dark"])])
-            style.configure("TCheckbutton", background=COLORS["bg"], foreground=COLORS["text"])
-            style.map("TCheckbutton", background=[("active", COLORS["bg"])], foreground=[("active", COLORS["text"])])
-            style.configure("TEntry", fieldbackground=COLORS["card"], foreground=COLORS["text"], insertcolor=COLORS["text"], bordercolor=COLORS["separator"], lightcolor=COLORS["separator"], darkcolor=COLORS["separator"])
-            style.configure("TCombobox", fieldbackground=COLORS["card"], foreground=COLORS["text"], arrowcolor=COLORS["muted"], bordercolor=COLORS["separator"])
-            style.configure("Treeview", background=COLORS["card"], fieldbackground=COLORS["card"], foreground=COLORS["text"], rowheight=36, borderwidth=0)
-            style.configure("Treeview.Heading", background=COLORS["card_alt"], foreground=COLORS["muted"], relief="flat", font=(FONT_FAMILY, 9, "bold"))
-            style.map("Treeview", background=[("selected", COLORS["accent"])], foreground=[("selected", "#ffffff")])
-            style.configure("Modern.Horizontal.TProgressbar", troughcolor=COLORS["panel"], background=COLORS["accent"], bordercolor=COLORS["panel"], lightcolor=COLORS["accent"], darkcolor=COLORS["accent"])
+            style.configure("TEntry", fieldbackground=COLORS["panel"], foreground=COLORS["text"], insertcolor=COLORS["text"], bordercolor=COLORS["border"], lightcolor=COLORS["separator"], darkcolor=COLORS["separator"], padding=(8, 8))
+            style.map("TEntry", bordercolor=[("focus", COLORS["accent"])], lightcolor=[("focus", COLORS["accent"])])
+            style.configure("TCombobox", fieldbackground=COLORS["panel"], foreground=COLORS["text"], arrowcolor=COLORS["accent"], bordercolor=COLORS["border"], padding=(7, 6))
+            style.map("TCombobox", fieldbackground=[("readonly", COLORS["panel"])], foreground=[("readonly", COLORS["text"])])
+            style.configure("Treeview", background=COLORS["card"], fieldbackground=COLORS["card"], foreground=COLORS["text"], rowheight=38, borderwidth=0)
+            style.configure("Treeview.Heading", background=COLORS["card_alt"], foreground=COLORS["accent"], relief="flat", font=(FONT_FAMILY, 9, "bold"), padding=(8, 8))
+            style.map("Treeview", background=[("selected", COLORS["accent_soft"])], foreground=[("selected", COLORS["text"])])
 
-        def _nav_button(self, parent, text: str, command) -> ttk.Button:
-            button = ttk.Button(parent, text=text, style="Nav.TButton", command=lambda: self._button_press_feedback(button, command))
+        def _nav_button(self, parent, text: str, command, *, active: bool = False, busy_sensitive: bool = False) -> tk.Button:
+            base_bg = COLORS["sidebar_active"] if active else COLORS["sidebar"]
+            base_fg = COLORS["accent"] if active else COLORS["muted"]
+            button = tk.Button(
+                parent,
+                text=text,
+                bg=base_bg,
+                fg=base_fg,
+                activebackground=COLORS["sidebar_active"],
+                activeforeground=COLORS["text"],
+                disabledforeground=COLORS["muted"],
+                relief="flat",
+                bd=0,
+                highlightthickness=2,
+                highlightbackground=base_bg,
+                highlightcolor=COLORS["accent"],
+                takefocus=True,
+                padx=16,
+                pady=11,
+                anchor="w",
+                font=(FONT_FAMILY, 10, "bold"),
+                cursor="hand2",
+                command=lambda: self._button_press_feedback(button, command),
+            )
+            self._bind_button_hover(button, base_bg, COLORS["sidebar_active"])
+            if busy_sensitive:
+                self.busy_controls.append(button)
             return button
 
+        def _action_button(
+            self,
+            parent,
+            text: str,
+            command,
+            *,
+            role: str = "secondary",
+            busy_sensitive: bool = True,
+        ) -> tk.Button:
+            palette = {
+                "primary": (COLORS["accent"], COLORS["button_text"], "#83def7"),
+                "execute": (COLORS["file"], "#211400", "#ffc76b"),
+                "danger": (COLORS["danger"], "#26070c", "#ff95a0"),
+                "secondary": (COLORS["button_secondary"], COLORS["text"], COLORS["button_secondary_hover"]),
+            }
+            bg, fg, hover_bg = palette[role]
+            button = tk.Button(
+                parent,
+                text=text,
+                bg=bg,
+                fg=fg,
+                activebackground=hover_bg,
+                activeforeground=fg,
+                disabledforeground=COLORS["muted"],
+                relief="flat",
+                bd=0,
+                highlightthickness=2,
+                highlightbackground=bg,
+                highlightcolor=COLORS["accent"],
+                takefocus=True,
+                padx=18,
+                pady=10,
+                font=(FONT_FAMILY, 10, "bold"),
+                cursor="hand2",
+                command=lambda: self._button_press_feedback(button, command),
+            )
+            self._bind_button_hover(button, bg, hover_bg)
+            if busy_sensitive:
+                self.busy_controls.append(button)
+            return button
+
+        def _checkbutton(
+            self,
+            parent,
+            text: str,
+            variable: tk.BooleanVar,
+            *,
+            busy_sensitive: bool = True,
+        ) -> tk.Checkbutton:
+            display_var = tk.StringVar()
+
+            def refresh_label(*_args) -> None:
+                display_var.set(f"✓  {text}" if variable.get() else f"□  {text}")
+
+            variable.trace_add("write", refresh_label)
+            refresh_label()
+            checkbutton = tk.Checkbutton(
+                parent,
+                textvariable=display_var,
+                variable=variable,
+                indicatoron=False,
+                bg=COLORS["card"],
+                fg=COLORS["muted"],
+                activebackground=COLORS["card_hover"],
+                activeforeground=COLORS["text"],
+                selectcolor=COLORS["accent_soft"],
+                disabledforeground=COLORS["muted"],
+                relief="flat",
+                bd=0,
+                highlightthickness=2,
+                highlightbackground=COLORS["card"],
+                highlightcolor=COLORS["accent"],
+                takefocus=True,
+                padx=10,
+                pady=7,
+                font=(FONT_FAMILY, 9, "bold"),
+                cursor="hand2",
+                anchor="w",
+            )
+            if busy_sensitive:
+                self.busy_controls.append(checkbutton)
+            return checkbutton
+
+        def _bind_button_hover(self, button: tk.Button, base_bg: str, hover_bg: str) -> None:
+            def enter(_event) -> None:
+                if str(button.cget("state")) != "disabled":
+                    button.configure(bg=hover_bg)
+
+            def leave(_event) -> None:
+                if str(button.cget("state")) != "disabled":
+                    button.configure(bg=base_bg)
+
+            button.bind("<Enter>", enter, add="+")
+            button.bind("<Leave>", leave, add="+")
+
         def _button_press_feedback(self, button, command) -> None:
-            original = button.cget("style") or "TButton"
-            button.configure(style="Accent.TButton")
-            self.master.after(90, lambda: button.configure(style=original))
-            self.master.after(140, lambda: button.configure(style="Nav.TButton" if original == "Nav.TButton" else original))
+            if str(button.cget("state")) == "disabled":
+                return
+            if REDUCED_MOTION:
+                command()
+                return
+            original_bg = button.cget("background")
+            button.configure(bg=COLORS["violet"])
+
+            def restore() -> None:
+                try:
+                    if button.winfo_exists():
+                        button.configure(bg=original_bg)
+                except tk.TclError:
+                    pass
+
+            self.master.after(110, restore)
             command()
 
         def _bind_shortcuts(self) -> None:
@@ -1797,36 +2000,160 @@ def launch_gui() -> None:
                 self.master.bind_all(sequence, lambda _event, action=command: run(action))
 
         def _mark_clickable_controls(self, widget) -> None:
-            if isinstance(widget, ttk.Button):
+            if isinstance(widget, (ttk.Button, tk.Button, tk.Checkbutton)):
                 widget.configure(cursor="hand2")
             for child in widget.winfo_children():
                 self._mark_clickable_controls(child)
+
+        def _bind_preview_invalidation(self) -> None:
+            self.root_var.trace_add("write", self._on_preview_input_changed)
+            self.network_var.trace_add("write", self._on_preview_input_changed)
+            self.recursive_var.trace_add("write", self._on_preview_input_changed)
+            self.auto_rename_var.trace_add("write", self._on_preview_input_changed)
+
+        def _on_preview_input_changed(self, *_args) -> None:
+            if self._suspend_preview_invalidation or self.is_busy or not self.plans:
+                return
+            self._invalidate_preview("目录或识别选项已变化，请重新扫描。")
+
+        def _invalidate_preview(self, reason: str) -> None:
+            if not self.plans:
+                self._refresh_action_states()
+                return
+            self.scan_token += 1
+            self.plans = []
+            self.selected_plan_index = None
+            self.metadata_preload_started_token = None
+            with self.detail_lock:
+                self.detail_cache.clear()
+                self.detail_worker_keys.clear()
+            self.tree.delete(*self.tree.get_children())
+            self.series_filter.configure(values=("全部系列",))
+            self.series_filter_var.set("全部系列")
+            self.empty_table_label.place(relx=0.5, rely=0.54, anchor="center")
+            self.update_stats()
+            self.set_progress_idle()
+            self.show_empty_detail(reason)
+            self._set_phase("需要重新扫描", "warning", reason)
+            self.log_message(reason)
+            self._refresh_action_states()
+
+        def _set_phase(self, text: str, kind: str = "idle", hint: str | None = None) -> None:
+            style_by_kind = {
+                "idle": "StatusIdle.TLabel",
+                "busy": "StatusBusy.TLabel",
+                "success": "StatusSuccess.TLabel",
+                "warning": "StatusWarning.TLabel",
+                "error": "StatusError.TLabel",
+            }
+            self.health_var.set(text)
+            if hasattr(self, "health_label"):
+                self.health_label.configure(style=style_by_kind.get(kind, "StatusIdle.TLabel"))
+            if hint is not None:
+                self.action_hint_var.set(hint)
+
+        def _begin_operation(self, operation: str) -> int:
+            self.operation_token += 1
+            self.active_operation = operation
+            self._set_busy(True)
+            return self.operation_token
+
+        def _finish_operation(self, operation_token: int) -> bool:
+            if operation_token != self.operation_token:
+                return False
+            self.worker = None
+            self.active_operation = None
+            self._set_busy(False)
+            return True
+
+        def _refresh_action_states(self) -> None:
+            if not hasattr(self, "apply_button"):
+                return
+            movable = any(plan.will_move for plan in self.plans)
+            selection = self.tree.selection() if hasattr(self, "tree") else ()
+            selected_plan = None
+            if selection:
+                try:
+                    selected_index = int(selection[0])
+                except ValueError:
+                    selected_index = -1
+                if 0 <= selected_index < len(self.plans):
+                    selected_plan = self.plans[selected_index]
+            self.apply_button.configure(state="normal" if movable and not self.is_busy else "disabled")
+            can_edit = selected_plan is not None and selected_plan.status != "moved" and not self.is_busy
+            self.edit_button.configure(state="normal" if can_edit else "disabled")
+            self.series_intro_button.configure(state="normal" if self.plans and not self.is_busy else "disabled")
+
+        def on_close(self) -> None:
+            if self.is_closing:
+                return
+            if self.active_operation in {"apply", "undo"}:
+                messagebox.showwarning("任务尚未完成", "正在移动文件或恢复文件。为保证报告完整，请等待任务结束后再关闭。")
+                return
+            if self.active_operation == "scan" and not messagebox.askyesno(
+                "停止扫描",
+                "扫描仍在进行。现在关闭不会移动文件，但本次预览会丢失。是否关闭？",
+            ):
+                return
+            self.is_closing = True
+            self.operation_token += 1
+            self.scan_token += 1
+            for toast in list(self.toast_windows):
+                try:
+                    toast.destroy()
+                except tk.TclError:
+                    pass
+            self.master.destroy()
 
         def focus_workspace(self) -> None:
             self.action_hint_var.set("工作台：选择目录后按 F5 扫描，确认后按 Ctrl+Enter 执行。")
             self.show_toast("工作台已就绪")
 
         def open_settings(self) -> None:
+            if self.is_busy:
+                self.show_toast("任务进行中，请完成后再修改设置", kind="warning")
+                return
             dialog = tk.Toplevel(self.master)
             dialog.title("设置")
             dialog.configure(bg=COLORS["bg"])
-            dialog.geometry("520x480")
+            dialog.geometry("560x520")
+            dialog.minsize(520, 480)
             dialog.transient(self.master)
             dialog.grab_set()
-            frame = ttk.Frame(dialog, style="Card.TFrame", padding=18)
-            frame.pack(fill="both", expand=True, padx=14, pady=14)
-            ttk.Label(frame, text="用户偏好", style="Card.TLabel", font=TITLE_FONT).pack(anchor="w", pady=(0, 12))
-            ttk.Checkbutton(frame, text="联网识别系列名", variable=self.network_var).pack(anchor="w", pady=4)
-            ttk.Checkbutton(frame, text="包含子文件夹", variable=self.recursive_var).pack(anchor="w", pady=4)
-            ttk.Checkbutton(frame, text="自动重命名", variable=self.auto_rename_var).pack(anchor="w", pady=4)
+            dialog_network_var = tk.BooleanVar(value=self.network_var.get())
+            dialog_recursive_var = tk.BooleanVar(value=self.recursive_var.get())
+            dialog_auto_rename_var = tk.BooleanVar(value=self.auto_rename_var.get())
+            frame = ttk.Frame(dialog, style="Card.TFrame", padding=22)
+            frame.pack(fill="both", expand=True, padx=16, pady=16)
+            ttk.Label(frame, text="用户偏好 / SETTINGS", style="Section.TLabel").pack(anchor="w", pady=(0, 6))
+            ttk.Label(frame, text="修改只会在点击保存后生效。", style="CardMuted.TLabel").pack(anchor="w", pady=(0, 12))
+            option_row = ttk.Frame(frame, style="Card.TFrame")
+            option_row.pack(fill="x", pady=(0, 10))
+            self._checkbutton(option_row, "联网识别", dialog_network_var, busy_sensitive=False).pack(side="left", padx=(0, 8))
+            self._checkbutton(option_row, "包含子文件夹", dialog_recursive_var, busy_sensitive=False).pack(side="left", padx=(0, 8))
+            self._checkbutton(option_row, "自动重命名", dialog_auto_rename_var, busy_sensitive=False).pack(side="left")
             ttk.Label(frame, text="自定义规则（每行：匹配模式 => 系列名）", style="Card.TLabel", font=(FONT_FAMILY, 11, "bold")).pack(anchor="w", pady=(16, 6))
-            rules_text = ScrolledText(frame, height=10, wrap="word", bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", borderwidth=0)
+            rules_text = ScrolledText(
+                frame,
+                height=10,
+                wrap="word",
+                bg=COLORS["panel"],
+                fg=COLORS["text"],
+                insertbackground=COLORS["text"],
+                selectbackground=COLORS["accent_soft"],
+                relief="flat",
+                borderwidth=0,
+                padx=10,
+                pady=10,
+            )
             rules_text.pack(fill="both", expand=True)
             rules_text.insert(
                 "1.0",
                 "\n".join(f"{rule.pattern} => {rule.series}" for rule in self.settings.custom_rules),
             )
-            ttk.Label(frame, text="示例：*SAO* => Sword Art Online。规则保存到用户目录，扫描时优先于联网识别。", style="Card.TLabel", wraplength=460).pack(anchor="w", pady=(10, 10))
+            ttk.Label(frame, text="示例：*SAO* => Sword Art Online。规则优先于联网识别。", style="CardMuted.TLabel", wraplength=500).pack(anchor="w", pady=(10, 4))
+            error_var = tk.StringVar()
+            ttk.Label(frame, textvariable=error_var, style="CardMuted.TLabel", foreground=COLORS["danger"]).pack(anchor="w", pady=(0, 8))
 
             def save_and_close() -> None:
                 rules = []
@@ -1835,17 +2162,28 @@ def launch_gui() -> None:
                     if not line or line.startswith("#"):
                         continue
                     if "=>" not in line:
-                        self.show_toast(f"规则格式不正确：{line}", kind="warning")
+                        error_var.set(f"规则格式不正确：{line}")
+                        rules_text.focus_set()
                         return
                     pattern, series = [part.strip() for part in line.split("=>", 1)]
-                    if pattern and series:
-                        rules.append(CustomRule(pattern=pattern, series=series))
-                self.settings = AppSettings(
-                    use_network=self.network_var.get(),
-                    recursive=self.recursive_var.get(),
-                    auto_rename=self.auto_rename_var.get(),
+                    if not pattern or not series:
+                        error_var.set(f"规则两侧都不能为空：{line}")
+                        rules_text.focus_set()
+                        return
+                    rules.append(CustomRule(pattern=pattern, series=series))
+                new_settings = AppSettings(
+                    use_network=dialog_network_var.get(),
+                    recursive=dialog_recursive_var.get(),
+                    auto_rename=dialog_auto_rename_var.get(),
                     custom_rules=tuple(rules),
                 )
+                changed = new_settings != self.settings
+                self._suspend_preview_invalidation = True
+                self.network_var.set(new_settings.use_network)
+                self.recursive_var.set(new_settings.recursive)
+                self.auto_rename_var.set(new_settings.auto_rename)
+                self._suspend_preview_invalidation = False
+                self.settings = new_settings
                 settings_error = try_save_app_settings(self.settings)
                 if settings_error is not None:
                     self.show_toast("设置暂未写入磁盘", kind="warning")
@@ -1853,56 +2191,111 @@ def launch_gui() -> None:
                 else:
                     self.show_toast("设置已保存")
                 dialog.destroy()
+                if changed:
+                    self._invalidate_preview("设置已变化，请重新扫描生成预览。")
 
-            ttk.Button(frame, text="保存", style="Accent.TButton", command=save_and_close).pack(anchor="e")
+            actions = ttk.Frame(frame, style="Card.TFrame")
+            actions.pack(fill="x")
+            self._action_button(actions, "取消", dialog.destroy, busy_sensitive=False).pack(side="right")
+            self._action_button(actions, "保存设置", save_and_close, role="primary", busy_sensitive=False).pack(side="right", padx=(0, 8))
+            dialog.bind("<Escape>", lambda _event: dialog.destroy())
 
         def open_last_report(self) -> None:
-            if self.last_report_path and self.last_report_path.exists():
-                os.startfile(self.last_report_path)
+            report_path = self._find_last_report_path()
+            if report_path is None:
+                self.show_toast("还没有生成分类报告", kind="warning")
                 return
+            try:
+                os.startfile(report_path)
+            except OSError as exc:
+                self.show_toast("报告无法打开，请检查文件关联", kind="warning")
+                self.log_message(f"报告打开失败：{exc}")
+
+        def _find_last_report_path(self) -> Path | None:
+            if self.last_report_path and self.last_report_path.exists():
+                return self.last_report_path
             folder = self.root_var.get().strip()
             report_path = Path(folder) / REPORT_FILE_NAME if folder else None
             if report_path and report_path.exists():
                 self.last_report_path = report_path
-                os.startfile(report_path)
-            else:
-                self.show_toast("还没有生成分类报告", kind="warning")
+                return report_path
+            return None
 
         def undo_last_report(self) -> None:
-            report_path = self.last_report_path
-            if not report_path or not report_path.exists():
-                folder = self.root_var.get().strip()
-                report_path = Path(folder) / REPORT_FILE_NAME if folder else None
-            if not report_path or not report_path.exists():
+            if self.is_busy:
+                self.show_toast("当前任务尚未完成", kind="warning")
+                return
+            report_path = self._find_last_report_path()
+            if report_path is None:
                 self.show_toast("找不到可撤销的报告", kind="warning")
                 return
-            if not messagebox.askyesno("撤销分类", f"将按报告恢复文件位置：\n{report_path}\n\n继续吗？"):
-                return
             try:
-                restored, skipped = undo_classification_report(report_path, progress=self.log_message)
-            except Exception as exc:
-                messagebox.showerror("撤销失败", str(exc))
+                report_data = json.loads(report_path.read_text(encoding="utf-8"))
+                if not isinstance(report_data, dict):
+                    raise ValueError("报告根节点必须是对象")
+                report_items = report_data.get("items") or []
+                if not isinstance(report_items, list):
+                    raise ValueError("报告 items 必须是数组")
+                restore_total = sum(
+                    1
+                    for item in report_items
+                    if isinstance(item, dict) and item.get("operation") == "moved"
+                )
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                self.show_toast("撤销报告无法读取", kind="warning")
+                self.log_message(f"撤销报告读取失败：{exc}")
                 return
-            self.show_toast(f"撤销完成：恢复 {restored} 个，跳过 {skipped} 个")
-            self.log_message(f"撤销完成：恢复 {restored} 个文件，跳过 {skipped} 个文件。")
+            if restore_total == 0:
+                self.show_toast("报告中没有可恢复的移动记录", kind="warning")
+                return
+            if not messagebox.askyesno(
+                "确认撤销分类",
+                f"将尝试恢复 {restore_total} 个文件。\n\n报告：{report_path}\n\n撤销期间请勿移动相关文件，是否继续？",
+            ):
+                return
+            operation_token = self._begin_operation("undo")
+            self._set_phase("正在撤销", "busy", "正在按报告恢复文件，请勿关闭程序。")
+            self.set_progress_operation(0, restore_total, "撤销中")
+            self.log_message(f"开始撤销：{report_path}")
+
+            def work() -> None:
+                try:
+                    restored, skipped = undo_classification_report(
+                        report_path,
+                        progress=lambda msg: self.events.put(("worker_log", (operation_token, msg))),
+                        progress_count=lambda done, total: self.events.put(
+                            ("operation_progress", (operation_token, "undo", done, total))
+                        ),
+                    )
+                    self.events.put(("undo_done", (operation_token, restored, skipped, report_path)))
+                except Exception as exc:
+                    self.events.put(("operation_error", (operation_token, "undo", exc, report_path)))
+
+            self.worker = threading.Thread(target=work, daemon=True)
+            self.worker.start()
 
         def _build_widgets(self) -> None:
-            self.master.columnconfigure(0, minsize=224)
+            self.master.columnconfigure(0, minsize=232)
             self.master.columnconfigure(1, weight=1)
             self.master.rowconfigure(0, weight=1)
 
-            sidebar = ttk.Frame(self.master, style="Sidebar.TFrame", padding=(22, 24))
+            sidebar = ttk.Frame(self.master, style="Sidebar.TFrame", padding=(24, 26))
             sidebar.grid(row=0, column=0, sticky="nsew")
-            sidebar.rowconfigure(8, weight=1)
-            ttk.Label(sidebar, text="Light Novel", style="Sidebar.TLabel", font=(FONT_FAMILY, 17, "bold")).grid(row=0, column=0, sticky="w")
-            ttk.Label(sidebar, text="Selector", style="SidebarMuted.TLabel", font=(FONT_FAMILY, 11)).grid(row=1, column=0, sticky="w", pady=(0, 26))
-            self._nav_button(sidebar, "工作台", self.focus_workspace).grid(row=2, column=0, sticky="ew", pady=(0, 8))
-            self._nav_button(sidebar, "设置", self.open_settings).grid(row=3, column=0, sticky="ew", pady=(0, 8))
-            self._nav_button(sidebar, "报告", self.open_last_report).grid(row=4, column=0, sticky="ew", pady=(0, 8))
-            self._nav_button(sidebar, "撤销上次", self.undo_last_report).grid(row=5, column=0, sticky="ew", pady=(0, 8))
+            sidebar.rowconfigure(6, weight=1)
+            ttk.Label(sidebar, text="LIGHT NOVEL", style="Sidebar.TLabel", font=(FONT_FAMILY, 18, "bold")).grid(row=0, column=0, sticky="w")
+            ttk.Label(sidebar, text="SELECTOR CONSOLE", style="SidebarMuted.TLabel", font=(FONT_FAMILY, 9, "bold")).grid(row=1, column=0, sticky="w", pady=(0, 28))
+            self._nav_button(sidebar, "工作台 / 预览", self.focus_workspace, active=True).grid(row=2, column=0, sticky="ew", pady=(0, 8))
+            self.settings_nav_button = self._nav_button(sidebar, "设置 / 规则", self.open_settings, busy_sensitive=True)
+            self.settings_nav_button.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+            self.report_nav_button = self._nav_button(sidebar, "报告 / 打开", self.open_last_report)
+            self.report_nav_button.grid(row=4, column=0, sticky="ew", pady=(0, 8))
+            self.undo_nav_button = self._nav_button(sidebar, "撤销上次移动", self.undo_last_report, busy_sensitive=True)
+            self.undo_nav_button.grid(row=5, column=0, sticky="ew", pady=(0, 8))
+            ttk.Label(sidebar, text="SAFE WORKFLOW", style="SidebarMuted.TLabel", font=(FONT_FAMILY, 8, "bold")).grid(row=7, column=0, sticky="w", pady=(24, 2))
+            ttk.Label(sidebar, text="先预览，再执行，可撤销", style="SidebarMuted.TLabel").grid(row=8, column=0, sticky="w", pady=(0, 8))
             ttk.Label(sidebar, text=f"v{APP_VERSION}", style="SidebarMuted.TLabel").grid(row=9, column=0, sticky="w")
 
-            self.main_frame = ttk.Frame(self.master, style="App.TFrame", padding=(28, 24))
+            self.main_frame = ttk.Frame(self.master, style="App.TFrame", padding=(28, 22))
             self.main_frame.grid(row=0, column=1, sticky="nsew")
             self.main_frame.columnconfigure(0, weight=1)
             self.main_frame.rowconfigure(4, weight=1)
@@ -1911,20 +2304,26 @@ def launch_gui() -> None:
             header.grid(row=0, column=0, sticky="ew", pady=(0, 18))
             header.columnconfigure(0, weight=1)
             header.columnconfigure(1, weight=0)
-            ttk.Label(header, text="轻小说整理工作台", style="Hero.TLabel").grid(row=0, column=0, sticky="w")
-            ttk.Label(header, text="扫描、识别、修正并安全移动你的轻小说文件。", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
-            ttk.Label(header, textvariable=self.health_var, style="Pill.TLabel").grid(row=0, column=1, rowspan=2, sticky="e", padx=(18, 0))
+            ttk.Label(header, text="轻小说分类控制台", style="Hero.TLabel").grid(row=0, column=0, sticky="w")
+            ttk.Label(header, text="识别、校正、归档，每一步都有预览与恢复路径。", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
+            self.health_label = ttk.Label(header, textvariable=self.health_var, style="StatusIdle.TLabel")
+            self.health_label.grid(row=0, column=1, rowspan=2, sticky="e", padx=(18, 0))
 
-            top = ttk.Frame(self.main_frame, style="Card.TFrame", padding=(18, 16))
+            top = ttk.Frame(self.main_frame, style="Card.TFrame", padding=(20, 18))
             top.grid(row=1, column=0, sticky="ew", pady=(0, 14))
             top.columnconfigure(1, weight=1)
 
-            ttk.Label(top, text="文件导入", style="Card.TLabel", font=TITLE_FONT).grid(row=0, column=0, columnspan=4, sticky="w")
-            ttk.Label(top, text="支持拖入后的批量目录整理：先预览，确认后再移动。", style="CardMuted.TLabel").grid(row=1, column=0, columnspan=4, sticky="w", pady=(4, 12))
-            ttk.Button(top, text="选择大文件夹", command=self.select_folder, style="Accent.TButton").grid(row=2, column=0, padx=(0, 8), sticky="w")
-            ttk.Entry(top, textvariable=self.root_var).grid(row=2, column=1, sticky="ew", padx=(0, 8))
-            ttk.Button(top, text="新建大文件夹", command=self.create_folder).grid(row=2, column=2, padx=(0, 8))
-            ttk.Button(top, text="打开", command=self.open_folder).grid(row=2, column=3)
+            ttk.Label(top, text="来源目录 / SOURCE", style="Section.TLabel").grid(row=0, column=0, columnspan=4, sticky="w")
+            ttk.Label(top, text="扫描阶段只生成预览，不会移动原文件。执行分类前会再次确认。", style="CardMuted.TLabel").grid(row=1, column=0, columnspan=4, sticky="w", pady=(4, 14))
+            self.select_folder_button = self._action_button(top, "选择大文件夹", self.select_folder, role="primary")
+            self.select_folder_button.grid(row=2, column=0, padx=(0, 10), sticky="w")
+            self.root_entry = ttk.Entry(top, textvariable=self.root_var)
+            self.root_entry.grid(row=2, column=1, sticky="ew", padx=(0, 8))
+            self.busy_controls.append(self.root_entry)
+            self.create_folder_button = self._action_button(top, "新建大文件夹", self.create_folder)
+            self.create_folder_button.grid(row=2, column=2, padx=(0, 8))
+            self.open_folder_button = self._action_button(top, "打开目录", self.open_folder, busy_sensitive=False)
+            self.open_folder_button.grid(row=2, column=3)
 
             stats = ttk.Frame(self.main_frame, style="App.TFrame")
             stats.grid(row=2, column=0, sticky="ew", pady=(0, 14))
@@ -1932,21 +2331,32 @@ def launch_gui() -> None:
                 stats.columnconfigure(col, weight=1)
             self._stat_card(stats, "文件总数", self.stat_total_var, "扫描到的支持格式", COLORS["accent"], 0)
             self._stat_card(stats, "可执行", self.stat_ready_var, "确认后会移动", COLORS["ok"], 1)
-            self._stat_card(stats, "重复", self.stat_duplicate_var, "默认安全跳过", COLORS["warning"], 2)
+            self._stat_card(stats, "重复", self.stat_duplicate_var, "默认安全跳过", COLORS["file"], 2)
             self._stat_card(stats, "错误", self.stat_error_var, "需要人工处理", COLORS["danger"], 3)
 
-            options = ttk.Frame(self.main_frame, style="App.TFrame", padding=(0, 10, 0, 14))
-            options.grid(row=3, column=0, sticky="ew")
-            ttk.Checkbutton(options, text="联网识别系列名", variable=self.network_var).pack(side="left", padx=(0, 18))
-            ttk.Checkbutton(options, text="包含子文件夹", variable=self.recursive_var).pack(side="left", padx=(0, 18))
-            ttk.Checkbutton(options, text="自动重命名", variable=self.auto_rename_var).pack(side="left", padx=(0, 18))
-            ttk.Button(options, text="扫描并预览", command=self.scan, style="Accent.TButton").pack(side="left", padx=(0, 8))
-            ttk.Button(options, text="修正分类", command=self.edit_selected_plan).pack(side="left", padx=(0, 8))
-            ttk.Button(options, text="执行分类", command=self.apply_plan).pack(side="left")
+            options = ttk.Frame(self.main_frame, style="Toolbar.TFrame", padding=(14, 11))
+            options.grid(row=3, column=0, sticky="ew", pady=(0, 14))
+            options.columnconfigure(0, weight=1)
+            option_group = ttk.Frame(options, style="Toolbar.TFrame")
+            option_group.grid(row=0, column=0, sticky="w")
+            self.network_check = self._checkbutton(option_group, "联网识别", self.network_var)
+            self.network_check.pack(side="left", padx=(0, 8))
+            self.recursive_check = self._checkbutton(option_group, "包含子文件夹", self.recursive_var)
+            self.recursive_check.pack(side="left", padx=(0, 8))
+            self.rename_check = self._checkbutton(option_group, "自动重命名", self.auto_rename_var)
+            self.rename_check.pack(side="left")
+            action_group = ttk.Frame(options, style="Toolbar.TFrame")
+            action_group.grid(row=0, column=1, sticky="e")
+            self.scan_button = self._action_button(action_group, "扫描并预览", self.scan, role="primary")
+            self.scan_button.pack(side="left", padx=(0, 8))
+            self.edit_button = self._action_button(action_group, "修正分类", self.edit_selected_plan)
+            self.edit_button.pack(side="left", padx=(0, 8))
+            self.apply_button = self._action_button(action_group, "执行分类", self.apply_plan, role="execute")
+            self.apply_button.pack(side="left")
 
             content = ttk.Frame(self.main_frame, style="App.TFrame", padding=(0, 0, 0, 8))
             content.grid(row=4, column=0, sticky="nsew")
-            content.columnconfigure(0, minsize=310)
+            content.columnconfigure(0, minsize=318)
             content.columnconfigure(1, weight=1)
             content.rowconfigure(0, weight=1)
 
@@ -1955,7 +2365,7 @@ def launch_gui() -> None:
             detail_frame.columnconfigure(0, weight=1)
             detail_frame.rowconfigure(6, weight=1)
 
-            ttk.Label(detail_frame, text="详情面板", style="Card.TLabel", font=TITLE_FONT).grid(row=0, column=0, sticky="w", pady=(0, 12))
+            ttk.Label(detail_frame, text="详情 / DETAIL", style="Section.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 12))
             self.cover_label = ttk.Label(detail_frame, text="暂无封面", anchor="center", style="CardMuted.TLabel")
             self.cover_label.grid(row=1, column=0, sticky="ew", pady=(0, 10))
             ttk.Label(detail_frame, textvariable=self.detail_title_var, style="Card.TLabel", font=("", 12, "bold"), wraplength=280).grid(
@@ -1970,16 +2380,12 @@ def launch_gui() -> None:
                 ttk.Label(detail_status, textvariable=variable, style="CardMuted.TLabel", wraplength=280).grid(row=row, column=0, sticky="w", pady=(0 if row == 0 else 3, 0))
             detail_actions = ttk.Frame(detail_frame, style="Card.TFrame")
             detail_actions.grid(row=5, column=0, sticky="ew", pady=(0, 8))
-            self.open_subject_button = ttk.Button(
-                detail_actions,
-                text="打开条目",
-                command=self.open_current_subject,
-                state="disabled",
-            )
+            self.open_subject_button = self._action_button(detail_actions, "打开条目", self.open_current_subject, busy_sensitive=False)
+            self.open_subject_button.configure(state="disabled")
             self.open_subject_button.pack(side="left")
             self.summary_text = ScrolledText(detail_frame, width=34, height=18, wrap="word")
             self.summary_text.grid(row=6, column=0, sticky="nsew")
-            self.summary_text.configure(state="disabled", bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", borderwidth=0)
+            self.summary_text.configure(state="disabled", bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"], selectbackground=COLORS["accent_soft"], relief="flat", borderwidth=0, padx=8, pady=8)
 
             right_frame = ttk.Frame(content, style="App.TFrame")
             right_frame.grid(row=0, column=1, sticky="nsew")
@@ -1987,14 +2393,14 @@ def launch_gui() -> None:
             right_frame.rowconfigure(1, weight=1)
             right_frame.rowconfigure(2, weight=0)
 
-            table_frame = ttk.Frame(right_frame, style="Card.TFrame", padding=(12, 12))
+            table_frame = ttk.Frame(right_frame, style="Card.TFrame", padding=(14, 14))
             table_frame.columnconfigure(0, weight=1)
-            table_frame.rowconfigure(0, weight=1)
+            table_frame.rowconfigure(1, weight=1)
 
-            series_bar = ttk.Frame(right_frame, style="App.TFrame")
-            series_bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+            series_bar = ttk.Frame(right_frame, style="Toolbar.TFrame", padding=(14, 10))
+            series_bar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
             series_bar.columnconfigure(1, weight=1)
-            ttk.Label(series_bar, text="系列筛选").grid(row=0, column=0, sticky="w", padx=(0, 8))
+            ttk.Label(series_bar, text="系列筛选", style="Toolbar.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 10))
             self.series_filter = ttk.Combobox(
                 series_bar,
                 textvariable=self.series_filter_var,
@@ -2003,9 +2409,12 @@ def launch_gui() -> None:
             )
             self.series_filter.grid(row=0, column=1, sticky="ew", padx=(0, 8))
             self.series_filter.bind("<<ComboboxSelected>>", self.on_series_filter_changed)
-            ttk.Button(series_bar, text="系列介绍", command=self.show_selected_series_intro).grid(row=0, column=2)
+            self.busy_controls.append(self.series_filter)
+            self.series_intro_button = self._action_button(series_bar, "系列介绍", self.show_selected_series_intro)
+            self.series_intro_button.grid(row=0, column=2)
 
             table_frame.grid(row=1, column=0, sticky="nsew")
+            ttk.Label(table_frame, text="分类队列 / CLASSIFICATION QUEUE", style="Section.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 10))
 
             columns = ("file", "rename", "series", "target", "source", "status", "detail")
             self.tree = ttk.Treeview(table_frame, columns=columns, show="headings")
@@ -2016,25 +2425,40 @@ def launch_gui() -> None:
             self.tree.heading("source", text="识别来源")
             self.tree.heading("status", text="状态")
             self.tree.heading("detail", text="详情")
-            self.tree.column("file", width=260, anchor="w")
-            self.tree.column("rename", width=280, anchor="w")
-            self.tree.column("series", width=230, anchor="w")
-            self.tree.column("target", width=230, anchor="w")
+            self.tree.column("file", width=240, anchor="w")
+            self.tree.column("rename", width=240, anchor="w")
+            self.tree.column("series", width=200, anchor="w")
+            self.tree.column("target", width=190, anchor="w")
             self.tree.column("source", width=130, anchor="w")
             self.tree.column("status", width=90, anchor="center")
-            self.tree.column("detail", width=150, anchor="center")
-            self.tree.grid(row=0, column=0, sticky="nsew")
+            self.tree.column("detail", width=130, anchor="center")
+            self.tree.grid(row=1, column=0, sticky="nsew")
 
             scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
-            scrollbar.grid(row=0, column=1, sticky="ns")
-            self.tree.configure(yscrollcommand=scrollbar.set)
+            scrollbar.grid(row=1, column=1, sticky="ns")
+            horizontal_scrollbar = ttk.Scrollbar(table_frame, orient="horizontal", command=self.tree.xview)
+            horizontal_scrollbar.grid(row=2, column=0, sticky="ew")
+            self.tree.configure(yscrollcommand=scrollbar.set, xscrollcommand=horizontal_scrollbar.set)
             self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
             self.tree.bind("<Double-1>", lambda _event: self.edit_selected_plan())
             self.tree.tag_configure("ready", background=COLORS["card"])
             self.tree.tag_configure("ready_alt", background=COLORS["card_alt"])
             self.tree.tag_configure("duplicate", background=COLORS["warning_soft"])
             self.tree.tag_configure("error", background=COLORS["danger_soft"])
-            self.tree.tag_configure("manual", background=COLORS["accent_soft"])
+            self.tree.tag_configure("manual", background=COLORS["violet_soft"])
+            self.tree.tag_configure("moved", background=COLORS["ok_soft"])
+            self.tree.tag_configure("unchanged", background=COLORS["card_alt"])
+            self.empty_table_label = tk.Label(
+                table_frame,
+                text="尚无分类预览\n选择目录后点击“扫描并预览”",
+                bg=COLORS["card"],
+                fg=COLORS["muted"],
+                font=(FONT_FAMILY, 11),
+                justify="center",
+                padx=24,
+                pady=18,
+            )
+            self.empty_table_label.place(relx=0.5, rely=0.54, anchor="center")
 
             bottom = ttk.Frame(right_frame, style="Card.TFrame", padding=(14, 12))
             bottom.grid(row=2, column=0, sticky="ew")
@@ -2042,13 +2466,19 @@ def launch_gui() -> None:
             bottom.columnconfigure(1, minsize=240)
             ttk.Label(bottom, textvariable=self.status_var, style="Card.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 4))
             ttk.Label(bottom, textvariable=self.action_hint_var, style="CardMuted.TLabel").grid(row=1, column=0, sticky="w", pady=(0, 8))
-            self.progress = ttk.Progressbar(bottom, mode="determinate", length=1, style="Modern.Horizontal.TProgressbar")
             self.progress_canvas = tk.Canvas(bottom, height=16, bg=COLORS["card"], highlightthickness=0)
             self.progress_canvas.grid(row=0, column=1, rowspan=2, sticky="ew", padx=(12, 0), pady=(0, 8))
-            self.progress_canvas.bind("<Configure>", lambda _event: self.draw_progress_canvas(self.progress_display_value, 1))
-            self.log = ScrolledText(bottom, height=6, wrap="word")
+            self.progress_canvas.bind(
+                "<Configure>",
+                lambda _event: self.draw_progress_canvas(
+                    self.progress_display_value,
+                    self.progress_maximum,
+                    label=self.progress_label,
+                ),
+            )
+            self.log = ScrolledText(bottom, height=5, wrap="word")
             self.log.grid(row=2, column=0, columnspan=2, sticky="ew")
-            self.log.configure(state="disabled", bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", borderwidth=0)
+            self.log.configure(state="disabled", bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"], selectbackground=COLORS["accent_soft"], relief="flat", borderwidth=0, padx=8, pady=6)
             self.bind_mousewheel(self.tree, lambda units: self.tree.yview_scroll(units, "units"))
             self.bind_mousewheel(self.summary_text, lambda units: self.summary_text.yview_scroll(units, "units"))
             self.bind_mousewheel(self.log, lambda units: self.log.yview_scroll(units, "units"))
@@ -2095,8 +2525,9 @@ def launch_gui() -> None:
                     pass
             start = self.stat_values.get(key, 0)
             delta = target - start
-            if delta == 0:
+            if REDUCED_MOTION or delta == 0:
                 value_var.set(str(target))
+                self.stat_values[key] = target
                 return
             steps = 14
 
@@ -2152,7 +2583,13 @@ def launch_gui() -> None:
 
         def open_current_subject(self) -> None:
             if self.current_detail_url:
-                webbrowser.open(self.current_detail_url)
+                try:
+                    opened = webbrowser.open(self.current_detail_url)
+                except webbrowser.Error as exc:
+                    opened = False
+                    self.log_message(f"条目打开失败：{exc}")
+                if not opened:
+                    self.show_toast("无法打开浏览器条目", kind="warning")
 
         def filtered_plan_indices(self) -> list[int]:
             selected = self.series_filter_var.get()
@@ -2173,6 +2610,8 @@ def launch_gui() -> None:
                 self.series_filter_var.set("全部系列")
 
         def on_series_filter_changed(self, _event: object | None = None) -> None:
+            if self.is_busy:
+                return
             self._render_plans()
 
         def show_selected_series_intro(self) -> None:
@@ -2199,49 +2638,69 @@ def launch_gui() -> None:
             self.show_cover_for_plan(indices[0], plan.metadata_cover_url)
 
         def set_progress_idle(self) -> None:
-            if hasattr(self, "progress"):
-                self.progress.stop()
-                self.progress.configure(mode="determinate", maximum=1, value=0)
-                self.progress_display_value = 0.0
-                self.stop_scanning_animation()
-                self.draw_progress_canvas(0, 1)
+            if self.progress_canvas is None:
+                return
+            self.progress_display_value = 0.0
+            self.progress_maximum = 1.0
+            self.progress_label = None
+            self.stop_scanning_animation()
+            self.draw_progress_canvas(0, 1)
 
         def set_progress_scanning(self) -> None:
-            if hasattr(self, "progress"):
-                self.progress.configure(mode="indeterminate")
-                self.progress.start(12)
+            if self.progress_canvas is not None:
+                self.progress_maximum = 1.0
+                self.progress_label = "扫描中"
                 self.start_scanning_animation()
 
         def set_progress_preloading(self, done: int, total: int) -> None:
-            if not hasattr(self, "progress"):
+            if self.progress_canvas is None:
                 return
-            self.progress.stop()
             maximum = max(total, 1)
-            self.progress.configure(mode="determinate", maximum=maximum)
+            self.progress_maximum = float(maximum)
+            self.progress_label = None
             self.animate_progress_to(min(done, maximum), maximum)
 
-        def animate_progress_to(self, target: float, maximum: float, *, duration_ms: int = 420) -> None:
+        def set_progress_operation(self, done: int, total: int, label: str) -> None:
+            if self.progress_canvas is None:
+                return
+            maximum = max(total, 1)
+            self.progress_maximum = float(maximum)
+            self.progress_label = label
+            if done <= 0:
+                self.progress_display_value = 0.0
+                self.draw_progress_canvas(0, maximum, label=label)
+                return
+            self.animate_progress_to(min(done, maximum), maximum, label=label)
+
+        def animate_progress_to(
+            self,
+            target: float,
+            maximum: float,
+            *,
+            duration_ms: int = 420,
+            label: str | None = None,
+        ) -> None:
+            self.progress_maximum = float(maximum)
+            self.progress_label = label
             start = self.progress_display_value
             delta = target - start
-            if abs(delta) < 0.01:
-                self.progress.configure(value=target)
+            if REDUCED_MOTION or abs(delta) < 0.01:
                 self.progress_display_value = target
-                self.draw_progress_canvas(target, maximum)
+                self.draw_progress_canvas(target, maximum, label=label)
                 return
             steps = 18
 
             def step(frame: int = 0) -> None:
                 t = min(frame / steps, 1.0)
                 value = start + delta * ease_out_cubic(t)
-                self.progress.configure(maximum=maximum, value=value)
                 self.progress_display_value = value
-                self.draw_progress_canvas(value, maximum)
+                self.draw_progress_canvas(value, maximum, label=label)
                 if frame < steps:
                     self.master.after(max(1, duration_ms // steps), lambda: step(frame + 1))
 
             step()
 
-        def draw_progress_canvas(self, value: float, maximum: float) -> None:
+        def draw_progress_canvas(self, value: float, maximum: float, *, label: str | None = None) -> None:
             if self.progress_canvas is None:
                 return
             canvas = self.progress_canvas
@@ -2259,10 +2718,20 @@ def launch_gui() -> None:
                 canvas.create_rectangle(pad + radius, pad, fill_width - radius, height - pad, fill=COLORS["accent"], outline="")
                 canvas.create_oval(pad, pad, pad + radius * 2, height - pad, fill=COLORS["accent"], outline="")
                 canvas.create_oval(fill_width - radius * 2, pad, fill_width, height - pad, fill=COLORS["accent"], outline="")
-            canvas.create_text(width // 2, height // 2, text=f"{ratio:.0%}", fill=COLORS["text"], font=(FONT_FAMILY, 8, "bold"))
+            progress_text = f"{label}  {ratio:.0%}" if label else f"{ratio:.0%}"
+            canvas.create_text(width // 2, height // 2, text=progress_text, fill=COLORS["text"], font=(FONT_FAMILY, 8, "bold"))
 
         def start_scanning_animation(self) -> None:
             self.stop_scanning_animation()
+            if REDUCED_MOTION:
+                canvas = self.progress_canvas
+                if canvas is not None:
+                    width = max(canvas.winfo_width(), 1)
+                    height = max(canvas.winfo_height(), 1)
+                    canvas.delete("all")
+                    canvas.create_rectangle(0, 0, width, height, fill=COLORS["panel"], outline="")
+                    canvas.create_text(width // 2, height // 2, text="扫描中", fill=COLORS["accent"], font=(FONT_FAMILY, 8, "bold"))
+                return
             frame_count = 48
 
             def tick(frame: int = 0) -> None:
@@ -2297,7 +2766,7 @@ def launch_gui() -> None:
 
         def _animate_initial_cards(self) -> None:
             start_x, start_y = 40, 30
-            end_x, end_y = 28, 24
+            end_x, end_y = 28, 22
             steps = 16
             self.main_frame.configure(padding=(start_x, start_y))
 
@@ -2318,7 +2787,12 @@ def launch_gui() -> None:
             toast.configure(bg=COLORS["card"])
             toast.attributes("-alpha", 0.0)
             toast.attributes("-topmost", True)
-            color = COLORS["accent"] if kind == "info" else COLORS["warning"] if kind == "warning" else COLORS["danger"]
+            color = {
+                "info": COLORS["accent"],
+                "success": COLORS["ok"],
+                "warning": COLORS["warning"],
+                "error": COLORS["danger"],
+            }.get(kind, COLORS["accent"])
             marker = tk.Frame(toast, width=4, bg=color)
             marker.pack(side="left", fill="y")
             label = tk.Label(toast, text=message, bg=COLORS["card"], fg=COLORS["text"], padx=18, pady=10, font=(FONT_FAMILY, 10, "bold"))
@@ -2329,6 +2803,20 @@ def launch_gui() -> None:
             y = self.master.winfo_rooty() + 42 + len(self.toast_windows) * 56
             toast.geometry(f"320x44+{start_x}+{y}")
             self.toast_windows.append(toast)
+            if REDUCED_MOTION:
+                toast.geometry(f"320x44+{target_x}+{y}")
+                toast.attributes("-alpha", 0.98)
+
+                def destroy_reduced_toast() -> None:
+                    if toast in self.toast_windows:
+                        self.toast_windows.remove(toast)
+                    try:
+                        toast.destroy()
+                    except tk.TclError:
+                        pass
+
+                toast.after(2200, destroy_reduced_toast)
+                return
 
             def fade(frame: int = 0, direction: int = 1) -> None:
                 steps = 12
@@ -2394,6 +2882,7 @@ def launch_gui() -> None:
             selection = self.tree.selection()
             if not selection:
                 self.show_empty_detail("请在右侧选择一本小说。")
+                self._refresh_action_states()
                 return
             try:
                 index = int(selection[0])
@@ -2402,8 +2891,12 @@ def launch_gui() -> None:
             if index < 0 or index >= len(self.plans):
                 return
             self.show_plan_detail(index)
+            self._refresh_action_states()
 
         def edit_selected_plan(self) -> None:
+            if self.is_busy:
+                self.show_toast("当前任务尚未完成", kind="warning")
+                return
             selection = self.tree.selection()
             if not selection:
                 self.show_toast("请先选择一条分类结果", kind="warning")
@@ -2415,6 +2908,9 @@ def launch_gui() -> None:
             if index < 0 or index >= len(self.plans):
                 return
             plan = self.plans[index]
+            if plan.status == "moved":
+                self.show_toast("已移动的结果不能再次修正，请先撤销或重新扫描", kind="warning")
+                return
             new_series = simpledialog.askstring(
                 "修正分类",
                 "请输入新的系列名：",
@@ -2424,33 +2920,29 @@ def launch_gui() -> None:
             if not new_series:
                 return
             folder_name = safe_folder_name(new_series)
-            target_dir = Path(self.root_var.get().strip()) / folder_name
+            target_dir = plan.target_dir.parent / folder_name
             target_name = plan.rename_to or plan.source_path.name
-            self.plans[index] = ClassificationPlan(
-                source_path=plan.source_path,
+            target_path = target_dir / target_name
+            try:
+                already_classified = plan.source_path.resolve() == target_path.resolve()
+            except OSError:
+                already_classified = plan.source_path.absolute() == target_path.absolute()
+            self.plans[index] = replace(
+                plan,
                 series_name=folder_name,
                 target_dir=target_dir,
-                target_path=target_dir / target_name,
+                target_path=target_path,
                 resolver_source="手动修正",
                 confidence=1.0,
-                local_guess=plan.local_guess,
-                metadata_title=plan.metadata_title,
-                metadata_summary=plan.metadata_summary,
-                metadata_cover_url=plan.metadata_cover_url,
-                metadata_url=plan.metadata_url,
-                local_cover_bytes=plan.local_cover_bytes,
-                identity_hint=plan.identity_hint,
-                identity_query=plan.identity_query,
-                rename_to=plan.rename_to,
                 series_key=folder_name,
-                status="ready",
-                note="用户手动修正分类。",
+                status="unchanged" if already_classified else "ready",
+                note="文件已在正确的系列目录中，无需移动。" if already_classified else "用户手动修正分类。",
+                duplicate_of=None,
             )
             self._render_plans()
             self.tree.selection_set(str(index))
             self.show_plan_detail(index)
-            self.health_var.set("已手动修正")
-            self.action_hint_var.set("修正已写入预览，确认后执行分类即可落盘。")
+            self._set_phase("已手动修正", "success", "修正已写入预览，确认后执行分类即可落盘。")
             self.show_toast("分类已修正")
 
         def show_plan_detail(self, index: int) -> None:
@@ -2546,7 +3038,7 @@ def launch_gui() -> None:
             threading.Thread(target=work, daemon=True).start()
 
         def start_metadata_preload(self) -> None:
-            if not self.network_var.get() or not self.plans:
+            if not self.network_var.get() or not self.plans or any(plan.status == "moved" for plan in self.plans):
                 return
             if self.metadata_preload_started_token == self.scan_token:
                 return
@@ -2658,14 +3150,19 @@ def launch_gui() -> None:
             self.status_var.set(message)
 
         def select_folder(self) -> None:
+            if self.is_busy:
+                self.show_toast("当前任务尚未完成", kind="warning")
+                return
             folder = filedialog.askdirectory(title="选择存放轻小说的大文件夹")
             if folder:
                 self.root_var.set(folder)
-                self.health_var.set("目录已选择")
-                self.action_hint_var.set("下一步：按 F5 或点击“扫描并预览”。")
+                self._set_phase("目录已选择", "success", "下一步：按 F5 或点击“扫描并预览”。")
                 self.log_message(f"已选择：{folder}")
 
         def create_folder(self) -> None:
+            if self.is_busy:
+                self.show_toast("当前任务尚未完成", kind="warning")
+                return
             parent = filedialog.askdirectory(title="选择新大文件夹的上级目录")
             if not parent:
                 return
@@ -2677,50 +3174,78 @@ def launch_gui() -> None:
                 if not messagebox.askyesno("文件夹已存在", f"{folder} 已存在，要使用它吗？"):
                     return
             else:
-                folder.mkdir(parents=True, exist_ok=True)
+                try:
+                    folder.mkdir(parents=True, exist_ok=True)
+                except OSError as exc:
+                    messagebox.showerror("创建失败", f"无法创建文件夹：\n{folder}\n\n{exc}")
+                    return
             self.root_var.set(str(folder))
-            self.health_var.set("目录已选择")
-            self.action_hint_var.set("下一步：按 F5 扫描这个新目录。")
+            self._set_phase("目录已选择", "success", "下一步：按 F5 扫描这个新目录。")
             self.log_message(f"已创建/选择：{folder}")
 
         def open_folder(self) -> None:
             folder = self._current_root()
             if not folder:
                 return
-            os.startfile(folder)
+            try:
+                os.startfile(folder)
+            except OSError as exc:
+                self.show_toast("目录无法打开", kind="warning")
+                self.log_message(f"目录打开失败：{exc}")
 
         def _current_root(self) -> str | None:
             folder = self.root_var.get().strip()
             if not folder:
                 messagebox.showwarning("需要大文件夹", "请先选择或新建一个大文件夹。")
                 return None
-            if not Path(folder).exists():
+            folder_path = Path(folder)
+            if not folder_path.exists():
                 messagebox.showwarning("文件夹不存在", "当前大文件夹不存在。")
+                return None
+            if not folder_path.is_dir():
+                messagebox.showwarning("路径不是文件夹", "请输入或选择一个文件夹路径。")
                 return None
             return folder
 
         def _set_busy(self, busy: bool) -> None:
+            self.is_busy = busy
             self.master.configure(cursor="watch" if busy else "")
+            for control in self.busy_controls:
+                try:
+                    if isinstance(control, ttk.Combobox):
+                        control.configure(state="disabled" if busy else "readonly")
+                    else:
+                        control.configure(state="disabled" if busy else "normal")
+                except tk.TclError:
+                    pass
+            self._refresh_action_states()
 
         def scan(self) -> None:
-            folder = self._current_root()
-            if not folder or self.worker and self.worker.is_alive():
+            if self.is_busy:
+                self.show_toast("当前任务尚未完成", kind="warning")
                 return
-            self.health_var.set("扫描中")
-            self.action_hint_var.set("正在读取文件、识别系列并检查重复项。")
-            self.settings = AppSettings(
-                use_network=self.network_var.get(),
-                recursive=self.recursive_var.get(),
-                auto_rename=self.auto_rename_var.get(),
+            folder = self._current_root()
+            if not folder:
+                return
+            root_path = Path(folder).expanduser().resolve()
+            settings_snapshot = AppSettings(
+                use_network=bool(self.network_var.get()),
+                recursive=bool(self.recursive_var.get()),
+                auto_rename=bool(self.auto_rename_var.get()),
                 custom_rules=self.settings.custom_rules,
             )
+            self.settings = settings_snapshot
             settings_error = try_save_app_settings(self.settings)
             if settings_error is not None:
                 self.log_message(f"设置保存失败，继续扫描：{settings_error}")
             self.scan_token += 1
-            token = self.scan_token
+            scan_token = self.scan_token
+            operation_token = self._begin_operation("scan")
             self.tree.delete(*self.tree.get_children())
+            self.empty_table_label.configure(text="正在扫描目录并建立分类预览...")
+            self.empty_table_label.place(relx=0.5, rely=0.54, anchor="center")
             self.plans = []
+            self.selected_plan_index = None
             self.update_stats()
             with self.detail_lock:
                 self.detail_cache.clear()
@@ -2728,74 +3253,108 @@ def launch_gui() -> None:
             self.metadata_preload_started_token = None
             with self.cover_lock:
                 self.cover_worker_urls.clear()
-            self.show_empty_detail("正在扫描 Bangumi 信息。")
+            self.show_empty_detail("正在读取文件与书籍信息。")
             self.set_progress_scanning()
-            self._set_busy(True)
+            self._set_phase("扫描中", "busy", "正在读取文件、识别系列并检查重复项。")
             self.log_message("开始扫描，联网识别会按文件名查询公开书库。")
 
             def work() -> None:
                 try:
                     plans = build_classification_plan(
-                        Path(folder),
-                        recursive=self.recursive_var.get(),
-                        use_network=self.network_var.get(),
-                        auto_rename=self.auto_rename_var.get(),
-                        custom_rules=self.settings.custom_rules,
-                        progress=lambda msg: self.events.put(("log", msg)),
+                        root_path,
+                        recursive=settings_snapshot.recursive,
+                        use_network=settings_snapshot.use_network,
+                        auto_rename=settings_snapshot.auto_rename,
+                        custom_rules=settings_snapshot.custom_rules,
+                        progress=lambda msg: self.events.put(("worker_log", (operation_token, msg))),
                     )
-                    self.events.put(("plans", (token, plans)))
+                    self.events.put(("plans", (operation_token, scan_token, plans)))
                 except Exception as exc:
-                    self.events.put(("error", (token, exc)))
+                    self.events.put(("operation_error", (operation_token, "scan", exc, None)))
 
             self.worker = threading.Thread(target=work, daemon=True)
             self.worker.start()
 
         def apply_plan(self) -> None:
+            if self.is_busy:
+                self.show_toast("当前任务尚未完成", kind="warning")
+                return
             if not self.plans:
                 messagebox.showinfo("没有预览", "请先扫描并确认预览结果。")
                 return
-            if self.worker and self.worker.is_alive():
-                return
             movable = sum(1 for plan in self.plans if plan.will_move)
-            if not messagebox.askyesno("确认分类", f"将移动 {movable} 个文件到对应系列文件夹，是否继续？"):
+            if movable == 0:
+                messagebox.showinfo("没有可执行项", "当前预览中没有需要移动的文件。请重新扫描或修正分类。")
                 return
-            self._set_busy(True)
-            self.health_var.set("执行中")
-            self.action_hint_var.set("正在移动文件并写入可撤销报告。")
+            counts = count_plan_statuses(self.plans)
+            plans_snapshot = list(self.plans)
+            report_path = plans_snapshot[0].target_dir.parent / REPORT_FILE_NAME
+            if not messagebox.askyesno(
+                "确认执行分类",
+                f"将移动 {movable} 个文件。\n重复项 {counts['duplicate']} 个、错误项 {counts['error']} 个会跳过。\n\n报告：{report_path}\n\n执行期间请勿移动相关文件，是否继续？",
+            ):
+                return
+            operation_token = self._begin_operation("apply")
+            self._set_phase("执行中", "busy", "正在移动文件并持续写入可撤销报告。")
+            self.set_progress_operation(0, len(plans_snapshot), "执行中")
             self.log_message("开始移动文件。")
 
             def work() -> None:
                 try:
-                    report_path = Path(self.root_var.get().strip()) / REPORT_FILE_NAME
                     result = execute_classification_plan(
-                        self.plans,
-                        progress=lambda msg: self.events.put(("log", msg)),
+                        plans_snapshot,
+                        progress=lambda msg: self.events.put(("worker_log", (operation_token, msg))),
+                        progress_count=lambda done, total: self.events.put(
+                            ("operation_progress", (operation_token, "apply", done, total))
+                        ),
                         report_path=report_path,
                     )
-                    self.events.put(("done", (*result, report_path)))
+                    self.events.put(("apply_done", (operation_token, *result, report_path)))
                 except Exception as exc:
-                    self.events.put(("error", exc))
+                    self.events.put(("operation_error", (operation_token, "apply", exc, report_path)))
 
             self.worker = threading.Thread(target=work, daemon=True)
             self.worker.start()
 
         def _poll_events(self) -> None:
+            if self.is_closing:
+                return
             try:
                 while True:
                     event, payload = self.events.get_nowait()
-                    if event == "log":
-                        self.log_message(str(payload))
+                    if event == "worker_log":
+                        operation_token, message = payload  # type: ignore[misc]
+                        if operation_token == self.operation_token:
+                            self.log_message(str(message))
                     elif event == "plans":
-                        token, plans = payload  # type: ignore[misc]
-                        if token != self.scan_token:
+                        operation_token, scan_token, plans = payload  # type: ignore[misc]
+                        if operation_token != self.operation_token or scan_token != self.scan_token:
                             continue
                         self.plans = list(plans)
+                        self._finish_operation(operation_token)
                         self._render_plans()
-                        self._set_busy(False)
                         counts = count_plan_statuses(self.plans)
-                        self.health_var.set(f"预览完成：{counts['ready']} 可执行")
-                        self.action_hint_var.set("检查结果后可修正分类，确认无误按 Ctrl+Enter 执行。")
-                        self.log_message(f"预览完成：找到 {len(self.plans)} 个可分类文件。")
+                        if self.plans:
+                            self._set_phase(
+                                f"预览完成：{counts['ready']} 可执行",
+                                "success",
+                                "检查结果后可修正分类，确认无误按 Ctrl+Enter 执行。",
+                            )
+                            self.log_message(f"预览完成：找到 {len(self.plans)} 个支持文件。")
+                        else:
+                            self._set_phase(
+                                "未找到文件",
+                                "warning",
+                                "可以更换目录或开启“包含子文件夹”后重新扫描。",
+                            )
+                            self.log_message("扫描完成：没有找到支持的小说文件。")
+                    elif event == "operation_progress":
+                        operation_token, operation, done, total = payload  # type: ignore[misc]
+                        if operation_token != self.operation_token:
+                            continue
+                        label = "执行中" if operation == "apply" else "撤销中"
+                        self.set_progress_operation(done, total, label)
+                        self.status_var.set(f"{label}：{done}/{total}")
                     elif event == "metadata":
                         token, index, cache_key, metadata = payload  # type: ignore[misc]
                         if token != self.scan_token:
@@ -2817,16 +3376,20 @@ def launch_gui() -> None:
                         token, done, total = payload  # type: ignore[misc]
                         if token != self.scan_token:
                             continue
+                        if any(plan.status == "moved" for plan in self.plans):
+                            continue
                         self.preload_done = done
                         self.preload_total = total
-                        self.set_progress_preloading(done, total)
+                        if self.active_operation is None:
+                            self.set_progress_preloading(done, total)
                         if done >= total:
-                            self.health_var.set("详情已缓存")
-                            self.action_hint_var.set("可继续查看详情、修正分类或执行移动。")
-                            self.status_var.set(f"详情预加载完成：{done}/{total}")
+                            if self.active_operation is None:
+                                self._set_phase("详情已缓存", "success", "可继续查看详情、修正分类或执行移动。")
+                                self.status_var.set(f"详情预加载完成：{done}/{total}")
                         else:
-                            self.health_var.set(f"预加载 {done}/{total}")
-                            self.status_var.set(f"后台预加载详情：{done}/{total}")
+                            if self.active_operation is None:
+                                self._set_phase(f"预加载 {done}/{total}", "busy")
+                                self.status_var.set(f"后台预加载详情：{done}/{total}")
                     elif event == "cover":
                         token, index, _url, data, error = payload  # type: ignore[misc]
                         if token != self.scan_token:
@@ -2839,37 +3402,92 @@ def launch_gui() -> None:
                                 self.display_cover(data)
                             else:
                                 self.clear_cover("封面加载失败")
-                    elif event == "done":
-                        moved, skipped, report_path = payload  # type: ignore[misc]
+                    elif event == "apply_done":
+                        operation_token, moved, skipped, report_path = payload  # type: ignore[misc]
+                        if operation_token != self.operation_token:
+                            continue
+                        self._finish_operation(operation_token)
                         self.last_report_path = report_path
-                        self.set_progress_idle()
-                        self._set_busy(False)
-                        self.health_var.set("分类完成")
-                        self.action_hint_var.set("报告已生成，可打开报告或用 Ctrl+Z 撤销上次移动。")
-                        self.log_message(f"分类完成：移动 {moved} 个文件，跳过 {skipped} 个文件。报告：{report_path}")
-                        self.show_toast("分类完成，报告已生成")
-                        messagebox.showinfo("完成", f"分类完成：移动 {moved} 个文件，跳过 {skipped} 个文件。")
-                    elif event == "error":
-                        if isinstance(payload, tuple) and len(payload) == 2:
-                            token, error_value = payload
-                            if token != self.scan_token:
+                        actual_targets: dict[str, Path] = {}
+                        try:
+                            report_data = json.loads(Path(report_path).read_text(encoding="utf-8"))
+                            for item in report_data.get("items") or []:
+                                if not isinstance(item, dict) or item.get("operation") != "moved":
+                                    continue
+                                source_value = str(item.get("source_path") or "")
+                                target_value = str(item.get("actual_target_path") or "")
+                                if source_value and target_value:
+                                    actual_targets[source_value] = Path(target_value)
+                        except (OSError, json.JSONDecodeError, AttributeError):
+                            actual_targets = {}
+                        updated_plans = []
+                        for plan in self.plans:
+                            if not plan.will_move:
+                                updated_plans.append(plan)
                                 continue
-                            payload = error_value
+                            actual_target = actual_targets.get(str(plan.source_path), plan.target_path)
+                            updated_plans.append(
+                                replace(
+                                    plan,
+                                    target_dir=actual_target.parent,
+                                    target_path=actual_target,
+                                    status="moved",
+                                    note=f"已移动到 {actual_target}。",
+                                )
+                            )
+                        self.plans = updated_plans
+                        self._render_plans()
+                        self.set_progress_operation(len(self.plans), len(self.plans), "已完成")
+                        self._set_phase("分类完成", "success", "报告已生成，可打开报告或用 Ctrl+Z 撤销上次移动。")
+                        self.log_message(f"分类完成：移动 {moved} 个文件，跳过 {skipped} 个文件。报告：{report_path}")
+                        self.show_toast("分类完成，报告已生成", kind="success")
+                        messagebox.showinfo("完成", f"分类完成：移动 {moved} 个文件，跳过 {skipped} 个文件。")
+                    elif event == "undo_done":
+                        operation_token, restored, skipped, report_path = payload  # type: ignore[misc]
+                        if operation_token != self.operation_token:
+                            continue
+                        self._finish_operation(operation_token)
+                        self.last_report_path = report_path
+                        self._invalidate_preview("撤销已完成，请重新扫描确认当前文件状态。")
+                        self._set_phase("撤销完成", "success", "文件已按报告恢复；重新扫描可刷新分类预览。")
+                        self.log_message(f"撤销完成：恢复 {restored} 个文件，跳过 {skipped} 个文件。")
+                        self.show_toast(f"撤销完成：恢复 {restored} 个，跳过 {skipped} 个", kind="success")
+                    elif event == "operation_error":
+                        operation_token, operation, error_value, context_path = payload  # type: ignore[misc]
+                        if operation_token != self.operation_token:
+                            continue
+                        self._finish_operation(operation_token)
+                        if context_path is not None and Path(context_path).exists():
+                            self.last_report_path = Path(context_path)
                         self.set_progress_idle()
-                        self._set_busy(False)
-                        self.health_var.set("需要处理")
-                        self.action_hint_var.set("检查日志中的错误原因，修正后重新扫描或执行。")
-                        self.log_message(f"错误：{payload}")
-                        messagebox.showerror("错误", str(payload))
+                        if operation in {"apply", "undo"}:
+                            self._invalidate_preview("文件状态可能已部分变化，请先查看报告并重新扫描。")
+                        else:
+                            self.empty_table_label.configure(text="扫描失败\n请查看下方日志后重试")
+                            self.empty_table_label.place(relx=0.5, rely=0.54, anchor="center")
+                        operation_name = {"scan": "扫描", "apply": "执行分类", "undo": "撤销"}.get(operation, operation)
+                        self._set_phase(f"{operation_name}失败", "error", "检查日志中的错误原因，修正后重新扫描。")
+                        self.log_message(f"{operation_name}失败：{error_value}")
+                        messagebox.showerror(f"{operation_name}失败", str(error_value))
             except queue.Empty:
                 pass
-            self.master.after(150, self._poll_events)
+            if not self.is_closing:
+                try:
+                    self.master.after(120, self._poll_events)
+                except tk.TclError:
+                    pass
 
         def _render_plans(self) -> None:
             self.refresh_series_filter()
             self.update_stats()
             self.tree.delete(*self.tree.get_children())
             visible_indices = self.filtered_plan_indices()
+            if visible_indices:
+                self.empty_table_label.place_forget()
+            else:
+                empty_text = "当前筛选没有结果" if self.plans else "没有找到可分类文件"
+                self.empty_table_label.configure(text=empty_text)
+                self.empty_table_label.place(relx=0.5, rely=0.54, anchor="center")
             for row_number, index in enumerate(visible_indices):
                 plan = self.plans[index]
                 source = f"{plan.resolver_source} {plan.confidence:.0%}"
@@ -2887,9 +3505,11 @@ def launch_gui() -> None:
                 else:
                     detail_status = "待预取"
                 status_text = plan_status_label(plan.status)
-                if plan.note and plan.status == "ready":
+                if plan.note and plan.status in {"ready", "moved", "unchanged"}:
                     detail_status = plan.note
-                if plan.resolver_source == "手动修正":
+                if plan.status == "moved":
+                    row_tag = "moved"
+                elif plan.resolver_source == "手动修正":
                     row_tag = "manual"
                 elif plan.status == "ready" and row_number % 2 == 1:
                     row_tag = "ready_alt"
@@ -2921,9 +3541,9 @@ def launch_gui() -> None:
                     self.set_progress_idle()
             else:
                 self.set_progress_idle()
-                self.health_var.set("无可显示结果")
-                self.action_hint_var.set("可以更换目录、调整筛选条件或开启包含子文件夹后重新扫描。")
+                self._set_phase("无可显示结果", "warning", "可以更换目录、调整筛选条件或开启包含子文件夹后重新扫描。")
                 self.show_empty_detail("没有找到可分类文件。")
+            self._refresh_action_states()
 
     root = tk.Tk()
     try:

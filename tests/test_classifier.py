@@ -205,6 +205,54 @@ class MovePlanTests(unittest.TestCase):
             self.assertEqual(duplicates, {})
             self.assertEqual(full_hash.call_count, 0)
 
+    def test_recursive_scan_keeps_already_classified_file_in_place(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            series_dir = root / "Sword Art Online"
+            series_dir.mkdir()
+            book = series_dir / "Sword.Art.Online.Vol.01.txt"
+            book.write_text("volume one", encoding="utf-8")
+
+            plans = build_classification_plan(root, recursive=True, use_network=False)
+
+            self.assertEqual(len(plans), 1)
+            self.assertEqual(plans[0].status, "unchanged")
+            self.assertEqual(plans[0].target_path, book)
+            self.assertFalse(plans[0].will_move)
+
+            moved, skipped = execute_classification_plan(plans)
+
+            self.assertEqual((moved, skipped), (0, 1))
+            self.assertTrue(book.exists())
+            self.assertFalse((series_dir / "Sword.Art.Online.Vol.01 (1).txt").exists())
+
+    def test_execute_and_undo_report_structured_progress(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "Sword.Art.Online.Vol.01.txt"
+            second = root / "Sword.Art.Online.Vol.02.txt"
+            first.write_text("one", encoding="utf-8")
+            second.write_text("two", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            execute_progress = []
+            undo_progress = []
+            plans = build_classification_plan(root, use_network=False)
+
+            moved, skipped = execute_classification_plan(
+                plans,
+                report_path=report_path,
+                progress_count=lambda done, total: execute_progress.append((done, total)),
+            )
+            restored, undo_skipped = undo_classification_report(
+                report_path,
+                progress_count=lambda done, total: undo_progress.append((done, total)),
+            )
+
+            self.assertEqual((moved, skipped), (2, 0))
+            self.assertEqual(execute_progress, [(1, 2), (2, 2)])
+            self.assertEqual((restored, undo_skipped), (2, 0))
+            self.assertEqual(undo_progress, [(1, 2), (2, 2)])
+
     def test_custom_rule_overrides_local_guess(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -286,10 +334,35 @@ class MovePlanTests(unittest.TestCase):
             self.assertEqual((restored, skipped), (1, 0))
             self.assertTrue(first.exists())
 
+    def test_unwritable_report_fails_before_moving_files(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "Sword.Art.Online.Vol.01.txt"
+            book.write_text("one", encoding="utf-8")
+            blocked_parent = root / "not-a-directory"
+            blocked_parent.write_text("blocked", encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+
+            with self.assertRaises(OSError):
+                execute_classification_plan(plans, report_path=blocked_parent / "report.json")
+
+            self.assertTrue(book.exists())
+            self.assertFalse((root / "Sword Art Online" / book.name).exists())
+
+    def test_undo_rejects_non_object_report(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            report_path = Path(temp_dir) / "classification_report.json"
+            report_path.write_text("[]", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "根节点必须是对象"):
+                undo_classification_report(report_path)
+
     def test_plan_status_label(self) -> None:
         self.assertEqual(plan_status_label("ready"), "可执行")
         self.assertEqual(plan_status_label("duplicate"), "重复")
         self.assertEqual(plan_status_label("error"), "错误")
+        self.assertEqual(plan_status_label("moved"), "已移动")
+        self.assertEqual(plan_status_label("unchanged"), "无需移动")
         self.assertEqual(plan_status_label("custom"), "custom")
 
     def test_count_plan_statuses(self) -> None:
@@ -406,6 +479,15 @@ class BangumiMetadataTests(unittest.TestCase):
 
             self.assertIsNone(cache.get("book:bad"))
             self.assertNotIn("book:bad", PersistentMetadataCache(cache_path).data["entries"])
+
+    def test_persistent_metadata_cache_ignores_non_object_root(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "cache.json"
+            cache_path.write_text("[]", encoding="utf-8")
+
+            cache = PersistentMetadataCache(cache_path)
+
+            self.assertEqual(cache.data, {"version": 1, "entries": {}})
 
 
 if __name__ == "__main__":
