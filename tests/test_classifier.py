@@ -1,6 +1,8 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
+import time
+import threading
 from unittest.mock import patch
 import unittest
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -9,6 +11,7 @@ import lightnovel_classifier
 from lightnovel_classifier import (
     BookMetadata,
     AppSettings,
+    COVER_MAX_BYTES,
     CustomRule,
     FILE_FINGERPRINT_CHUNK_SIZE,
     PersistentMetadataCache,
@@ -23,11 +26,14 @@ from lightnovel_classifier import (
     extract_book_lookup_query,
     extract_series_guess,
     find_duplicate_files,
+    http_bytes,
+    http_json,
     identity_query_for_path,
     item_matches_volume,
     normalize_for_match,
     parse_volume_number,
     plan_status_label,
+    revise_classification_plan,
     read_local_cover_bytes,
     safe_folder_name,
     load_app_settings,
@@ -205,6 +211,28 @@ class MovePlanTests(unittest.TestCase):
             self.assertEqual(duplicates, {})
             self.assertEqual(full_hash.call_count, 0)
 
+    def test_http_bytes_rejects_oversized_response(self) -> None:
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.read.return_value = b"12345"
+        with patch("lightnovel_selector.files.urllib.request.urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "超过允许大小"):
+                http_bytes("https://example.test/cover.jpg", max_bytes=4)
+
+    def test_http_json_rejects_non_object_root(self) -> None:
+        response = unittest.mock.MagicMock()
+        opened_response = response.__enter__.return_value
+        opened_response.headers.get_content_charset.return_value = "utf-8"
+        opened_response.read.return_value = b"[]"
+
+        with patch("lightnovel_selector.files.urllib.request.urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "JSON 根节点不是对象"):
+                http_json("https://example.test/search")
+
+    def test_bangumi_search_rejects_invalid_data_shape(self) -> None:
+        with patch("lightnovel_selector.metadata.http_json", return_value={"data": {}}):
+            with self.assertRaisesRegex(RuntimeError, "data 不是数组"):
+                lightnovel_classifier.bangumi_search_items("Sword Art Online", timeout=1.0)
+
     def test_recursive_scan_keeps_already_classified_file_in_place(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -253,6 +281,39 @@ class MovePlanTests(unittest.TestCase):
             self.assertEqual((restored, undo_skipped), (2, 0))
             self.assertEqual(undo_progress, [(1, 2), (2, 2)])
 
+    def test_scan_reports_structured_progress(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "Sword.Art.Online.Vol.01.txt").write_text("one", encoding="utf-8")
+            (root / "Sword.Art.Online.Vol.02.txt").write_text("two", encoding="utf-8")
+            progress = []
+
+            plans = build_classification_plan(
+                root,
+                use_network=False,
+                progress_count=lambda done, total: progress.append((done, total)),
+            )
+
+            self.assertEqual(len(plans), 2)
+            self.assertEqual(progress, [(1, 2), (2, 2)])
+
+    def test_manual_revision_clears_duplicate_status(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A.txt"
+            duplicate = root / "B.txt"
+            first.write_text("same", encoding="utf-8")
+            duplicate.write_text("same", encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+            duplicate_index = next(index for index, plan in enumerate(plans) if plan.status == "duplicate")
+
+            revised = revise_classification_plan(plans, duplicate_index, "手动系列")
+
+            self.assertEqual(revised.status, "ready")
+            self.assertEqual(revised.series_name, "手动系列")
+            self.assertEqual(revised.resolver_source, "手动修正")
+            self.assertIsNone(revised.duplicate_of)
+
     def test_custom_rule_overrides_local_guess(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -277,6 +338,7 @@ class MovePlanTests(unittest.TestCase):
                 recursive=True,
                 auto_rename=True,
                 custom_rules=(CustomRule(pattern="*SAO*", series="Sword Art Online"),),
+                last_folder=str(Path(temp_dir)),
             )
 
             save_app_settings(settings, path)
@@ -408,6 +470,14 @@ class LocalCoverTests(unittest.TestCase):
 
             self.assertEqual(read_local_cover_bytes(epub_path), MINIMAL_PNG)
 
+    def test_skips_oversized_archive_cover(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            archive_path = Path(temp_dir) / "book.cbz"
+            with ZipFile(archive_path, "w", ZIP_DEFLATED) as archive:
+                archive.writestr("cover.jpg", b"x" * (COVER_MAX_BYTES + 1))
+
+            self.assertIsNone(read_local_cover_bytes(archive_path))
+
 
 class BangumiMetadataTests(unittest.TestCase):
     def test_extracts_titles_and_cover_from_search_item(self) -> None:
@@ -488,6 +558,103 @@ class BangumiMetadataTests(unittest.TestCase):
             cache = PersistentMetadataCache(cache_path)
 
             self.assertEqual(cache.data, {"version": 1, "entries": {}})
+
+
+class ApplicationServiceTests(unittest.TestCase):
+    @staticmethod
+    def wait_for_operation(service, timeout: float = 5.0) -> dict:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            snapshot = service.snapshot()
+            if snapshot["operation"]["state"] != "running":
+                return snapshot
+            time.sleep(0.02)
+        raise AssertionError("后台操作未在测试时限内完成")
+
+    def test_scan_edit_apply_and_undo_workflow(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "Sword.Art.Online.Vol.01.txt"
+            book.write_text("volume one", encoding="utf-8")
+            with (
+                patch("lightnovel_selector.application.load_app_settings", return_value=AppSettings()),
+                patch("lightnovel_selector.application.try_save_app_settings", return_value=None),
+            ):
+                service = ApplicationService()
+                service.set_folder(str(root))
+                service.save_settings(
+                    {
+                        "use_network": False,
+                        "recursive": False,
+                        "auto_rename": False,
+                        "custom_rules": [],
+                    }
+                )
+
+                service.start_scan()
+                scanned = self.wait_for_operation(service)
+                self.assertEqual(scanned["operation"]["state"], "success")
+                self.assertEqual(scanned["counts"]["ready"], 1)
+                self.assertEqual(len(scanned["plans"]), 1)
+
+                service.edit_plan(0, "SAO 手动分类")
+                edited = service.snapshot(plans_revision=-1)
+                self.assertEqual(edited["plans"][0]["series_name"], "SAO 手动分类")
+
+                service.start_apply()
+                applied = self.wait_for_operation(service)
+                moved_path = root / "SAO 手动分类" / book.name
+                self.assertEqual(applied["operation"]["state"], "success")
+                self.assertTrue(moved_path.exists())
+                self.assertTrue((root / "classification_report.json").exists())
+
+                service.start_undo()
+                undone = self.wait_for_operation(service)
+                self.assertEqual(undone["operation"]["state"], "success")
+                self.assertTrue(book.exists())
+
+    def test_snapshot_only_resends_plans_after_revision_change(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        with patch("lightnovel_selector.application.load_app_settings", return_value=AppSettings()):
+            service = ApplicationService()
+        first = service.snapshot(plans_revision=-1)
+        second = service.snapshot(plans_revision=first["plans_revision"])
+
+        self.assertEqual(first["plans"], [])
+        self.assertIsNone(second["plans"])
+
+    def test_rejected_concurrent_scan_does_not_change_revision(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow_scan(*_args, **_kwargs):
+            started.set()
+            release.wait(timeout=2)
+            return []
+
+        with TemporaryDirectory() as temp_dir:
+            with (
+                patch("lightnovel_selector.application.load_app_settings", return_value=AppSettings()),
+                patch("lightnovel_selector.application.try_save_app_settings", return_value=None),
+                patch("lightnovel_selector.application.build_classification_plan", side_effect=slow_scan),
+            ):
+                service = ApplicationService()
+                service.set_folder(temp_dir)
+                service.start_scan()
+                self.assertTrue(started.wait(timeout=1))
+                revision = service.snapshot()["plans_revision"]
+
+                with self.assertRaisesRegex(RuntimeError, "尚未完成"):
+                    service.start_scan()
+
+                self.assertEqual(service.snapshot()["plans_revision"], revision)
+                release.set()
+                self.wait_for_operation(service)
 
 
 if __name__ == "__main__":

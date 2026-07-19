@@ -1,72 +1,131 @@
 # LightNovelSelector 开发说明
 
-本文档面向维护者，普通用户只需要阅读 `README.md` 并下载 Release 中的 exe。
+本文档面向维护者。普通用户只需要阅读 `README.md` 并下载 Release 中的 EXE。
+
+## 技术栈
+
+- Python 3.10+
+- pywebview 6.2.1
+- Windows Edge WebView2
+- 原生 HTML、CSS、JavaScript
+- pytest、ruff、vulture
+- PyInstaller
+
+界面没有 React、Electron、Node 运行时或本地服务框架。Node 和 Playwright 只用于可选的界面截图验证，不是软件运行依赖。
+
+## 架构
+
+### 入口与兼容层
+
+- `lightnovel_classifier.py`：保留旧启动方式和旧导入路径。
+- `lightnovel_selector/cli.py`：参数解析和命令行工作流。
+
+### 领域核心
+
+- `models.py`：不可变数据模型。
+- `parsing.py`：标题清洗、卷号识别、系列名提取。
+- `files.py`：电子书提示、封面、文件指纹和重复检测。
+- `metadata.py`：Bangumi、AniList、Jikan 查询与缓存。
+- `classification.py`：预览计划、手动修正、移动、报告和撤销。
+- `storage.py`：设置、元数据缓存和原子 JSON 写入。
+
+### 应用与界面
+
+- `application.py`：线程安全的应用服务、后台任务、进度、日志和 UI 序列化。
+- `desktop.py`：仅暴露白名单方法的 pywebview 桥接、原生目录选择和外部打开操作。
+- `web/index.html`：语义结构与对话框。
+- `web/styles.css`：视觉系统、响应式布局、动效和辅助功能。
+- `web/app.js`：界面状态、轮询、筛选和用户交互。
+
+前端不会直接执行路径操作。所有移动、恢复、创建目录和打开路径都经过 Python 桥接。
 
 ## 本地运行
 
-在项目目录运行：
+普通源码启动：
 
 ```powershell
 .\run.bat
 ```
 
-或直接运行：
+脚本会创建 `.venv` 并安装 `requirements.txt`。
+
+开发环境可使用现有构建虚拟环境：
 
 ```powershell
-py .\lightnovel_classifier.py
+.\.venv-build\Scripts\python.exe .\lightnovel_classifier.py
 ```
+
+窗口调试：
+
+```powershell
+$env:LN_SELECTOR_DEBUG="1"
+.\.venv-build\Scripts\python.exe .\lightnovel_classifier.py
+```
+
+自动启动并在两秒后关闭，用于冒烟测试：
+
+```powershell
+$env:LN_SELECTOR_SMOKE_TEST="1"
+.\.venv-build\Scripts\python.exe .\lightnovel_classifier.py
+```
+
+## 前端独立预览
+
+界面包含只在 `mock=1` 时启用的演示数据，可脱离 Python 检查布局：
+
+```powershell
+py -m http.server 8000 --directory .\lightnovel_selector\web
+```
+
+浏览器打开：
+
+```text
+http://127.0.0.1:8000/?mock=1
+http://127.0.0.1:8000/?mock=1&panel=settings
+http://127.0.0.1:8000/?mock=1&panel=confirm
+http://127.0.0.1:8000/?mock=1&panel=detail
+```
+
+正式 pywebview 页面没有 `mock=1`，始终使用真实 Python API。
+
+## 动效约束
+
+- 按钮按压：130ms，`scale(0.97)`，只在精确指针设备启用。
+- 弹窗：进入 220ms，退出 140ms，强 `ease-out`。
+- Toast：进入 220ms，退出 150ms，沿同一方向进出。
+- 抽屉：240ms，使用适合抽屉的自定义曲线。
+- 进度条：只动画 `transform`，未知进度使用线性循环。
+- 表格选择、筛选、日志追加和快捷键操作不使用位移动画。
+- 禁止 `transition: all`、`scale(0)`、`ease-in` 和布局属性动画。
+- `prefers-reduced-motion` 下移除位置变化，保留短透明度反馈。
 
 ## 开发验证
 
-推荐在提交前执行：
+完整检查：
 
 ```powershell
-.\.venv-build\Scripts\python.exe -m py_compile lightnovel_classifier.py tests\test_classifier.py
+.\.venv-build\Scripts\python.exe -m py_compile lightnovel_classifier.py lightnovel_selector\*.py tests\test_classifier.py
 .\.venv-build\Scripts\python.exe -m pytest -q
 .\.venv-build\Scripts\python.exe -m ruff check .
-.\.venv-build\Scripts\python.exe -m vulture lightnovel_classifier.py tests --min-confidence 80
+.\.venv-build\Scripts\python.exe -m vulture lightnovel_selector lightnovel_classifier.py tests --min-confidence 80
+node --check .\lightnovel_selector\web\app.js
+git diff --check
 ```
 
-当前测试覆盖重点：
+当前自动测试共 42 项，覆盖：
 
-- 文件名解析
-- 系列名提取
-- 重复文件检测
-- 自定义规则优先级
+- 中英文文件名与卷号解析
+- 内容提示与本地封面读取
+- 两阶段重复检测和完整 SHA-256 确认
+- 在线元数据转换与缓存容错
+- 自定义规则与手动修正
 - 设置读写和保存失败容错
-- 分类报告生成
-- 分类失败时部分报告写入
-- 按报告撤销
-- UI 使用的状态统计逻辑
-- 已分类文件的递归扫描幂等性
-- 执行与撤销的结构化进度回调
-
-## 近期维护记录
-
-### 2026-07-03
-
-- 重复检测增加两阶段策略：唯一文件只计算快速签名，只有可能重复的候选组才计算完整 SHA-256。
-- GUI 同一扫描批次只启动一次详情预加载，避免筛选或重渲染导致重复后台任务。
-- 结果表增加 ready 行交替底色，改善大列表可读性。
-
-### 2026-07-05
-
-- UI 从深色石墨风格调整为 Apple/macOS 启发的浅色工作台。
-- 主题色改为系统蓝，背景改为浅灰，侧栏使用灰白层级，卡片改为白底和柔和分隔线。
-- 统一 UI 字体、卡片间距、按钮 padding、表格行高、Toast 和进度文字样式。
-
-### 2026-07-10
-
-- 主线 UI 重整为中性石墨深色控制台，使用语义色区分识别、执行、成功、警告、错误和手动修正。
-- 关键按钮改为自绘控件，复选框固定显示 `✓/□`，并补齐空状态、横向滚动和稳定禁用态。
-- 新增 `LN_SELECTOR_REDUCED_MOTION=1`，可关闭非必要的数字、进度、Toast 和入场动画。
-- 扫描线程改为使用主线程快照，不再从后台读取 Tk 变量。
-- 扫描、执行、撤销事件增加操作令牌，过期日志和结果不会覆盖当前任务。
-- 撤销改为后台执行；忙碌期间锁定冲突控件，文件移动或恢复期间阻止直接关窗。
-- 目录或识别设置变化时自动作废旧预览；执行完成后条目标记为“已移动”，防止二次执行。
-- 修复递归扫描已分类文件时可能生成 `(1)` 文件名的问题，新增“无需移动”状态。
-- 设置、缓存和分类报告改为原子 JSON 写入；执行前先写入 0 进度报告，报告不可写时不会移动文件。
-- 测试增至 33 项，并增加完整扫描、执行、报告和撤销 UI smoke。
+- 结构化扫描、执行与撤销进度
+- 报告预写、部分失败报告和原子写入
+- 已分类文件递归扫描幂等性
+- 应用服务完整扫描、修正、执行和撤销流程
+- 并发扫描拒绝与预览版本一致性
+- 在线封面大小限制
 
 ## 打包 EXE
 
@@ -76,38 +135,46 @@ py .\lightnovel_classifier.py
 .\build_exe.bat
 ```
 
-脚本会自动创建或修复 `.venv-build` 构建环境，安装 PyInstaller 和 Pillow，然后生成：
+脚本会：
+
+1. 检查或重建 `.venv-build`。
+2. 安装固定版本的运行与开发依赖。
+3. 从 `constants.py` 读取版本号。
+4. 把 `lightnovel_selector\web` 静态资源加入单文件包。
+5. 生成带时间戳的 Windows EXE。
+
+输出示例：
 
 ```text
-dist\LightNovelSelector-v1.3.0-构建时间.exe
+dist\LightNovelSelector-v2.0.0-构建时间.exe
 ```
 
-每次构建都会生成带时间戳的新文件，不会覆盖旧版本。
+打包后冒烟：
 
-如果重装系统或更换用户名导致 `.venv-build` 指向旧 Python，`build_exe.bat` 会检测虚拟环境是否可运行。坏环境会移动到 `archive_old_code`，然后用当前可用 Python 自动重建。
+```powershell
+$env:LN_SELECTOR_SMOKE_TEST="1"
+& ".\dist\LightNovelSelector-v2.0.0-构建时间.exe"
+```
+
+PyInstaller 的 `pycparser.lextab` 和 `pycparser.yacctab` 可选隐藏模块警告不影响 WebView2 运行；最终判断以 EXE 冒烟结果为准。
 
 ## Git 工作流
 
-本项目主分支为 `main`。维护改动默认按以下顺序处理：
+主分支为 `main`。提交前检查差异，避免加入 `.venv`、`build`、`dist` 和本地缓存：
 
 ```powershell
 git status
-git add .
+git diff --check
+git add README.md DEVELOPMENT.md UPDATE_NOTES.md lightnovel_classifier.py lightnovel_selector requirements.txt requirements-dev.txt pyproject.toml run.bat build_exe.bat tests
 git commit -m "..."
 git push origin main
 ```
 
-发布新版本时：
+发布版本时再创建 tag 和 Release，不把测试构建目录提交到仓库。
 
-```powershell
-git tag -a v版本号 -m "LightNovelSelector v版本号"
-git push origin v版本号
-gh release create v版本号 "dist\LightNovelSelector-v版本号-构建时间.exe" --title "LightNovelSelector v版本号" --notes-file UPDATE_NOTES.md --latest
-```
+## 文档约定
 
-## 发布说明
-
-- `README.md` 面向下载和使用软件的人。
+- `README.md` 面向使用者。
 - `UPDATE_NOTES.md` 面向 Release 页面。
 - `DEVELOPMENT.md` 面向维护者。
-- 对外文档默认使用中文，避免写入内部工作流和工具使用痕迹。
+- 公开文档使用中文，示例路径不得包含真实用户隐私数据。
