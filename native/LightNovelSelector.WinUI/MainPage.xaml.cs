@@ -73,7 +73,7 @@ public sealed partial class MainPage : Page
 
         try
         {
-            var ping = await _sidecar.StartAsync();
+            await _sidecar.StartAsync();
             var snapshot = await _sidecar.BootstrapAsync();
             ConnectionText.Text = "分类核心已连接";
             ConnectionDot.Fill = ResourceBrush("SuccessTextBrush");
