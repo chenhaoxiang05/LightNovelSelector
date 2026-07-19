@@ -62,6 +62,7 @@ def launch_gui() -> None:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="轻小说联网分类工具")
     parser.add_argument("folder", nargs="?", help="要分类的大文件夹；不提供时启动窗口界面")
+    parser.add_argument("--sidecar", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--undo-report", help="按 classification_report.json 撤销一次分类移动")
     parser.add_argument("--dry-run", action="store_true", help="只预览，不移动文件")
     parser.add_argument("--no-network", action="store_true", help="关闭联网识别，只使用本地文件名规则")
@@ -80,6 +81,10 @@ def configure_stdio() -> None:
 def main(argv: list[str] | None = None) -> int:
     configure_stdio()
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    if args.sidecar:
+        from .sidecar import SidecarServer
+
+        return SidecarServer().serve_forever()
     if args.undo_report:
         restored, skipped = undo_classification_report(
             Path(args.undo_report),

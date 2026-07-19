@@ -1,0 +1,143 @@
+using System.Text.Json;
+
+namespace LightNovelSelector.WinUI.Models;
+
+public sealed class AppSnapshot
+{
+    public AppInfo App { get; init; } = new();
+    public string Folder { get; init; } = string.Empty;
+    public AppSettings Settings { get; init; } = new();
+    public OperationState Operation { get; init; } = new();
+    public PlanCounts Counts { get; init; } = new();
+    public string? ReportPath { get; init; }
+    public int PlansRevision { get; init; }
+    public IReadOnlyList<PlanItem>? Plans { get; init; }
+    public IReadOnlyList<LogEntry> Logs { get; init; } = [];
+    public int LogCursor { get; init; }
+}
+
+public sealed class AppInfo
+{
+    public string Name { get; init; } = string.Empty;
+    public string Version { get; init; } = string.Empty;
+}
+
+public sealed class AppSettings
+{
+    public bool UseNetwork { get; init; } = true;
+    public bool Recursive { get; init; }
+    public bool AutoRename { get; init; }
+    public IReadOnlyList<CustomRule> CustomRules { get; init; } = [];
+    public string LastFolder { get; init; } = string.Empty;
+}
+
+public sealed class CustomRule
+{
+    public string Pattern { get; init; } = string.Empty;
+    public string Series { get; init; } = string.Empty;
+}
+
+public sealed class OperationState
+{
+    public int Id { get; init; }
+    public string Kind { get; init; } = "idle";
+    public string State { get; init; } = "idle";
+    public string Message { get; init; } = string.Empty;
+    public int Done { get; init; }
+    public int Total { get; init; }
+    public bool CanCancel { get; init; }
+    public string? Error { get; init; }
+}
+
+public sealed class PlanCounts
+{
+    public int Ready { get; init; }
+    public int Duplicate { get; init; }
+    public int Conflict { get; init; }
+    public int Error { get; init; }
+    public int Unchanged { get; init; }
+    public int Moved { get; init; }
+    public int Series { get; init; }
+}
+
+public sealed class PlanItem
+{
+    public int Index { get; init; }
+    public string FileName { get; init; } = string.Empty;
+    public string Extension { get; init; } = string.Empty;
+    public string SourcePath { get; init; } = string.Empty;
+    public string SeriesName { get; init; } = string.Empty;
+    public string SeriesKey { get; init; } = string.Empty;
+    public string TargetDir { get; init; } = string.Empty;
+    public string TargetPath { get; init; } = string.Empty;
+    public string TargetName { get; init; } = string.Empty;
+    public string ResolverSource { get; init; } = string.Empty;
+    public double Confidence { get; init; }
+    public string ConfidenceLabel { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public string StatusLabel { get; init; } = string.Empty;
+    public string Note { get; init; } = string.Empty;
+    public string? DuplicateOf { get; init; }
+    public string? RenameTo { get; init; }
+    public string? MetadataTitle { get; init; }
+    public string? MetadataUrl { get; init; }
+    public bool HasLocalCover { get; init; }
+    public bool WillMove { get; init; }
+}
+
+public sealed class LogEntry
+{
+    public int Id { get; init; }
+    public string Time { get; init; } = string.Empty;
+    public string Kind { get; init; } = "info";
+    public string Message { get; init; } = string.Empty;
+}
+
+public sealed class BookDetail
+{
+    public int Index { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public string Summary { get; init; } = string.Empty;
+    public string? SubjectUrl { get; init; }
+    public string? CoverDataUrl { get; init; }
+    public string CoverSource { get; init; } = string.Empty;
+    public string FileName { get; init; } = string.Empty;
+    public string SourcePath { get; init; } = string.Empty;
+    public string TargetPath { get; init; } = string.Empty;
+    public string SeriesName { get; init; } = string.Empty;
+    public string ResolverSource { get; init; } = string.Empty;
+    public string ConfidenceLabel { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public string StatusLabel { get; init; } = string.Empty;
+    public string Note { get; init; } = string.Empty;
+    public string? Warning { get; init; }
+}
+
+public sealed class SaveSettingsResult
+{
+    public bool Saved { get; init; }
+    public string? Warning { get; init; }
+    public AppSnapshot State { get; init; } = new();
+}
+
+public sealed class CancelResult
+{
+    public bool Cancelled { get; init; }
+    public AppSnapshot State { get; init; } = new();
+}
+
+public sealed class ReportSummary
+{
+    public string Path { get; init; } = string.Empty;
+    public string? CreatedAt { get; init; }
+    public JsonElement Summary { get; init; }
+    public JsonElement Items { get; init; }
+}
+
+public sealed class SidecarPing
+{
+    public int ProtocolVersion { get; init; }
+    public string AppName { get; init; } = string.Empty;
+    public string AppVersion { get; init; } = string.Empty;
+    public int ProcessId { get; init; }
+}
