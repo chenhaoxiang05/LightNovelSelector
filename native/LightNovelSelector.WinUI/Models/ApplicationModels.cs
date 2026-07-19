@@ -62,35 +62,35 @@ public sealed class PlanCounts
 
 public sealed class PlanItem
 {
-    public int Index { get; init; }
-    public string FileName { get; init; } = string.Empty;
-    public string Extension { get; init; } = string.Empty;
-    public string SourcePath { get; init; } = string.Empty;
-    public string SeriesName { get; init; } = string.Empty;
-    public string SeriesKey { get; init; } = string.Empty;
-    public string TargetDir { get; init; } = string.Empty;
-    public string TargetPath { get; init; } = string.Empty;
-    public string TargetName { get; init; } = string.Empty;
-    public string ResolverSource { get; init; } = string.Empty;
-    public double Confidence { get; init; }
-    public string ConfidenceLabel { get; init; } = string.Empty;
-    public string Status { get; init; } = string.Empty;
-    public string StatusLabel { get; init; } = string.Empty;
-    public string Note { get; init; } = string.Empty;
-    public string? DuplicateOf { get; init; }
-    public string? RenameTo { get; init; }
-    public string? MetadataTitle { get; init; }
-    public string? MetadataUrl { get; init; }
-    public bool HasLocalCover { get; init; }
-    public bool WillMove { get; init; }
+    public int Index { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string Extension { get; set; } = string.Empty;
+    public string SourcePath { get; set; } = string.Empty;
+    public string SeriesName { get; set; } = string.Empty;
+    public string SeriesKey { get; set; } = string.Empty;
+    public string TargetDir { get; set; } = string.Empty;
+    public string TargetPath { get; set; } = string.Empty;
+    public string TargetName { get; set; } = string.Empty;
+    public string ResolverSource { get; set; } = string.Empty;
+    public double Confidence { get; set; }
+    public string ConfidenceLabel { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string StatusLabel { get; set; } = string.Empty;
+    public string Note { get; set; } = string.Empty;
+    public string? DuplicateOf { get; set; }
+    public string? RenameTo { get; set; }
+    public string? MetadataTitle { get; set; }
+    public string? MetadataUrl { get; set; }
+    public bool HasLocalCover { get; set; }
+    public bool WillMove { get; set; }
 }
 
 public sealed class LogEntry
 {
-    public int Id { get; init; }
-    public string Time { get; init; } = string.Empty;
-    public string Kind { get; init; } = "info";
-    public string Message { get; init; } = string.Empty;
+    public int Id { get; set; }
+    public string Time { get; set; } = string.Empty;
+    public string Kind { get; set; } = "info";
+    public string Message { get; set; } = string.Empty;
 }
 
 public sealed class BookDetail
