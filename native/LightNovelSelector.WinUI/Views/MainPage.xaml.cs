@@ -76,6 +76,7 @@ public sealed partial class MainPage : Page
             var snapshot = await _sidecar.BootstrapAsync();
             ConnectionText.Text = "分类核心已连接";
             ConnectionDot.Fill = ResourceBrush("SuccessTextBrush");
+            ConnectionBadge.Background = ResourceBrush("SuccessSubtleBrush");
             VersionText.Text = $"版本 {snapshot.App.Version}";
             ApplySnapshot(snapshot);
             _pollTimer.Interval = TimeSpan.FromSeconds(2);
@@ -97,6 +98,7 @@ public sealed partial class MainPage : Page
         {
             ConnectionText.Text = "分类核心不可用";
             ConnectionDot.Fill = ResourceBrush("ErrorTextBrush");
+            ConnectionBadge.Background = ResourceBrush("ErrorSubtleBrush");
             ShowToast(exc.Message, ToastKind.Error, 6000);
             if (App.IsAutomatedSmokeTest)
             {
@@ -196,6 +198,7 @@ public sealed partial class MainPage : Page
             _pollTimer.Stop();
             ConnectionText.Text = "分类核心连接中断";
             ConnectionDot.Fill = ResourceBrush("ErrorTextBrush");
+            ConnectionBadge.Background = ResourceBrush("ErrorSubtleBrush");
             ShowToast(exc.Message, ToastKind.Error, 6000);
         }
         finally
@@ -253,6 +256,7 @@ public sealed partial class MainPage : Page
         SetCount(DuplicateCountText, snapshot.Counts.Duplicate);
         SetCount(AttentionCountText, snapshot.Counts.Conflict + snapshot.Counts.Error);
         UpdateOperation(snapshot.Operation);
+        UpdateWorkflowRail(snapshot);
         UpdateReportAvailability();
     }
 
@@ -297,6 +301,13 @@ public sealed partial class MainPage : Page
         };
         OperationIcon.Glyph = glyph;
         OperationIcon.Foreground = ResourceBrush(brushKey);
+        OperationIconSurface.Background = ResourceBrush(operation.State switch
+        {
+            "success" => "SuccessSubtleBrush",
+            "error" => "ErrorSubtleBrush",
+            "cancelled" => "WarningSubtleBrush",
+            _ => "AccentSubtleBrush",
+        });
 
         if (
             operation.Id == _lastOperationId
@@ -478,7 +489,7 @@ public sealed partial class MainPage : Page
         {
             transition.Duration = TimeSpan.FromMilliseconds(active ? 100 : 120);
         }
-        FolderCard.Background = ResourceBrush(active ? "CardHoverBrush" : "CardBackgroundBrush");
+        FolderCard.Background = ResourceBrush(active ? "CardHoverBrush" : "ElevatedCardBackgroundBrush");
         FolderCard.BorderBrush = ResourceBrush(active ? "AppAccentBrush" : "CardBorderBrush");
         FolderCard.BorderThickness = new Thickness(active ? 2 : 1);
         Motion.SetEmphasis(FolderIconSurface, active);

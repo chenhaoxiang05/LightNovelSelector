@@ -10,7 +10,7 @@ public sealed partial class MainPage
     private bool _appearanceLoading;
     private bool _materialStateSubscribed;
 
-    private static async Task RunAppearanceSmokeTestAsync()
+    private async Task RunAppearanceSmokeTestAsync()
     {
         if (App.MainWindow is not { } window)
         {
@@ -32,6 +32,13 @@ public sealed partial class MainPage
                 await Task.Delay(180);
             }
         }
+
+        ShellNavigation.SelectedItem = ActivityNavigationItem;
+        await Task.Delay(220);
+        ShellNavigation.SelectedItem = ShellNavigation.SettingsItem;
+        await Task.Delay(220);
+        ShellNavigation.SelectedItem = WorkspaceNavigationItem;
+        await Task.Delay(220);
     }
 
     private void LoadAppearanceSettings()

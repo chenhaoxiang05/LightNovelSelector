@@ -19,27 +19,99 @@
             OpenPaneLength="224"
             PaneDisplayMode="Left"
             SelectionChanged="OnNavigationSelectionChanged">
+            <NavigationView.Resources>
+                <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="{ThemeResource NavigationSelectionColor}" />
+                <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="{ThemeResource NavigationSelectionColor}" />
+                <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="{ThemeResource NavigationSelectionColor}" />
+            </NavigationView.Resources>
+            <NavigationView.PaneHeader>
+                <Grid Margin="8,6,8,14" ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="36" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="36" Height="36" Background="{ThemeResource AccentSubtleBrush}" CornerRadius="8">
+                        <FontIcon FontSize="17" Foreground="{ThemeResource AppAccentBrush}" Glyph="&#xE8F1;" />
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                        <TextBlock FontWeight="SemiBold" Text="LightNovel" />
+                        <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="智能整理器" />
+                    </StackPanel>
+                </Grid>
+            </NavigationView.PaneHeader>
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="WorkspaceNavigationItem" Content="整理工作台" IsSelected="True" Tag="workspace">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE80F;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="活动与报告" Tag="activity">
+                <NavigationViewItem x:Name="ActivityNavigationItem" Content="活动与报告" Tag="activity">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE9D5;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.PaneFooter>
-                <StackPanel Margin="12,8,12,12" Spacing="2">
-                    <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="LIGHT NOVEL SELECTOR" />
-                    <TextBlock x:Name="VersionText" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="原生预览" />
+                <StackPanel Margin="12,8,12,12" Spacing="10">
+                    <Border Height="1" Background="{ThemeResource DividerBrush}" />
+                    <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="安全工作流" />
+                    <StackPanel Spacing="8">
+                        <Grid ColumnSpacing="9">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="20" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="WorkflowStep1Badge" Width="20" Height="20" Background="{ThemeResource AccentSubtleBrush}" CornerRadius="10">
+                                <TextBlock x:Name="WorkflowStep1Glyph" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" Foreground="{ThemeResource AppAccentBrush}" Text="1" />
+                            </Border>
+                            <TextBlock x:Name="WorkflowStep1Label" Grid.Column="1" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Text="选择目录" />
+                        </Grid>
+                        <Grid ColumnSpacing="9">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="20" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="WorkflowStep2Badge" Width="20" Height="20" Background="{ThemeResource SubtleSurfaceBrush}" CornerRadius="10">
+                                <TextBlock x:Name="WorkflowStep2Glyph" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="2" />
+                            </Border>
+                            <TextBlock x:Name="WorkflowStep2Label" Grid.Column="1" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="扫描预览" />
+                        </Grid>
+                        <Grid ColumnSpacing="9">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="20" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="WorkflowStep3Badge" Width="20" Height="20" Background="{ThemeResource SubtleSurfaceBrush}" CornerRadius="10">
+                                <TextBlock x:Name="WorkflowStep3Glyph" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="3" />
+                            </Border>
+                            <TextBlock x:Name="WorkflowStep3Label" Grid.Column="1" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="检查并修正" />
+                        </Grid>
+                        <Grid ColumnSpacing="9">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="20" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="WorkflowStep4Badge" Width="20" Height="20" Background="{ThemeResource SubtleSurfaceBrush}" CornerRadius="10">
+                                <TextBlock x:Name="WorkflowStep4Glyph" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="4" />
+                            </Border>
+                            <TextBlock x:Name="WorkflowStep4Label" Grid.Column="1" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="执行整理" />
+                        </Grid>
+                    </StackPanel>
+                    <Border Padding="9,6" Background="{ThemeResource SuccessSubtleBrush}" CornerRadius="8">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <Ellipse Width="6" Height="6" Fill="{ThemeResource SuccessTextBrush}" />
+                            <TextBlock VerticalAlignment="Center" FontSize="11" Foreground="{ThemeResource SuccessTextBrush}" Text="本地安全处理" />
+                        </StackPanel>
+                    </Border>
+                    <StackPanel Spacing="1">
+                        <TextBlock FontSize="10" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="LIGHT NOVEL SELECTOR" />
+                        <TextBlock x:Name="VersionText" FontSize="10" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="原生预览" />
+                    </StackPanel>
                 </StackPanel>
             </NavigationView.PaneFooter>
 
             <NavigationView.Content>
-                <Grid Padding="24,18,24,24">
+                <Grid Padding="26,18,26,24">
                     <Grid x:Name="WorkspaceView" RowSpacing="12">
                         <VisualStateManager.VisualStateGroups>
                             <VisualStateGroup>
@@ -79,10 +151,12 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Spacing="3">
+                                <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="资料库操作" />
                                 <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="整理工作台" />
                                 <TextBlock Style="{StaticResource MutedTextStyle}" Text="先预览识别结果，确认无误后再执行文件移动。" />
                             </StackPanel>
                             <Border
+                                x:Name="ConnectionBadge"
                                 Grid.Column="1"
                                 Padding="11,5"
                                 HorizontalAlignment="Right"
@@ -104,7 +178,7 @@
                             DragLeave="OnFolderDragLeave"
                             DragOver="OnFolderDragOver"
                             Drop="OnFolderDrop"
-                            Style="{StaticResource CardBorderStyle}">
+                            Style="{StaticResource HeroCardBorderStyle}">
                             <Border.BackgroundTransition>
                                 <BrushTransition Duration="0:0:0.100" />
                             </Border.BackgroundTransition>
@@ -149,7 +223,7 @@
                                         AutomationProperties.Name="扫描并预览"
                                         Click="OnScanClick"
                                         IsEnabled="False"
-                                        Style="{StaticResource AccentButtonStyle}">
+                                        Style="{StaticResource PrimaryActionButtonStyle}">
                                         <StackPanel Orientation="Horizontal" Spacing="7">
                                             <FontIcon FontSize="15" Glyph="&#xE721;" />
                                             <TextBlock Text="扫描并预览" />
@@ -166,56 +240,68 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Border Style="{StaticResource CompactCardBorderStyle}">
+                            <Border Style="{StaticResource LowCardBorderStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="2">
+                                    <Border Width="3" Margin="0,1,0,1" HorizontalAlignment="Left" Background="{ThemeResource SuccessTextBrush}" CornerRadius="2" />
+                                    <StackPanel Margin="11,0,0,0" Spacing="2">
                                         <TextBlock Style="{StaticResource MutedTextStyle}" Text="待整理" />
-                                        <TextBlock x:Name="ReadyCountText" FontSize="24" FontWeight="SemiBold" Text="0" />
+                                        <TextBlock x:Name="ReadyCountText" Style="{StaticResource MetricValueTextStyle}" Text="0" />
                                     </StackPanel>
-                                    <FontIcon Grid.Column="1" Foreground="{ThemeResource SuccessTextBrush}" Glyph="&#xE73E;" />
+                                    <Border Grid.Column="1" Width="32" Height="32" Background="{ThemeResource SuccessSubtleBrush}" CornerRadius="8">
+                                        <FontIcon FontSize="14" Foreground="{ThemeResource SuccessTextBrush}" Glyph="&#xE73E;" />
+                                    </Border>
                                 </Grid>
                             </Border>
-                            <Border Grid.Column="1" Style="{StaticResource CompactCardBorderStyle}">
+                            <Border Grid.Column="1" Style="{StaticResource LowCardBorderStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="2">
+                                    <Border Width="3" Margin="0,1,0,1" HorizontalAlignment="Left" Background="{ThemeResource AppAccentBrush}" CornerRadius="2" />
+                                    <StackPanel Margin="11,0,0,0" Spacing="2">
                                         <TextBlock Style="{StaticResource MutedTextStyle}" Text="识别系列" />
-                                        <TextBlock x:Name="SeriesCountText" FontSize="24" FontWeight="SemiBold" Text="0" />
+                                        <TextBlock x:Name="SeriesCountText" Style="{StaticResource MetricValueTextStyle}" Text="0" />
                                     </StackPanel>
-                                    <FontIcon Grid.Column="1" Foreground="{ThemeResource AppAccentBrush}" Glyph="&#xE8F1;" />
+                                    <Border Grid.Column="1" Width="32" Height="32" Background="{ThemeResource AccentSubtleBrush}" CornerRadius="8">
+                                        <FontIcon FontSize="14" Foreground="{ThemeResource AppAccentBrush}" Glyph="&#xE8F1;" />
+                                    </Border>
                                 </Grid>
                             </Border>
-                            <Border Grid.Column="2" Style="{StaticResource CompactCardBorderStyle}">
+                            <Border Grid.Column="2" Style="{StaticResource LowCardBorderStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="2">
+                                    <Border Width="3" Margin="0,1,0,1" HorizontalAlignment="Left" Background="{ThemeResource WarningTextBrush}" CornerRadius="2" />
+                                    <StackPanel Margin="11,0,0,0" Spacing="2">
                                         <TextBlock Style="{StaticResource MutedTextStyle}" Text="重复文件" />
-                                        <TextBlock x:Name="DuplicateCountText" FontSize="24" FontWeight="SemiBold" Text="0" />
+                                        <TextBlock x:Name="DuplicateCountText" Style="{StaticResource MetricValueTextStyle}" Text="0" />
                                     </StackPanel>
-                                    <FontIcon Grid.Column="1" Foreground="{ThemeResource WarningTextBrush}" Glyph="&#xE8C8;" />
+                                    <Border Grid.Column="1" Width="32" Height="32" Background="{ThemeResource WarningSubtleBrush}" CornerRadius="8">
+                                        <FontIcon FontSize="14" Foreground="{ThemeResource WarningTextBrush}" Glyph="&#xE8C8;" />
+                                    </Border>
                                 </Grid>
                             </Border>
-                            <Border Grid.Column="3" Style="{StaticResource CompactCardBorderStyle}">
+                            <Border Grid.Column="3" Style="{StaticResource LowCardBorderStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="2">
+                                    <Border Width="3" Margin="0,1,0,1" HorizontalAlignment="Left" Background="{ThemeResource ErrorTextBrush}" CornerRadius="2" />
+                                    <StackPanel Margin="11,0,0,0" Spacing="2">
                                         <TextBlock Style="{StaticResource MutedTextStyle}" Text="需要留意" />
-                                        <TextBlock x:Name="AttentionCountText" FontSize="24" FontWeight="SemiBold" Text="0" />
+                                        <TextBlock x:Name="AttentionCountText" Style="{StaticResource MetricValueTextStyle}" Text="0" />
                                     </StackPanel>
-                                    <FontIcon Grid.Column="1" Foreground="{ThemeResource ErrorTextBrush}" Glyph="&#xE7BA;" />
+                                    <Border Grid.Column="1" Width="32" Height="32" Background="{ThemeResource ErrorSubtleBrush}" CornerRadius="8">
+                                        <FontIcon FontSize="14" Foreground="{ThemeResource ErrorTextBrush}" Glyph="&#xE7BA;" />
+                                    </Border>
                                 </Grid>
                             </Border>
                         </Grid>
@@ -238,8 +324,11 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="分类预览" />
+                                        <StackPanel Orientation="Horizontal" Spacing="10">
+                                            <StackPanel Spacing="1">
+                                                <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="识别队列" />
+                                                <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="分类预览" />
+                                            </StackPanel>
                                             <Border Style="{StaticResource PillBorderStyle}">
                                                 <TextBlock x:Name="ResultCountText" FontSize="12" Text="0 个文件" />
                                             </Border>
@@ -338,8 +427,10 @@
                                             </ListView.ItemTemplate>
                                         </ListView>
 
-                                        <StackPanel x:Name="ResultsEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
-                                            <FontIcon FontSize="28" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xED25;" />
+                                        <StackPanel x:Name="ResultsEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="9">
+                                            <Border Width="48" Height="48" Background="{ThemeResource AccentSubtleBrush}" CornerRadius="8">
+                                                <FontIcon FontSize="22" Foreground="{ThemeResource AppAccentBrush}" Glyph="&#xED25;" />
+                                            </Border>
                                             <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="还没有分类预览" />
                                             <TextBlock HorizontalAlignment="Center" Style="{StaticResource MutedTextStyle}" Text="选择目录后开始扫描" />
                                         </StackPanel>
@@ -347,20 +438,31 @@
                                 </Grid>
                             </Border>
 
-                            <Border x:Name="DetailCard" Grid.Column="1" Style="{StaticResource CardBorderStyle}">
+                            <Border x:Name="DetailCard" Grid.Column="1" Style="{StaticResource LowCardBorderStyle}">
                                 <Grid>
-                                    <StackPanel x:Name="DetailEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
-                                        <FontIcon FontSize="28" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xE8A5;" />
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <StackPanel Margin="2,0,2,12" Spacing="1">
+                                        <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="条目信息" />
+                                        <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="文件详情" />
+                                    </StackPanel>
+
+                                    <StackPanel x:Name="DetailEmptyState" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="9">
+                                        <Border Width="48" Height="48" Background="{ThemeResource SubtleSurfaceBrush}" CornerRadius="8">
+                                            <FontIcon FontSize="22" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="&#xE8A5;" />
+                                        </Border>
                                         <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="选择一个文件" />
                                         <TextBlock HorizontalAlignment="Center" TextAlignment="Center" Style="{StaticResource MutedTextStyle}" Text="这里会显示封面、简介和目标位置" TextWrapping="Wrap" />
                                     </StackPanel>
 
-                                    <StackPanel x:Name="DetailLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" Visibility="Collapsed">
+                                    <StackPanel x:Name="DetailLoadingState" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" Visibility="Collapsed">
                                         <ProgressRing Width="28" Height="28" IsActive="True" />
                                         <TextBlock Style="{StaticResource MutedTextStyle}" Text="正在读取详情…" />
                                     </StackPanel>
 
-                                    <ScrollViewer x:Name="DetailContent" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                                    <ScrollViewer x:Name="DetailContent" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
                                         <StackPanel Spacing="14">
                                             <Grid ColumnSpacing="14">
                                                 <Grid.ColumnDefinitions>
@@ -438,14 +540,15 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <Border Width="36" Height="36" Background="{ThemeResource AccentSubtleBrush}" CornerRadius="8">
+                                <Border x:Name="OperationIconSurface" Width="36" Height="36" Background="{ThemeResource AccentSubtleBrush}" CornerRadius="8">
                                     <FontIcon x:Name="OperationIcon" Foreground="{ThemeResource AppAccentBrush}" Glyph="&#xE946;" />
                                 </Border>
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6">
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="5">
                                     <Grid>
-                                        <TextBlock x:Name="OperationMessageText" Text="等待选择目录" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="当前操作" />
                                         <TextBlock x:Name="OperationProgressText" HorizontalAlignment="Right" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
                                     </Grid>
+                                    <TextBlock x:Name="OperationMessageText" FontWeight="SemiBold" Text="等待选择目录" TextTrimming="CharacterEllipsis" />
                                     <ProgressBar x:Name="OperationProgressBar" Height="4" Maximum="100" Value="0" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="2" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
@@ -458,7 +561,7 @@
                                             <TextBlock Text="撤销上次" />
                                         </StackPanel>
                                     </Button>
-                                    <Button x:Name="ApplyButton" Click="OnApplyClick" IsEnabled="False" Style="{StaticResource AccentButtonStyle}">
+                                    <Button x:Name="ApplyButton" Click="OnApplyClick" IsEnabled="False" Style="{StaticResource PrimaryActionButtonStyle}">
                                         <StackPanel Orientation="Horizontal" Spacing="7">
                                             <FontIcon FontSize="14" Glyph="&#xE73E;" />
                                             <TextBlock Text="确认整理" />
@@ -476,11 +579,12 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
                         <StackPanel x:Name="ActivityHeader" Spacing="3">
+                            <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="可追溯操作" />
                             <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="活动与报告" />
                             <TextBlock Style="{StaticResource MutedTextStyle}" Text="查看本次会话记录，并按报告恢复上次文件移动。" />
                         </StackPanel>
 
-                        <Border x:Name="ReportCard" Grid.Row="1" Style="{StaticResource CardBorderStyle}">
+                        <Border x:Name="ReportCard" Grid.Row="1" Style="{StaticResource ElevatedCardBorderStyle}">
                             <Grid ColumnSpacing="18">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -565,6 +669,7 @@
                         VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="SettingsContent" MaxWidth="900" HorizontalAlignment="Center" Spacing="12">
                             <StackPanel Margin="0,0,0,4" Spacing="3">
+                                <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="应用偏好" />
                                 <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="设置" />
                                 <TextBlock Style="{StaticResource MutedTextStyle}" Text="偏好会保存在当前 Windows 用户账户中。" />
                             </StackPanel>

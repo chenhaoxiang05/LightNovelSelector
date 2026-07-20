@@ -73,13 +73,15 @@ NuGet 依赖由项目文件固定并通过 `dotnet restore` 自动还原。开�
 ### WinUI 原生界面
 
 - `App.xaml`：全局资源与转换器。
-- `MainWindow.xaml`：透明窗口根节点、原生标题栏和页面宿主。
-- `MainWindow.xaml.cs`：Desktop Acrylic、Mica、实色切换，以及系统透明和高对比度回退。
-- `MainPage.xaml`：导航、工作台、活动报告、设置、Toast 和对话框。
-- `MainPage.xaml.cs`：界面状态映射、轮询、拖放、确认和用户操作。
+- `Views/MainWindow.xaml`：透明窗口根节点、原生标题栏和页面宿主。
+- `Views/MainWindow.xaml.cs`：窗口尺寸、关闭保护和外观控制器入口。
+- `Appearance/WindowAppearanceController.cs`：Desktop Acrylic、Mica、实色切换，标题栏同步，以及系统透明和高对比度回退。
+- `Appearance/AppearancePreferences.cs`：主题、材质和动态偏好的共享容错存储。
+- `Views/MainPage.xaml`：导航、工作台、活动报告、设置、Toast 和对话框。
+- `Views/MainPage.xaml.cs`：界面状态映射、轮询、拖放、确认和用户操作。
+- `Views/MainPage.Appearance.cs`、`MainPage.Notifications.cs`、`MainPage.Workflow.cs`：外观设置、通知和安全流程视觉状态。
 - `Services/PythonSidecarClient.cs`：进程发现、请求关联、超时和错误传播。
 - `Helpers/Motion.cs`：Composition 动效和减少动态效果策略。
-- `Helpers/AppearancePreferences.cs`：主题、材质和动态偏好的共享容错存储。
 - `Styles/DesignTokens.xaml`：浅色、深色、高对比度语义令牌。
 - `Models/` 与 `Converters/`：协议模型和纯视觉转换。
 
@@ -147,10 +149,22 @@ WinUI 检查：
 
 ```powershell
 dotnet build .\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj `
-  -c Debug -p:Platform=x64
+  -c Debug -p:Platform=x64 -p:WindowsPackageType=None
 dotnet build .\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj `
-  -c Release -p:Platform=x64
+  -c Release -p:Platform=x64 -p:WindowsPackageType=None
 ```
+
+深色启动与外观矩阵回归：
+
+```powershell
+$env:LN_SELECTOR_WINUI_TEST_THEME = "dark"
+$env:LN_SELECTOR_WINUI_TEST_MATERIAL = "acrylic"
+$env:LN_SELECTOR_WINUI_APPEARANCE_SMOKE_TEST = "1"
+dotnet run --project .\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj `
+  -c Debug -p:Platform=x64 -p:WindowsPackageType=None
+```
+
+该测试会轮换浅色、深色、跟随系统与 Acrylic、Mica、实色组合，并切换工作台、活动页和设置页。测试变量只影响当前进程，不写入用户外观偏好。
 
 仓库检查：
 
@@ -188,7 +202,7 @@ git diff --check
 3. 使用 PyInstaller 生成单文件 Python Sidecar。
 4. 通过真实 `ping` 和 `shutdown` 请求验证协议。
 5. 自包含发布 Windows x64 WinUI 应用。
-6. 启动发布版冒烟并生成 ZIP。
+6. 执行深色 Acrylic 启动、主题/材质/页面矩阵回归，再生成 ZIP。
 
 输出示例：
 
@@ -217,7 +231,7 @@ dist\winui\LightNovelSelector-v2.0.0-win-x64-构建时间.zip
 git status --short
 git diff --check
 git add README.md DEVELOPMENT.md UPDATE_NOTES.md docs native `
-  lightnovel_selector lightnovel_sidecar.py run_winui.bat build_winui.bat `
+  lightnovel_selector lightnovel_sidecar.py run_winui.bat build_winui.bat scripts `
   requirements-dev.txt tools tests
 git commit -m "..."
 git push origin <当前开发分支>

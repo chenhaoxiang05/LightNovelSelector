@@ -5,12 +5,17 @@
 
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
-            <Color x:Key="CardBackgroundColor">#B8FFFFFF</Color>
-            <Color x:Key="ElevatedCardBackgroundColor">#D1FFFFFF</Color>
-            <Color x:Key="CardHoverColor">#D9FFFFFF</Color>
+            <Color x:Key="LowCardBackgroundColor">#70FFFFFF</Color>
+            <Color x:Key="CardBackgroundColor">#A8FFFFFF</Color>
+            <Color x:Key="ElevatedCardBackgroundColor">#D4FFFFFF</Color>
+            <Color x:Key="CardHoverColor">#C7FFFFFF</Color>
             <Color x:Key="CardBorderHighlightColor">#A6FFFFFF</Color>
-            <Color x:Key="CardBorderShadowColor">#24000000</Color>
-            <Color x:Key="SubtleSurfaceColor">#0A000000</Color>
+            <Color x:Key="CardBorderShadowColor">#26000000</Color>
+            <Color x:Key="LowCardBorderHighlightColor">#70FFFFFF</Color>
+            <Color x:Key="LowCardBorderShadowColor">#16000000</Color>
+            <Color x:Key="SubtleSurfaceColor">#10000000</Color>
+            <Color x:Key="DividerColor">#1A000000</Color>
+            <Color x:Key="NavigationSelectionColor">#180F6CBD</Color>
             <Color x:Key="ListHoverColor">#6EFFFFFF</Color>
             <Color x:Key="ListPressedColor">#1F0F6CBD</Color>
             <Color x:Key="ListSelectedColor">#260F6CBD</Color>
@@ -51,12 +56,17 @@
             <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="#3DFFFFFF" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
-            <Color x:Key="CardBackgroundColor">#8C1D2025</Color>
-            <Color x:Key="ElevatedCardBackgroundColor">#AD232830</Color>
-            <Color x:Key="CardHoverColor">#A6292E36</Color>
+            <Color x:Key="LowCardBackgroundColor">#5215191F</Color>
+            <Color x:Key="CardBackgroundColor">#781A1E24</Color>
+            <Color x:Key="ElevatedCardBackgroundColor">#A322272E</Color>
+            <Color x:Key="CardHoverColor">#94272D35</Color>
             <Color x:Key="CardBorderHighlightColor">#52FFFFFF</Color>
-            <Color x:Key="CardBorderShadowColor">#26000000</Color>
-            <Color x:Key="SubtleSurfaceColor">#10FFFFFF</Color>
+            <Color x:Key="CardBorderShadowColor">#30000000</Color>
+            <Color x:Key="LowCardBorderHighlightColor">#30FFFFFF</Color>
+            <Color x:Key="LowCardBorderShadowColor">#20000000</Color>
+            <Color x:Key="SubtleSurfaceColor">#14FFFFFF</Color>
+            <Color x:Key="DividerColor">#24FFFFFF</Color>
+            <Color x:Key="NavigationSelectionColor">#2E4A9EFF</Color>
             <Color x:Key="ListHoverColor">#3DFFFFFF</Color>
             <Color x:Key="ListPressedColor">#334A9EFF</Color>
             <Color x:Key="ListSelectedColor">#3D4A9EFF</Color>
@@ -97,12 +107,17 @@
             <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="#2EFFFFFF" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
+            <Color x:Key="LowCardBackgroundColor">{ThemeResource SystemColorWindowColor}</Color>
             <Color x:Key="CardBackgroundColor">{ThemeResource SystemColorWindowColor}</Color>
             <Color x:Key="ElevatedCardBackgroundColor">{ThemeResource SystemColorWindowColor}</Color>
             <Color x:Key="CardHoverColor">{ThemeResource SystemColorHighlightColor}</Color>
             <Color x:Key="CardBorderHighlightColor">{ThemeResource SystemColorWindowTextColor}</Color>
             <Color x:Key="CardBorderShadowColor">{ThemeResource SystemColorWindowTextColor}</Color>
+            <Color x:Key="LowCardBorderHighlightColor">{ThemeResource SystemColorWindowTextColor}</Color>
+            <Color x:Key="LowCardBorderShadowColor">{ThemeResource SystemColorWindowTextColor}</Color>
             <Color x:Key="SubtleSurfaceColor">{ThemeResource SystemColorWindowColor}</Color>
+            <Color x:Key="DividerColor">{ThemeResource SystemColorWindowTextColor}</Color>
+            <Color x:Key="NavigationSelectionColor">{ThemeResource SystemColorHighlightColor}</Color>
             <Color x:Key="ListHoverColor">{ThemeResource SystemColorHighlightColor}</Color>
             <Color x:Key="ListPressedColor">{ThemeResource SystemColorHighlightColor}</Color>
             <Color x:Key="ListSelectedColor">{ThemeResource SystemColorHighlightColor}</Color>
@@ -124,6 +139,7 @@
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
+    <SolidColorBrush x:Key="LowCardBackgroundBrush" Color="{ThemeResource LowCardBackgroundColor}" />
     <SolidColorBrush x:Key="CardBackgroundBrush" Color="{ThemeResource CardBackgroundColor}" />
     <SolidColorBrush x:Key="ElevatedCardBackgroundBrush" Color="{ThemeResource ElevatedCardBackgroundColor}" />
     <SolidColorBrush x:Key="CardHoverBrush" Color="{ThemeResource CardHoverColor}" />
@@ -131,7 +147,13 @@
         <GradientStop Offset="0" Color="{ThemeResource CardBorderHighlightColor}" />
         <GradientStop Offset="1" Color="{ThemeResource CardBorderShadowColor}" />
     </LinearGradientBrush>
+    <LinearGradientBrush x:Key="LowCardBorderBrush" StartPoint="0.5,0" EndPoint="0.5,1">
+        <GradientStop Offset="0" Color="{ThemeResource LowCardBorderHighlightColor}" />
+        <GradientStop Offset="1" Color="{ThemeResource LowCardBorderShadowColor}" />
+    </LinearGradientBrush>
     <SolidColorBrush x:Key="SubtleSurfaceBrush" Color="{ThemeResource SubtleSurfaceColor}" />
+    <SolidColorBrush x:Key="DividerBrush" Color="{ThemeResource DividerColor}" />
+    <SolidColorBrush x:Key="NavigationSelectionBrush" Color="{ThemeResource NavigationSelectionColor}" />
     <SolidColorBrush x:Key="GlassListHoverBrush" Color="{ThemeResource ListHoverColor}" />
     <SolidColorBrush x:Key="GlassListPressedBrush" Color="{ThemeResource ListPressedColor}" />
     <SolidColorBrush x:Key="GlassListSelectedBrush" Color="{ThemeResource ListSelectedColor}" />
@@ -159,8 +181,18 @@
         <Setter Property="Padding" Value="16" />
     </Style>
 
+    <Style x:Key="LowCardBorderStyle" TargetType="Border" BasedOn="{StaticResource CompactCardBorderStyle}">
+        <Setter Property="Background" Value="{ThemeResource LowCardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource LowCardBorderBrush}" />
+        <Setter Property="Padding" Value="14" />
+    </Style>
+
     <Style x:Key="ElevatedCardBorderStyle" TargetType="Border" BasedOn="{StaticResource CompactCardBorderStyle}">
         <Setter Property="Background" Value="{ThemeResource ElevatedCardBackgroundBrush}" />
+    </Style>
+
+    <Style x:Key="HeroCardBorderStyle" TargetType="Border" BasedOn="{StaticResource ElevatedCardBorderStyle}">
+        <Setter Property="Padding" Value="18" />
     </Style>
 
     <Style x:Key="SectionTitleTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SubtitleTextBlockStyle}">
@@ -171,6 +203,19 @@
     <Style x:Key="PageTitleTextStyle" TargetType="TextBlock" BasedOn="{StaticResource TitleTextBlockStyle}">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontSize" Value="26" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style x:Key="EyebrowTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{ThemeResource AppAccentBrush}" />
+    </Style>
+
+    <Style x:Key="MetricValueTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="24" />
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
 
@@ -196,6 +241,13 @@
     <Style x:Key="ToolbarButtonStyle" TargetType="Button">
         <Setter Property="MinHeight" Value="36" />
         <Setter Property="Padding" Value="14,7" />
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style x:Key="PrimaryActionButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="Padding" Value="16,8" />
         <Setter Property="CornerRadius" Value="6" />
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>

@@ -110,7 +110,10 @@ Python 返回不可变快照，WinUI 只把快照映射为视觉状态：
 ## 窗口材质边界
 
 - `MainWindow` 只创建一个窗口级系统背景，可在 Desktop Acrylic、Mica 和实色之间切换。
+- `WindowAppearanceController` 是唯一允许替换 `SystemBackdrop` 的模块；页面和主题事件不能直接操作窗口背景。
+- 主题变化只合并刷新标题栏颜色，系统背景会自行跟随主题，不在 `ActualThemeChanged` 回调中销毁重建。
 - 导航栏与 Toast 可使用 In-App Acrylic；列表和重复卡片只使用半透明实色，不逐卡创建模糊层。
+- 重复调用相同材质是幂等操作，避免 Windows App SDK 在主题资源解析期间重入原生背景生命周期。
 - `UISettings.AdvancedEffectsEnabled` 关闭或高对比度启用时，有效材质临时切换为实色，但不覆盖用户选择。
 - 系统事件不可订阅的未打包环境使用低频状态复核，避免影响窗口启动。
 - 主题、材质和减少动态效果由 `AppearancePreferences` 统一读取，并使用 `%LOCALAPPDATA%` JSON 后备存储。
