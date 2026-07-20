@@ -1,7 +1,8 @@
 @echo off
 setlocal EnableExtensions
 chcp 65001 >nul
-cd /d "%~dp0"
+for %%I in ("%~dp0..\..") do set "PROJECT_ROOT=%%~fI"
+cd /d "%PROJECT_ROOT%"
 
 set "DOTNET_EXE=%ProgramFiles%\dotnet\dotnet.exe"
 if not exist "%DOTNET_EXE%" (
@@ -14,7 +15,7 @@ if not exist "%DOTNET_EXE%" (
 )
 
 set "PYTHON_EXE="
-for %%P in ("%~dp0.venv-build\Scripts\python.exe" "%~dp0.venv\Scripts\python.exe") do (
+for %%P in ("%PROJECT_ROOT%\.venv-build\Scripts\python.exe" "%PROJECT_ROOT%\.venv\Scripts\python.exe") do (
     if not defined PYTHON_EXE if exist "%%~P" (
         "%%~P" -c "import sys; raise SystemExit(sys.version_info < (3, 10))" >nul 2>nul
         if not errorlevel 1 set "PYTHON_EXE=%%~P"
@@ -35,13 +36,13 @@ if not defined PYTHON_EXE if not defined BASE_PYTHON (
 )
 if not defined PYTHON_EXE (
     echo 正在创建 Python 运行环境...
-    %BASE_PYTHON% -m venv "%~dp0.venv"
+    %BASE_PYTHON% -m venv "%PROJECT_ROOT%\.venv"
     if errorlevel 1 exit /b 1
-    set "PYTHON_EXE=%~dp0.venv\Scripts\python.exe"
+    set "PYTHON_EXE=%PROJECT_ROOT%\.venv\Scripts\python.exe"
 )
 
 set "LN_SELECTOR_PYTHON=%PYTHON_EXE%"
 echo 正在启动 WinUI 3 原生界面...
-"%DOTNET_EXE%" restore "%~dp0native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj" -p:Platform=x64 -p:WindowsPackageType=None
+"%DOTNET_EXE%" restore "%PROJECT_ROOT%\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj" -p:Platform=x64 -p:WindowsPackageType=None
 if errorlevel 1 exit /b 1
-"%DOTNET_EXE%" run --project "%~dp0native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj" -c Debug -p:Platform=x64 -p:WindowsPackageType=None --no-restore
+"%DOTNET_EXE%" run --project "%PROJECT_ROOT%\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj" -c Debug -p:Platform=x64 -p:WindowsPackageType=None --no-restore

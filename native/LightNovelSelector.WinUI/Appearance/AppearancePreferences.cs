@@ -35,6 +35,8 @@ public readonly record struct WindowMaterialState(
 
 public static class AppearancePreferences
 {
+    private const string TestThemeEnvironmentVariable = "LN_SELECTOR_WINUI_TEST_THEME";
+    private const string TestMaterialEnvironmentVariable = "LN_SELECTOR_WINUI_TEST_MATERIAL";
     private static readonly object FallbackFileLock = new();
     private static readonly string FallbackFilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -48,16 +50,26 @@ public static class AppearancePreferences
 
     public static string LoadTheme()
     {
+        var testValue = Environment.GetEnvironmentVariable(TestThemeEnvironmentVariable);
+        if (testValue is "light" or "dark" or "system")
+        {
+            return testValue;
+        }
+
         var value = ReadString(ThemeSettingKey);
         return value is "light" or "dark" ? value : "system";
     }
 
-    public static WindowMaterial LoadMaterial() => ReadString(WindowMaterialSettingKey) switch
+    public static WindowMaterial LoadMaterial()
     {
-        "mica" => WindowMaterial.Mica,
-        "solid" => WindowMaterial.Solid,
-        _ => WindowMaterial.Acrylic,
-    };
+        var testValue = Environment.GetEnvironmentVariable(TestMaterialEnvironmentVariable);
+        return (testValue ?? ReadString(WindowMaterialSettingKey)) switch
+        {
+            "mica" => WindowMaterial.Mica,
+            "solid" => WindowMaterial.Solid,
+            _ => WindowMaterial.Acrylic,
+        };
+    }
 
     public static bool TrySaveTheme(string theme) =>
         TryWrite(ThemeSettingKey, theme is "light" or "dark" ? theme : "system");

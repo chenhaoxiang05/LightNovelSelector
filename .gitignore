@@ -1,9 +1,15 @@
 .venv-build/
 .venv/
+.agents/
 .idea/
 .pytest_cache/
+.ruff_cache/
+archive_old_code/
 build/
 dist/
+UI_test/
 *.spec
 __pycache__/
 tests/__pycache__/
+native/**/bin/
+native/**/obj/
