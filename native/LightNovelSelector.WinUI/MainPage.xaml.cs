@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Text.Json;
+using LightNovelSelector.WinUI.Appearance;
 using LightNovelSelector.WinUI.Helpers;
 using LightNovelSelector.WinUI.Models;
 using LightNovelSelector.WinUI.Services;
@@ -85,7 +86,12 @@ public sealed partial class MainPage : Page
             _pollTimer.Start();
             AnimateWorkspaceEntrance();
 
-            if (App.IsSmokeTest)
+            if (App.IsAppearanceSmokeTest)
+            {
+                await RunAppearanceSmokeTestAsync();
+                Application.Current.Exit();
+            }
+            else if (App.IsSmokeTest)
             {
                 await Task.Delay(750);
                 Application.Current.Exit();
@@ -96,10 +102,34 @@ public sealed partial class MainPage : Page
             ConnectionText.Text = "分类核心不可用";
             ConnectionDot.Fill = ResourceBrush("ErrorTextBrush");
             ShowToast(exc.Message, ToastKind.Error, 6000);
-            if (App.IsSmokeTest)
+            if (App.IsAutomatedSmokeTest)
             {
                 Environment.ExitCode = 1;
                 Application.Current.Exit();
+            }
+        }
+    }
+
+    private static async Task RunAppearanceSmokeTestAsync()
+    {
+        if (App.MainWindow is not { } window)
+        {
+            throw new InvalidOperationException("外观冒烟测试无法访问主窗口。");
+        }
+
+        foreach (var theme in new[] { "light", "dark", "system", "dark" })
+        {
+            window.ApplyTheme(theme);
+            await Task.Delay(180);
+            foreach (var material in new[]
+                     {
+                         WindowMaterial.Acrylic,
+                         WindowMaterial.Mica,
+                         WindowMaterial.Solid,
+                     })
+            {
+                window.ApplyMaterial(material);
+                await Task.Delay(180);
             }
         }
     }
@@ -156,11 +186,6 @@ public sealed partial class MainPage : Page
             WindowMaterial.Solid => 2,
             _ => 0,
         };
-        if (App.MainWindow is { } window)
-        {
-            window.ApplyTheme(theme);
-            window.ApplyMaterial(material);
-        }
         ReducedMotionToggle.IsOn = Motion.ReducedMotion;
         UpdateMaterialStatus();
         _appearanceLoading = false;

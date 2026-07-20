@@ -3,7 +3,7 @@ using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Windows.Storage;
 
-namespace LightNovelSelector.WinUI.Helpers;
+namespace LightNovelSelector.WinUI.Appearance;
 
 public enum WindowMaterial
 {

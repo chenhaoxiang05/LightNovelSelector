@@ -10,6 +10,12 @@ public partial class App : Application
         LaunchArguments.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains("--smoke-test")
         || Environment.GetCommandLineArgs().Contains("--smoke-test")
         || Environment.GetEnvironmentVariable("LN_SELECTOR_WINUI_SMOKE_TEST") == "1";
+    public static bool IsAppearanceSmokeTest =>
+        LaunchArguments.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Contains("--appearance-smoke-test")
+        || Environment.GetCommandLineArgs().Contains("--appearance-smoke-test")
+        || Environment.GetEnvironmentVariable("LN_SELECTOR_WINUI_APPEARANCE_SMOKE_TEST") == "1";
+    public static bool IsAutomatedSmokeTest => IsSmokeTest || IsAppearanceSmokeTest;
 
     public App()
     {
