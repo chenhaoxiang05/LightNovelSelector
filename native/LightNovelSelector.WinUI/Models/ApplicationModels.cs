@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace LightNovelSelector.WinUI.Models;
 
 public sealed class AppSnapshot
@@ -130,8 +128,34 @@ public sealed class ReportSummary
 {
     public string Path { get; init; } = string.Empty;
     public string? CreatedAt { get; init; }
-    public JsonElement Summary { get; init; }
-    public JsonElement Items { get; init; }
+    public ReportStats Summary { get; init; } = new();
+    public IReadOnlyList<ReportItem> Items { get; init; } = [];
+}
+
+public sealed class ReportStats
+{
+    public int Total { get; init; }
+    public int Moved { get; init; }
+    public int Skipped { get; init; }
+    public int Duplicates { get; init; }
+    public int Errors { get; init; }
+}
+
+public sealed class ReportItem
+{
+    public string SourcePath { get; set; } = string.Empty;
+    public string TargetPath { get; set; } = string.Empty;
+    public string? ActualTargetPath { get; set; }
+    public string SeriesName { get; set; } = string.Empty;
+    public string ResolverSource { get; set; } = string.Empty;
+    public double Confidence { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string Operation { get; set; } = string.Empty;
+    public string Note { get; set; } = string.Empty;
+
+    public string FileName => System.IO.Path.GetFileName(SourcePath);
+    public string DestinationPath => ActualTargetPath ?? TargetPath;
+    public string OperationLabel => Operation == "moved" ? "已移动" : "已跳过";
 }
 
 public sealed class SidecarPing

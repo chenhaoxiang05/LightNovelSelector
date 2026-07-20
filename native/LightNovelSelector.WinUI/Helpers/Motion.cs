@@ -135,14 +135,15 @@ public static class Motion
 
         var compositor = visual.Compositor;
         var easing = EaseOut(compositor);
-        visual.Opacity = show ? 1 : 0;
+        if (show && visual.Opacity <= 0.01f)
+        {
+            element.Translation = new Vector3(0, -8, 0);
+        }
         var opacity = compositor.CreateScalarKeyFrameAnimation();
-        opacity.InsertKeyFrame(0, show ? 0 : 1);
         opacity.InsertKeyFrame(1, show ? 1 : 0, easing);
         opacity.Duration = TimeSpan.FromMilliseconds(show ? 180 : 140);
 
         var translation = compositor.CreateVector3KeyFrameAnimation();
-        translation.InsertKeyFrame(0, show ? new Vector3(0, -8, 0) : Vector3.Zero);
         translation.InsertKeyFrame(1, show ? Vector3.Zero : new Vector3(0, -8, 0), easing);
         translation.Duration = TimeSpan.FromMilliseconds(show ? 220 : 140);
 

@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using System.Text.Json;
 using LightNovelSelector.WinUI.Helpers;
 using LightNovelSelector.WinUI.Models;
 using LightNovelSelector.WinUI.Services;
@@ -37,8 +36,10 @@ public sealed partial class MainPage : Page
     private bool _disposing;
 
     public ObservableCollection<PlanItem> Plans { get; } = [];
+    public ObservableCollection<PlanItem> VisiblePlans { get; } = [];
     public ObservableCollection<LogEntry> Logs { get; } = [];
     public ObservableCollection<EditableRule> Rules { get; } = [];
+    public ObservableCollection<ReportItem> ReportItems { get; } = [];
 
     public bool IsCriticalOperation =>
         _snapshot.Operation.State == "running" && _snapshot.Operation.Kind is "apply" or "undo";
@@ -53,7 +54,11 @@ public sealed partial class MainPage : Page
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         _pollTimer.Tick += OnPollTimerTick;
-        Rules.CollectionChanged += (_, _) => UpdateRulesEmptyState();
+        Rules.CollectionChanged += (_, _) =>
+        {
+            UpdateRulesEmptyState();
+            MarkSettingsDirty();
+        };
     }
 
     public void NotifyCriticalClose()
@@ -221,11 +226,8 @@ public sealed partial class MainPage : Page
             {
                 Plans.Add(plan);
             }
-            ResultsEmptyState.Visibility = Plans.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            if (selectedIndex is not null)
-            {
-                ResultsList.SelectedItem = Plans.FirstOrDefault(item => item.Index == selectedIndex);
-            }
+            RebuildPlanFilters();
+            ApplyPlanFilters(selectedIndex);
         }
 
         foreach (var entry in snapshot.Logs)
@@ -250,7 +252,6 @@ public sealed partial class MainPage : Page
             ? "选择一个目录，或将目录拖放到这里"
             : snapshot.Folder;
         OpenFolderButton.IsEnabled = !string.IsNullOrWhiteSpace(snapshot.Folder);
-        ResultCountText.Text = $"{Plans.Count} 个文件";
         SetCount(ReadyCountText, snapshot.Counts.Ready);
         SetCount(SeriesCountText, snapshot.Counts.Series);
         SetCount(DuplicateCountText, snapshot.Counts.Duplicate);
@@ -285,11 +286,21 @@ public sealed partial class MainPage : Page
         ChooseFolderButton.IsEnabled = !running;
         ScanButton.IsEnabled = hasFolder && !running;
         RefreshButton.IsEnabled = hasFolder && !running;
-        SaveSettingsButton.IsEnabled = !running;
+        SaveSettingsButton.IsEnabled = _settingsDirty && !running;
         ApplyButton.IsEnabled = hasMovablePlans && !running;
         UndoButton.IsEnabled = _snapshot.ReportPath is not null && !running;
         ActivityUndoButton.IsEnabled = UndoButton.IsEnabled;
         CancelButton.Visibility = running && operation.CanCancel ? Visibility.Visible : Visibility.Collapsed;
+        var scanning = running && operation.Kind == "scan";
+        ScanProgressRing.IsActive = scanning;
+        ScanProgressRing.Visibility = scanning ? Visibility.Visible : Visibility.Collapsed;
+        ScanButtonIcon.Visibility = scanning ? Visibility.Collapsed : Visibility.Visible;
+        ScanButtonText.Text = scanning ? "扫描中" : "扫描并预览";
+        var applying = running && operation.Kind == "apply";
+        ApplyProgressRing.IsActive = applying;
+        ApplyProgressRing.Visibility = applying ? Visibility.Visible : Visibility.Collapsed;
+        ApplyButtonIcon.Visibility = applying ? Visibility.Collapsed : Visibility.Visible;
+        ApplyButtonText.Text = applying ? "整理中" : "确认整理";
 
         var (glyph, brushKey) = operation.State switch
         {
@@ -342,20 +353,32 @@ public sealed partial class MainPage : Page
             ReportMovedText.Text = "移动 0";
             ReportSkippedText.Text = "跳过 0";
             ReportDuplicateText.Text = "重复 0";
+            ReportErrorText.Text = "错误 0";
+            ReportItems.Clear();
+            ReportItemsEmptyState.Visibility = Visibility.Visible;
         }
     }
 
     private void LoadSettings(AppSettings settings)
     {
-        NetworkToggle.IsOn = settings.UseNetwork;
-        RecursiveToggle.IsOn = settings.Recursive;
-        AutoRenameToggle.IsOn = settings.AutoRename;
-        Rules.Clear();
-        foreach (var rule in settings.CustomRules)
+        _settingsLoading = true;
+        try
         {
-            Rules.Add(new EditableRule(rule.Pattern, rule.Series));
+            NetworkToggle.IsOn = settings.UseNetwork;
+            RecursiveToggle.IsOn = settings.Recursive;
+            AutoRenameToggle.IsOn = settings.AutoRename;
+            Rules.Clear();
+            foreach (var rule in settings.CustomRules)
+            {
+                Rules.Add(new EditableRule(rule.Pattern, rule.Series));
+            }
+            UpdateRulesEmptyState();
         }
-        UpdateRulesEmptyState();
+        finally
+        {
+            _settingsLoading = false;
+        }
+        SetSettingsDirty(false);
     }
 
     private void UpdateRulesEmptyState()
@@ -785,7 +808,7 @@ public sealed partial class MainPage : Page
         {
             var snapshot = await _sidecar.EditPlanAsync(index, seriesName);
             ApplySnapshot(snapshot);
-            ResultsList.SelectedItem = Plans.FirstOrDefault(item => item.Index == index);
+            ResultsList.SelectedItem = VisiblePlans.FirstOrDefault(item => item.Index == index);
             ShowToast("分类结果已手动修正。", ToastKind.Success);
         }
         catch (Exception exc)
@@ -845,24 +868,28 @@ public sealed partial class MainPage : Page
             ReportStatusText.Text = string.IsNullOrWhiteSpace(createdAt)
                 ? report.Path
                 : $"生成于 {createdAt} · {report.Path}";
-            ReportMovedText.Text = $"移动 {JsonInt(report.Summary, "moved")}";
-            ReportSkippedText.Text = $"跳过 {JsonInt(report.Summary, "skipped")}";
-            ReportDuplicateText.Text = $"重复 {JsonInt(report.Summary, "duplicates")}";
+            ReportMovedText.Text = $"移动 {report.Summary.Moved}";
+            ReportSkippedText.Text = $"跳过 {report.Summary.Skipped}";
+            ReportDuplicateText.Text = $"重复 {report.Summary.Duplicates}";
+            ReportErrorText.Text = $"错误 {report.Summary.Errors}";
+            ReportItems.Clear();
+            foreach (var item in report.Items)
+            {
+                ReportItems.Add(item);
+            }
+            ReportItemsEmptyState.Visibility = ReportItems.Count == 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
             OpenReportButton.IsEnabled = true;
         }
         catch (Exception exc)
         {
             ReportStatusText.Text = exc.Message;
+            ReportItems.Clear();
+            ReportItemsEmptyState.Visibility = Visibility.Visible;
             OpenReportButton.IsEnabled = false;
         }
     }
-
-    private static int JsonInt(JsonElement element, string name) =>
-        element.ValueKind == JsonValueKind.Object
-        && element.TryGetProperty(name, out var value)
-        && value.TryGetInt32(out var number)
-            ? number
-            : 0;
 
     private async void OnOpenReportClick(object sender, RoutedEventArgs e)
     {
@@ -945,6 +972,7 @@ public sealed partial class MainPage : Page
         var result = await _sidecar.SaveSettingsAsync(settings);
         _settingsInitialized = true;
         ApplySnapshot(result.State);
+        SetSettingsDirty(!result.Saved, result.Warning);
         if (!showResult)
         {
             return;
