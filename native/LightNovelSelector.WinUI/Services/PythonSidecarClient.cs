@@ -36,11 +36,39 @@ public sealed class PythonSidecarClient : IAsyncDisposable
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (IsRunning)
-            {
-                return await CallAsync<SidecarPing>("ping", cancellationToken: cancellationToken).ConfigureAwait(false);
-            }
+            return await StartCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _lifecycleLock.Release();
+        }
+    }
 
+    public async Task<SidecarPing> RestartAsync(CancellationToken cancellationToken = default)
+    {
+        await _lifecycleLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            FailPending(new SidecarUnavailableException("Python 服务正在重新启动。"));
+            TerminateProcess();
+            return await StartCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _lifecycleLock.Release();
+        }
+    }
+
+    private async Task<SidecarPing> StartCoreAsync(CancellationToken cancellationToken)
+    {
+        if (IsRunning)
+        {
+            return await CallAsync<SidecarPing>("ping", cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
             var launch = ResolveLaunchCommand();
             var startInfo = new ProcessStartInfo
             {
@@ -62,15 +90,16 @@ public sealed class PythonSidecarClient : IAsyncDisposable
             startInfo.Environment["PYTHONUTF8"] = "1";
             startInfo.Environment["PYTHONUNBUFFERED"] = "1";
 
-            _process = new Process { StartInfo = startInfo };
-            if (!_process.Start())
+            var process = new Process { StartInfo = startInfo };
+            _process = process;
+            if (!process.Start())
             {
                 throw new SidecarUnavailableException("Python 服务进程未能启动。");
             }
 
-            _stdoutTask = ReadStandardOutputAsync(_process);
-            _stderrTask = ReadStandardErrorAsync(_process);
-            _ = MonitorExitAsync(_process);
+            _stdoutTask = ReadStandardOutputAsync(process);
+            _stderrTask = ReadStandardErrorAsync(process);
+            _ = MonitorExitAsync(process);
 
             var ping = await CallAsync<SidecarPing>(
                 "ping",
@@ -85,14 +114,18 @@ public sealed class PythonSidecarClient : IAsyncDisposable
             }
             return ping;
         }
-        catch
+        catch (Exception exc)
         {
+            AddDiagnostic($"启动 Python 服务失败：{exc.Message}");
+            FailPending(new SidecarUnavailableException("Python 服务启动失败。" + DiagnosticSuffix()));
             TerminateProcess();
-            throw;
-        }
-        finally
-        {
-            _lifecycleLock.Release();
+            if (exc is SidecarException or TimeoutException or OperationCanceledException)
+            {
+                throw;
+            }
+            throw new SidecarUnavailableException(
+                "无法启动 Python 服务。请检查 Python 路径与执行权限，或重新构建便携包。"
+            );
         }
     }
 
@@ -285,15 +318,20 @@ public sealed class PythonSidecarClient : IAsyncDisposable
             return;
         }
 
-        if (!_disposed)
+        if (!_disposed && ReferenceEquals(_process, process))
         {
             var exception = new SidecarUnavailableException(
                 $"Python 服务意外退出，退出码 {process.ExitCode}。" + DiagnosticSuffix()
             );
-            foreach (var pending in _pending.Values)
-            {
-                pending.TrySetException(exception);
-            }
+            FailPending(exception);
+        }
+    }
+
+    private void FailPending(Exception exception)
+    {
+        foreach (var pending in _pending.Values)
+        {
+            pending.TrySetException(exception);
         }
     }
 
@@ -366,7 +404,7 @@ public sealed class PythonSidecarClient : IAsyncDisposable
 
     private void TerminateProcess()
     {
-        var process = _process;
+        var process = Interlocked.Exchange(ref _process, null);
         if (process is null)
         {
             return;
@@ -385,7 +423,6 @@ public sealed class PythonSidecarClient : IAsyncDisposable
         finally
         {
             process.Dispose();
-            _process = null;
         }
     }
 
@@ -395,41 +432,53 @@ public sealed class PythonSidecarClient : IAsyncDisposable
         {
             return;
         }
-        _disposed = true;
-
-        var process = _process;
-        if (process is { HasExited: false })
+        await _lifecycleLock.WaitAsync().ConfigureAwait(false);
+        try
         {
-            try
+            if (_disposed)
             {
-                var payload = JsonSerializer.Serialize(
-                    new { id = Interlocked.Increment(ref _requestId), method = "shutdown", @params = new { } },
-                    JsonOptions
-                );
-                await process.StandardInput.WriteLineAsync(payload).ConfigureAwait(false);
-                await process.StandardInput.FlushAsync().ConfigureAwait(false);
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+                return;
             }
-            catch (Exception exc) when (exc is IOException or InvalidOperationException or OperationCanceledException)
-            {
-                TerminateProcess();
-            }
-        }
+            _disposed = true;
 
-        if (_stdoutTask is not null || _stderrTask is not null)
-        {
-            try
+            var process = _process;
+            if (process is { HasExited: false })
             {
-                await Task.WhenAll(_stdoutTask ?? Task.CompletedTask, _stderrTask ?? Task.CompletedTask).ConfigureAwait(false);
+                try
+                {
+                    var payload = JsonSerializer.Serialize(
+                        new { id = Interlocked.Increment(ref _requestId), method = "shutdown", @params = new { } },
+                        JsonOptions
+                    );
+                    await process.StandardInput.WriteLineAsync(payload).ConfigureAwait(false);
+                    await process.StandardInput.FlushAsync().ConfigureAwait(false);
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+                }
+                catch (Exception exc) when (exc is IOException or InvalidOperationException or OperationCanceledException)
+                {
+                    TerminateProcess();
+                }
             }
-            catch (Exception exc) when (exc is IOException or ObjectDisposedException or InvalidOperationException)
+
+            if (_stdoutTask is not null || _stderrTask is not null)
             {
+                try
+                {
+                    await Task.WhenAll(_stdoutTask ?? Task.CompletedTask, _stderrTask ?? Task.CompletedTask)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception exc) when (exc is IOException or ObjectDisposedException or InvalidOperationException)
+                {
+                }
             }
+            FailPending(new ObjectDisposedException(nameof(PythonSidecarClient)));
+            TerminateProcess();
         }
-        TerminateProcess();
-        _writeLock.Dispose();
-        _lifecycleLock.Dispose();
+        finally
+        {
+            _lifecycleLock.Release();
+        }
     }
 
     private sealed record LaunchCommand(string Executable, string WorkingDirectory, IReadOnlyList<string> Arguments);

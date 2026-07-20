@@ -5,7 +5,7 @@
 | 脚本 | 用途 |
 | --- | --- |
 | `run_winui.bat` | 还原依赖并启动 WinUI 3 原生界面 |
-| `build_winui.bat` | 构建 Sidecar、自包含 WinUI 应用和便携 ZIP |
+| `build_winui.bat` | 构建 Sidecar、执行 C# 测试并生成自包含 WinUI 便携 ZIP |
 | `run.bat` | 启动 pywebview 兼容界面 |
 | `build_exe.bat` | 构建 pywebview 单文件兼容版 |
 

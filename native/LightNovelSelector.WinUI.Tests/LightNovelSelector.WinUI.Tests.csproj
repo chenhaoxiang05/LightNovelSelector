@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <PackageReference Include="MSTest.TestAdapter" Version="4.3.2" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.3.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\LightNovelSelector.WinUI\Models\ApplicationModels.cs" Link="Source\ApplicationModels.cs" />
+    <Compile Include="..\LightNovelSelector.WinUI\ViewModels\ConnectionStateController.cs" Link="Source\ConnectionStateController.cs" />
+    <Compile Include="..\LightNovelSelector.WinUI\ViewModels\PlanFilterController.cs" Link="Source\PlanFilterController.cs" />
+  </ItemGroup>
+</Project>

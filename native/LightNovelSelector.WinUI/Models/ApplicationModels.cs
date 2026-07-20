@@ -1,5 +1,13 @@
 namespace LightNovelSelector.WinUI.Models;
 
+public enum ConnectionState
+{
+    Connecting,
+    Ready,
+    Recovering,
+    Disconnected,
+}
+
 public sealed class AppSnapshot
 {
     public AppInfo App { get; init; } = new();

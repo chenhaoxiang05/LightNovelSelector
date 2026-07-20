@@ -8,6 +8,13 @@ LightNovelSelector 是一款面向 Windows 的本地桌面工具，用来批量�
 
 ![LightNovelSelector WinUI 3 原生界面](docs/interface-winui.png)
 
+<details>
+<summary>查看深色 Acrylic 界面</summary>
+
+![LightNovelSelector 深色 Acrylic 界面](docs/interface-winui-dark.png)
+
+</details>
+
 ## 主要能力
 
 - 批量扫描 `.txt`、`.epub`、`.pdf`、`.mobi`、`.azw3`、`.docx`、`.zip`、`.cbz` 等小说文件。
@@ -15,9 +22,12 @@ LightNovelSelector 是一款面向 Windows 的本地桌面工具，用来批量�
 - 支持 Bangumi、AniList、Jikan 在线识别，本地规则始终作为兜底。
 - 扫描阶段只生成预览，不修改原文件。
 - 支持手动修正分类结果和自定义通配符规则。
+- 支持按文件、系列、状态和识别来源组合筛选预览；筛选只改变显示，确认整理始终使用完整计划。
 - 使用完整 SHA-256 内容哈希确认重复文件。
 - 执行过程中持续写入报告，部分失败仍可撤销已完成移动。
 - 支持按 `classification_report.json` 撤销上次分类。
+- 活动页以强类型条目展示移动、跳过、重复、错误和实际目标路径。
+- 分类核心意外退出时自动恢复一次，也可手动重新连接；恢复不会自动重跑扫描或文件移动。
 - 已位于正确目录的文件会标记为“无需移动”，重复扫描不会生成多余副本。
 - 保留命令行模式和 WebView 兼容界面。
 
@@ -41,7 +51,7 @@ flowchart LR
 - 原生标题栏、目录选择器、拖放、导航、对话框、Toast 和高 DPI 适配。
 - 列表由 WinUI 虚拟化，不把大量文件行一次性渲染到界面。
 - 扫描和文件移动在 Python 后台任务中运行，界面持续响应。
-- Python 进程异常退出时，界面会显示明确诊断；关闭界面时会回收子进程。
+- Python 进程异常退出时，界面会自动尝试安全重启一次并提供手动重连；关闭界面时会回收整个子进程树。
 - 发布包内置 Python Sidecar、.NET 和 Windows App SDK 运行组件，下载者不需要安装开发环境。
 
 ## 界面与交互
@@ -49,6 +59,7 @@ flowchart LR
 - 左侧导航包含整理工作台、活动与报告、设置。
 - 导航栏显示“选择目录、扫描预览、检查修正、执行整理”四步安全流程，并随任务状态即时更新。
 - 主工作区包含拖放导入、统计卡片、分类表格、详情面板和底部安全操作栏。
+- 分类预览提供搜索、系列筛选、状态筛选和“可见数量 / 总数量”反馈，并区分尚未扫描与筛选无结果。
 - 状态同时使用图标、文字和语义颜色表达，不只依赖颜色。
 - 复选框选中显示对勾，不使用容易与错误状态混淆的叉号。
 - 扫描、执行和撤销期间会禁用冲突操作，并显示真实任务进度。
@@ -100,7 +111,7 @@ run_winui.bat
 1. 点击“选择目录”，或把目录和同目录中的一批小说拖入导入区。
 2. 在设置页决定是否联网、是否递归扫描、是否自动重命名，并维护自定义规则。
 3. 点击“扫描并预览”。
-4. 检查状态、目标系列、置信度、识别来源和详情。
+4. 使用搜索、系列和状态筛选检查目标系列、置信度、识别来源和详情。
 5. 识别不准确时，选中条目并手动修正系列名。
 6. 点击“确认整理”，核对将移动、将跳过和涉及系列数量。
 7. 整理完成后在“活动与报告”查看结果和日志。
@@ -200,8 +211,10 @@ lightnovel_selector/
   storage.py                     设置、缓存和原子 JSON 存储
   web/                           WebView 兼容界面资源
 native/LightNovelSelector.WinUI/  WinUI 3 原生界面
+native/LightNovelSelector.WinUI.Tests/  筛选、报告和连接状态的 C# 单元测试
 tests/                            Python 核心与 Sidecar 测试
 tools/generate_native_assets.py  原生图标资源生成器
+.github/workflows/windows-ci.yml Windows 自动验证
 ```
 
 维护者请阅读 [开发说明](DEVELOPMENT.md) 和 [WinUI 架构说明](docs/WINUI_ARCHITECTURE.md)。本次更新内容见 [更新说明](UPDATE_NOTES.md)。

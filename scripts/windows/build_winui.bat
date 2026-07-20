@@ -38,11 +38,11 @@ if not defined PYTHON_EXE (
     set "PYTHON_EXE=%PROJECT_ROOT%\.venv-build\Scripts\python.exe"
 )
 
-echo [1/6] 安装构建依赖...
+echo [1/7] 安装构建依赖...
 "%PYTHON_EXE%" -m pip install --disable-pip-version-check -r "%PROJECT_ROOT%\requirements-dev.txt"
 if errorlevel 1 exit /b 1
 
-echo [2/6] 生成原生应用图标...
+echo [2/7] 生成原生应用图标...
 "%PYTHON_EXE%" "%PROJECT_ROOT%\tools\generate_native_assets.py"
 if errorlevel 1 exit /b 1
 
@@ -50,7 +50,7 @@ if not exist "%PROJECT_ROOT%\build\native-sidecar" mkdir "%PROJECT_ROOT%\build\n
 if not exist "%PROJECT_ROOT%\build\pyinstaller-sidecar" mkdir "%PROJECT_ROOT%\build\pyinstaller-sidecar"
 if not exist "%PROJECT_ROOT%\build\spec" mkdir "%PROJECT_ROOT%\build\spec"
 
-echo [3/6] 构建 Python Sidecar...
+echo [3/7] 构建 Python Sidecar...
 "%PYTHON_EXE%" -m PyInstaller ^
   --noconfirm ^
   --clean ^
@@ -64,7 +64,7 @@ echo [3/6] 构建 Python Sidecar...
 if errorlevel 1 exit /b 1
 
 set "SIDECAR_EXE=%PROJECT_ROOT%\build\native-sidecar\LightNovelSelector.Sidecar.exe"
-echo [4/6] 验证 Sidecar 协议...
+echo [4/7] 验证 Sidecar 协议...
 "%PYTHON_EXE%" -c "import json,subprocess,sys; data='{""id"":1,""method"":""ping""}\n{""id"":2,""method"":""shutdown""}\n'; p=subprocess.run([sys.argv[1]],input=data,text=True,encoding='utf-8',capture_output=True,timeout=30); rows=[json.loads(x) for x in p.stdout.splitlines()]; assert p.returncode==0 and not p.stderr and rows[0]['result']['protocol_version']==1 and rows[1]['result']['accepted']" "%SIDECAR_EXE%"
 if errorlevel 1 exit /b 1
 
@@ -80,7 +80,13 @@ set "PUBLISH_DIR=%PROJECT_ROOT%\dist\winui\%APP_DIR_NAME%"
 set "ZIP_PATH=%PROJECT_ROOT%\dist\winui\%APP_DIR_NAME%.zip"
 if not exist "%PROJECT_ROOT%\dist\winui" mkdir "%PROJECT_ROOT%\dist\winui"
 
-echo [5/6] 发布自包含 WinUI 3 应用...
+echo [5/7] 执行 C# 单元测试...
+"%DOTNET_EXE%" restore "%PROJECT_ROOT%\native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj"
+if errorlevel 1 exit /b 1
+"%DOTNET_EXE%" test "%PROJECT_ROOT%\native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj" -c Release --no-restore --logger "console;verbosity=minimal"
+if errorlevel 1 exit /b 1
+
+echo [6/7] 发布自包含 WinUI 3 应用...
 "%DOTNET_EXE%" restore "%PROJECT_ROOT%\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj" -r win-x64 -p:Platform=x64 -p:WindowsPackageType=None
 if errorlevel 1 exit /b 1
 "%DOTNET_EXE%" publish "%PROJECT_ROOT%\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj" ^
@@ -104,7 +110,7 @@ if not exist "%PUBLISH_DIR%\LightNovelSelector.Sidecar.exe" (
     exit /b 1
 )
 
-echo [6/6] 执行发布版启动与外观回归测试并压缩...
+echo [7/7] 执行发布版启动与外观回归测试并压缩...
 set "LN_SELECTOR_WINUI_TEST_THEME=dark"
 set "LN_SELECTOR_WINUI_TEST_MATERIAL=acrylic"
 set "LN_SELECTOR_WINUI_SMOKE_TEST=1"

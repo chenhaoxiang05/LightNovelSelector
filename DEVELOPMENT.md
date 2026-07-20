@@ -20,6 +20,7 @@
 测试与打包：
 
 - pytest、ruff、vulture
+- MSTest 4、Microsoft.NET.Test.Sdk
 - PyInstaller 6.21
 - Pillow 12.3，用于确定性生成原生应用图标
 - `dotnet publish` 自包含发布
@@ -78,9 +79,13 @@ NuGet 依赖由项目文件固定并通过 `dotnet restore` 自动还原。开�
 - `Appearance/WindowAppearanceController.cs`：Desktop Acrylic、Mica、实色切换，标题栏同步，以及系统透明和高对比度回退。
 - `Appearance/AppearancePreferences.cs`：主题、材质和动态偏好的共享容错存储。
 - `Views/MainPage.xaml`：导航、工作台、活动报告、设置、Toast 和对话框。
-- `Views/MainPage.xaml.cs`：界面状态映射、轮询、拖放、确认和用户操作。
+- `Views/MainPage.xaml.cs`：页面生命周期、导航和共享视觉辅助。
+- `Views/MainPage.Connection.cs`、`MainPage.State.cs`：核心连接四态、一次性恢复和快照映射。
+- `Views/MainPage.Commands.cs`、`MainPage.Details.cs`：目录、扫描、整理、撤销、详情和手动修正。
+- `Views/MainPage.Activity.cs`、`MainPage.Settings.cs`：强类型报告、日志和识别设置。
 - `Views/MainPage.Appearance.cs`、`MainPage.Notifications.cs`、`MainPage.Workflow.cs`：外观设置、通知和安全流程视觉状态。
-- `Services/PythonSidecarClient.cs`：进程发现、请求关联、超时和错误传播。
+- `ViewModels/PlanFilterController.cs`、`ConnectionStateController.cs`：不依赖 XAML 的筛选和连接状态派生。
+- `Services/PythonSidecarClient.cs`：进程发现、请求关联、超时、安全重启和错误传播。
 - `Helpers/Motion.cs`：Composition 动效和减少动态效果策略。
 - `Styles/DesignTokens.xaml`：浅色、深色、高对比度语义令牌。
 - `Models/` 与 `Converters/`：协议模型和纯视觉转换。
@@ -152,6 +157,8 @@ dotnet build .\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj `
   -c Debug -p:Platform=x64 -p:WindowsPackageType=None
 dotnet build .\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj `
   -c Release -p:Platform=x64 -p:WindowsPackageType=None
+dotnet test .\native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj `
+  -c Release --logger "console;verbosity=minimal"
 ```
 
 深色启动与外观矩阵回归：
@@ -173,7 +180,9 @@ node --check .\lightnovel_selector\web\app.js
 git diff --check
 ```
 
-当前 Python 测试共 45 项，覆盖解析、重复检测、规则、设置容错、扫描、手动修正、执行、部分失败报告、撤销、并发任务、封面限制和 Sidecar 协议。
+当前 Python 测试共 45 项，覆盖解析、重复检测、规则、设置容错、扫描、手动修正、执行、部分失败报告、撤销、并发任务、封面限制和 Sidecar 协议。C# 测试共 14 项，覆盖组合筛选、主计划隔离、异常空字段、报告兼容和连接状态派生。
+
+`.github/workflows/windows-ci.yml` 会在 Windows 上执行上述 Python 检查、C# 测试和 WinUI Release x64 构建。
 
 外观偏好优先使用 Windows `ApplicationData.LocalSettings`，并同步写入 `%LOCALAPPDATA%\LightNovelSelector\appearance.json`。后备文件不可读或损坏时按默认值启动，并在下一次保存时自动重建。
 
@@ -201,8 +210,9 @@ git diff --check
 2. 生成原生应用图标。
 3. 使用 PyInstaller 生成单文件 Python Sidecar。
 4. 通过真实 `ping` 和 `shutdown` 请求验证协议。
-5. 自包含发布 Windows x64 WinUI 应用。
-6. 执行深色 Acrylic 启动、主题/材质/页面矩阵回归，再生成 ZIP。
+5. 执行 C# 单元测试。
+6. 自包含发布 Windows x64 WinUI 应用。
+7. 执行深色 Acrylic 启动、主题/材质/页面矩阵回归，再生成 ZIP。
 
 输出示例：
 

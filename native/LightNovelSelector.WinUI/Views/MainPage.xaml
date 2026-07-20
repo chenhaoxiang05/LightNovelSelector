@@ -122,8 +122,38 @@
             </NavigationView.PaneFooter>
 
             <NavigationView.Content>
-                <Grid Padding="26,18,26,24">
-                    <Grid x:Name="WorkspaceView" RowSpacing="12">
+                <Grid Padding="26,18,26,24" RowSpacing="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <InfoBar
+                        x:Name="ConnectionRecoveryBar"
+                        IsClosable="False"
+                        IsOpen="False"
+                        Severity="Warning"
+                        Title="分类核心连接中断">
+                        <InfoBar.ActionButton>
+                            <Button
+                                x:Name="ReconnectButton"
+                                MinWidth="118"
+                                Click="OnReconnectClick"
+                                Style="{StaticResource ToolbarButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <ProgressRing
+                                        x:Name="ReconnectProgressRing"
+                                        Width="15"
+                                        Height="15"
+                                        IsActive="False"
+                                        Visibility="Collapsed" />
+                                    <FontIcon x:Name="ReconnectButtonIcon" FontSize="14" Glyph="&#xE72C;" />
+                                    <TextBlock x:Name="ReconnectButtonText" Text="重新连接" />
+                                </StackPanel>
+                            </Button>
+                        </InfoBar.ActionButton>
+                    </InfoBar>
+
+                    <Grid x:Name="WorkspaceView" Grid.Row="1" RowSpacing="12">
                         <VisualStateManager.VisualStateGroups>
                             <VisualStateGroup>
                                 <VisualState x:Name="CompactWorkspaceState">
@@ -646,7 +676,7 @@
                         </Border>
                     </Grid>
 
-                    <Grid x:Name="ActivityView" Visibility="Collapsed" RowSpacing="12">
+                    <Grid x:Name="ActivityView" Grid.Row="1" Visibility="Collapsed" RowSpacing="12">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -796,6 +826,7 @@
 
                     <Grid
                         x:Name="SettingsView"
+                        Grid.Row="1"
                         Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*" />

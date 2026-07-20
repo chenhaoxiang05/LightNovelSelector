@@ -39,10 +39,11 @@ public static class PlanFilterController
             .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
 
-    private static bool Contains(string value, string query) =>
-        value.Contains(query, StringComparison.CurrentCultureIgnoreCase);
+    private static bool Contains(string? value, string query) =>
+        !string.IsNullOrEmpty(value)
+        && value.Contains(query, StringComparison.CurrentCultureIgnoreCase);
 
-    private static bool Matches(string value, string filter) =>
+    private static bool Matches(string? value, string filter) =>
         string.IsNullOrWhiteSpace(filter)
         || string.Equals(value, filter, StringComparison.CurrentCultureIgnoreCase);
 }

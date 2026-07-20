@@ -8,11 +8,15 @@ LightNovelSelector/
 │  └─ web/                       pywebview 兼容界面
 ├─ native/LightNovelSelector.WinUI/
 │  ├─ Appearance/                主题、材质与外观偏好
-│  ├─ Views/                     主窗口与主页面
+│  ├─ Views/                     主窗口与按职责拆分的主页面 partial
 │  ├─ Services/                  Python Sidecar 客户端
 │  ├─ Models/                    原生界面数据模型
+│  ├─ ViewModels/                纯筛选与连接状态派生
 │  ├─ Styles/                    设计令牌与控件样式
 │  └─ Assets/                    图标与应用资源
+├─ native/LightNovelSelector.WinUI.Tests/
+│                                C# 筛选、报告与连接状态测试
+├─ .github/workflows/            Windows 持续集成
 ├─ scripts/windows/              Windows 启动和构建脚本实现
 ├─ tests/                        Python 核心与 Sidecar 测试
 ├─ tools/                        开发期资源生成工具
