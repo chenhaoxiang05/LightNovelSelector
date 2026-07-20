@@ -11,6 +11,8 @@ public sealed partial class MainWindow : Window
 {
     private readonly WindowAppearanceController _appearance;
 
+    public event EventHandler? ActualThemeChanged;
+
     public event EventHandler? MaterialStateChanged
     {
         add => _appearance.StateChanged += value;
@@ -18,6 +20,8 @@ public sealed partial class MainWindow : Window
     }
 
     public WindowMaterialState MaterialState => _appearance.State;
+
+    public ElementTheme ActualTheme => WindowRoot.ActualTheme;
 
     public MainWindow()
     {
@@ -35,6 +39,7 @@ public sealed partial class MainWindow : Window
             SolidBackdropLayer,
             AppearancePreferences.LoadMaterial()
         );
+        WindowRoot.ActualThemeChanged += OnWindowRootActualThemeChanged;
         AppWindow.Closing += OnAppWindowClosing;
         Closed += OnClosed;
         RootFrame.Navigate(typeof(MainPage));
@@ -46,8 +51,12 @@ public sealed partial class MainWindow : Window
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
+        WindowRoot.ActualThemeChanged -= OnWindowRootActualThemeChanged;
         _appearance.Dispose();
     }
+
+    private void OnWindowRootActualThemeChanged(FrameworkElement sender, object args) =>
+        ActualThemeChanged?.Invoke(this, EventArgs.Empty);
 
     private void SizeAndCenterWindow()
     {

@@ -62,6 +62,18 @@ public sealed partial class MainPage
                         ? WorkflowStepState.Active
                         : WorkflowStepState.Pending
         );
+
+        CompactWorkflowStepText.Text = applyCompleted
+            ? "当前：整理完成"
+            : isApplying
+                ? "当前：正在整理"
+                : hasPlans
+                    ? "当前：检查并修正"
+                    : isScanning
+                        ? "当前：扫描预览"
+                        : hasFolder
+                            ? "当前：扫描预览"
+                            : "当前：选择目录";
     }
 
     private static void SetWorkflowStep(

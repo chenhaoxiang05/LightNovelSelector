@@ -70,6 +70,7 @@ public sealed partial class MainPage
             return;
         }
         window.MaterialStateChanged += OnMaterialStateChanged;
+        window.ActualThemeChanged += OnActualThemeChanged;
         _materialStateSubscribed = true;
     }
 
@@ -80,10 +81,13 @@ public sealed partial class MainPage
             return;
         }
         window.MaterialStateChanged -= OnMaterialStateChanged;
+        window.ActualThemeChanged -= OnActualThemeChanged;
         _materialStateSubscribed = false;
     }
 
     private void OnMaterialStateChanged(object? sender, EventArgs e) => UpdateMaterialStatus();
+
+    private void OnActualThemeChanged(object? sender, EventArgs e) => UpdateSystemThemeStatus();
 
     private void UpdateMaterialStatus()
     {
@@ -95,6 +99,23 @@ public sealed partial class MainPage
         MaterialStatusText.Foreground = ResourceBrush(
             window.MaterialState.IsFallback ? "WarningTextBrush" : "AppAccentBrush"
         );
+        UpdateSystemThemeStatus();
+    }
+
+    private void UpdateSystemThemeStatus()
+    {
+        if (App.MainWindow is not { } window)
+        {
+            return;
+        }
+
+        var effectiveTheme = window.ActualTheme == ElementTheme.Dark ? "深色" : "浅色";
+        var selectedTheme = ThemeSelector.SelectedItem is ComboBoxItem item
+            ? item.Tag as string
+            : "system";
+        SystemThemeStatusText.Text = selectedTheme == "system"
+            ? $"当前跟随 Windows（{effectiveTheme}）"
+            : $"当前固定为{effectiveTheme}";
     }
 
     private void OnThemeSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -105,6 +126,7 @@ public sealed partial class MainPage
         }
         var theme = item.Tag as string ?? "system";
         App.MainWindow?.ApplyTheme(theme);
+        UpdateSystemThemeStatus();
         if (!AppearancePreferences.TrySaveTheme(theme))
         {
             ShowToast("颜色模式已应用，但未能保存到当前账户。", ToastKind.Warning);
@@ -141,5 +163,12 @@ public sealed partial class MainPage
             ReducedMotionToggle.IsOn ? "已减少非必要动态效果。" : "已恢复界面动态效果。",
             ToastKind.Info
         );
+    }
+
+    private void OnRootLayoutSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var compact = e.NewSize.Height < 760;
+        WorkflowStepsPanel.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        CompactWorkflowSummary.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
     }
 }

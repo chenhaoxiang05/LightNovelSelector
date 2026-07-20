@@ -5,14 +5,15 @@
 
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
-            <Color x:Key="LowCardBackgroundColor">#70FFFFFF</Color>
-            <Color x:Key="CardBackgroundColor">#A8FFFFFF</Color>
-            <Color x:Key="ElevatedCardBackgroundColor">#D4FFFFFF</Color>
-            <Color x:Key="CardHoverColor">#C7FFFFFF</Color>
-            <Color x:Key="CardBorderHighlightColor">#A6FFFFFF</Color>
-            <Color x:Key="CardBorderShadowColor">#26000000</Color>
-            <Color x:Key="LowCardBorderHighlightColor">#70FFFFFF</Color>
-            <Color x:Key="LowCardBorderShadowColor">#16000000</Color>
+            <Color x:Key="BackdropToneColor">#08000000</Color>
+            <Color x:Key="LowCardBackgroundColor">#5CFFFFFF</Color>
+            <Color x:Key="CardBackgroundColor">#8CFFFFFF</Color>
+            <Color x:Key="ElevatedCardBackgroundColor">#B8FFFFFF</Color>
+            <Color x:Key="CardHoverColor">#A8FFFFFF</Color>
+            <Color x:Key="CardBorderHighlightColor">#82FFFFFF</Color>
+            <Color x:Key="CardBorderShadowColor">#20000000</Color>
+            <Color x:Key="LowCardBorderHighlightColor">#5CFFFFFF</Color>
+            <Color x:Key="LowCardBorderShadowColor">#12000000</Color>
             <Color x:Key="SubtleSurfaceColor">#10000000</Color>
             <Color x:Key="DividerColor">#1A000000</Color>
             <Color x:Key="NavigationSelectionColor">#180F6CBD</Color>
@@ -56,14 +57,15 @@
             <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="#3DFFFFFF" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
-            <Color x:Key="LowCardBackgroundColor">#5215191F</Color>
-            <Color x:Key="CardBackgroundColor">#781A1E24</Color>
-            <Color x:Key="ElevatedCardBackgroundColor">#A322272E</Color>
-            <Color x:Key="CardHoverColor">#94272D35</Color>
-            <Color x:Key="CardBorderHighlightColor">#52FFFFFF</Color>
-            <Color x:Key="CardBorderShadowColor">#30000000</Color>
-            <Color x:Key="LowCardBorderHighlightColor">#30FFFFFF</Color>
-            <Color x:Key="LowCardBorderShadowColor">#20000000</Color>
+            <Color x:Key="BackdropToneColor">#18080C12</Color>
+            <Color x:Key="LowCardBackgroundColor">#6615191F</Color>
+            <Color x:Key="CardBackgroundColor">#8C1A1E24</Color>
+            <Color x:Key="ElevatedCardBackgroundColor">#B522272E</Color>
+            <Color x:Key="CardHoverColor">#A2252B33</Color>
+            <Color x:Key="CardBorderHighlightColor">#3DFFFFFF</Color>
+            <Color x:Key="CardBorderShadowColor">#38000000</Color>
+            <Color x:Key="LowCardBorderHighlightColor">#2BFFFFFF</Color>
+            <Color x:Key="LowCardBorderShadowColor">#24000000</Color>
             <Color x:Key="SubtleSurfaceColor">#14FFFFFF</Color>
             <Color x:Key="DividerColor">#24FFFFFF</Color>
             <Color x:Key="NavigationSelectionColor">#2E4A9EFF</Color>
@@ -107,6 +109,7 @@
             <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="#2EFFFFFF" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
+            <Color x:Key="BackdropToneColor">Transparent</Color>
             <Color x:Key="LowCardBackgroundColor">{ThemeResource SystemColorWindowColor}</Color>
             <Color x:Key="CardBackgroundColor">{ThemeResource SystemColorWindowColor}</Color>
             <Color x:Key="ElevatedCardBackgroundColor">{ThemeResource SystemColorWindowColor}</Color>
@@ -139,6 +142,7 @@
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
+    <SolidColorBrush x:Key="BackdropToneBrush" Color="{ThemeResource BackdropToneColor}" />
     <SolidColorBrush x:Key="LowCardBackgroundBrush" Color="{ThemeResource LowCardBackgroundColor}" />
     <SolidColorBrush x:Key="CardBackgroundBrush" Color="{ThemeResource CardBackgroundColor}" />
     <SolidColorBrush x:Key="ElevatedCardBackgroundBrush" Color="{ThemeResource ElevatedCardBackgroundColor}" />
@@ -168,6 +172,7 @@
     <SolidColorBrush x:Key="ErrorSubtleBrush" Color="{ThemeResource ErrorSubtleColor}" />
 
     <FontFamily x:Key="AppFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
+    <FontFamily x:Key="AppDisplayFontFamily">Segoe UI Variable Display, Segoe UI</FontFamily>
 
     <Style x:Key="CardBorderStyle" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource CardBackgroundBrush}" />
@@ -201,7 +206,7 @@
     </Style>
 
     <Style x:Key="PageTitleTextStyle" TargetType="TextBlock" BasedOn="{StaticResource TitleTextBlockStyle}">
-        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontFamily" Value="{StaticResource AppDisplayFontFamily}" />
         <Setter Property="FontSize" Value="26" />
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
@@ -214,7 +219,7 @@
     </Style>
 
     <Style x:Key="MetricValueTextStyle" TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontFamily" Value="{StaticResource AppDisplayFontFamily}" />
         <Setter Property="FontSize" Value="24" />
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>

@@ -16,6 +16,11 @@
             Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
             Visibility="Collapsed" />
 
+        <Border
+            Grid.RowSpan="2"
+            Background="{ThemeResource BackdropToneBrush}"
+            IsHitTestVisible="False" />
+
         <TitleBar x:Name="AppTitleBar" Title="轻小说整理器">
             <TitleBar.IconSource>
                 <ImageIconSource ImageSource="Assets/AppIcon.ico" />

@@ -6,7 +6,7 @@
     xmlns:models="using:LightNovelSelector.WinUI.Models"
     NavigationCacheMode="Required">
 
-    <Grid x:Name="RootLayout" Background="Transparent">
+    <Grid x:Name="RootLayout" Background="Transparent" SizeChanged="OnRootLayoutSizeChanged">
         <NavigationView
             x:Name="ShellNavigation"
             AlwaysShowHeader="False"
@@ -55,7 +55,7 @@
                 <StackPanel Margin="12,8,12,12" Spacing="10">
                     <Border Height="1" Background="{ThemeResource DividerBrush}" />
                     <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="安全工作流" />
-                    <StackPanel Spacing="8">
+                    <StackPanel x:Name="WorkflowStepsPanel" Spacing="8">
                         <Grid ColumnSpacing="9">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="20" />
@@ -97,6 +97,17 @@
                             <TextBlock x:Name="WorkflowStep4Label" Grid.Column="1" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="执行整理" />
                         </Grid>
                     </StackPanel>
+                    <Border
+                        x:Name="CompactWorkflowSummary"
+                        Padding="9,7"
+                        Background="{ThemeResource AccentSubtleBrush}"
+                        CornerRadius="8"
+                        Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <FontIcon FontSize="12" Foreground="{ThemeResource AppAccentBrush}" Glyph="&#xE9D2;" />
+                            <TextBlock x:Name="CompactWorkflowStepText" VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold" Text="当前：选择目录" />
+                        </StackPanel>
+                    </Border>
                     <Border Padding="9,6" Background="{ThemeResource SuccessSubtleBrush}" CornerRadius="8">
                         <StackPanel Orientation="Horizontal" Spacing="7">
                             <Ellipse Width="6" Height="6" Fill="{ThemeResource SuccessTextBrush}" />
@@ -724,6 +735,7 @@
                                         <StackPanel Spacing="3">
                                             <TextBlock FontWeight="SemiBold" Text="颜色模式" />
                                             <TextBlock Style="{StaticResource MutedTextStyle}" Text="默认跟随 Windows，也可为本应用固定深色或浅色。" TextWrapping="Wrap" />
+                                            <TextBlock x:Name="SystemThemeStatusText" FontSize="12" Foreground="{ThemeResource AppAccentBrush}" Text="当前跟随 Windows" />
                                         </StackPanel>
                                         <ComboBox x:Name="ThemeSelector" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnThemeSelectionChanged">
                                             <ComboBoxItem Content="跟随 Windows" Tag="system" />
