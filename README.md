@@ -1,220 +1,145 @@
 # LightNovelSelector 轻小说自动整理工具
 
-LightNovelSelector 是一款面向 Windows 的本地桌面工具，用来批量识别、预览和整理轻小说文件。它会结合文件名、电子书内容提示、自定义规则和可选在线条目识别作品系列，并在用户确认后把文件移动到对应系列目录。
+LightNovelSelector 是面向 Windows 的本地桌面工具，用来批量识别、预览和整理轻小说文件。程序先生成完整分类计划，只有用户确认后才移动文件；每次整理都会保存报告，并可按报告安全撤销。
 
-当前版本：`v2.0.0`
-
-> 当前开发分支提供 WinUI 3 原生界面预览，尚未合并到稳定分支。
-
-![LightNovelSelector WinUI 3 原生界面](docs/interface-winui.png)
-
-<details>
-<summary>查看深色 Acrylic 界面</summary>
-
-![LightNovelSelector 深色 Acrylic 界面](docs/interface-winui-dark.png)
-
-</details>
+![LightNovelSelector 浅色界面](docs/interface-winui-light.png)
 
 ## 主要能力
 
-- 批量扫描 `.txt`、`.epub`、`.pdf`、`.mobi`、`.azw3`、`.docx`、`.zip`、`.cbz` 等小说文件。
-- 自动提取小说标题、卷号、系列名、识别来源和分类置信度。
-- 支持 Bangumi、AniList、Jikan 在线识别，本地规则始终作为兜底。
-- 扫描阶段只生成预览，不修改原文件。
-- 支持手动修正分类结果和自定义通配符规则。
-- 支持按文件、系列、状态和识别来源组合筛选预览；筛选只改变显示，确认整理始终使用完整计划。
-- 使用完整 SHA-256 内容哈希确认重复文件。
-- 执行过程中持续写入报告，部分失败仍可撤销已完成移动。
-- 支持按 `classification_report.json` 撤销上次分类。
-- 活动页以强类型条目展示移动、跳过、重复、错误和实际目标路径。
-- 分类核心意外退出时自动恢复一次，也可手动重新连接；恢复不会自动重跑扫描或文件移动。
-- 已位于正确目录的文件会标记为“无需移动”，重复扫描不会生成多余副本。
-- 保留命令行模式和 WebView 兼容界面。
+- 从文件名、电子书内容提示、自定义规则和可选在线条目中识别作品系列。
+- 批量扫描目录或拖入同一目录中的文件，显示系列、目标位置、来源和置信度。
+- 支持搜索、系列筛选、状态筛选、详情查看和手动修正。
+- 使用完整文件 SHA-256 指纹检测重复内容，避免仅比较文件名或头尾片段造成误判。
+- 执行前再次检查源文件与目标路径；冲突、错误和重复文件会明确标记并安全跳过。
+- 移动成功后持续写入 `classification_report.json`，即使后续文件失败也保留已完成记录。
+- 支持报告查看、历史条目、撤销上次整理和自定义分类规则。
+- 设置保存失败只提示警告，不阻断扫描主流程。
+- 默认跟随 Windows 深浅色，提供 Acrylic、Mica、实色与减少动态效果选项。
 
-## 原生界面架构
+## 原生架构
 
-WinUI 3 负责窗口、布局、主题、动画和 Windows 原生交互，Python 继续负责所有识别和文件操作。两个进程通过标准输入输出上的 JSON Lines 协议通信：
+桌面界面统一采用 **WinUI 3 + Windows App SDK**。分类、文件解析、网络元数据、报告和撤销逻辑继续由 Python 负责，WinUI 通过本机 JSON Lines Sidecar 协议调用 Python 核心。
 
-```mermaid
-flowchart LR
-    UI["WinUI 3 / XAML 原生界面"] -->|"带请求编号的 JSON Lines"| Sidecar["Python Sidecar"]
-    Sidecar --> Service["应用服务与任务状态机"]
-    Service --> Core["识别、分类、报告与撤销核心"]
-    Core --> Files["本地文件系统"]
-    Core --> Metadata["可选在线元数据"]
+```text
+WinUI 3 窗口
+    │ JSON Lines / stdin + stdout
+    ▼
+Python Sidecar
+    │
+    ├─ 文件名与内容解析
+    ├─ 系列识别与自定义规则
+    ├─ 完整指纹重复检测
+    └─ 移动、报告与撤销
 ```
 
-这种结构带来的效果：
-
-- 首次运行使用原生 Desktop Acrylic 窗口背景，也可即时切换为 Mica 或实色。
-- Windows 关闭透明效果或启用高对比度时自动回退为系统实色，条件恢复后重新启用用户选择。
-- 原生标题栏、目录选择器、拖放、导航、对话框、Toast 和高 DPI 适配。
-- 列表由 WinUI 虚拟化，不把大量文件行一次性渲染到界面。
-- 扫描和文件移动在 Python 后台任务中运行，界面持续响应。
-- Python 进程异常退出时，界面会自动尝试安全重启一次并提供手动重连；关闭界面时会回收整个子进程树。
-- 发布包内置 Python Sidecar、.NET 和 Windows App SDK 运行组件，下载者不需要安装开发环境。
-
-## 界面与交互
-
-- 左侧导航包含整理工作台、活动与报告、设置。
-- 导航栏显示“选择目录、扫描预览、检查修正、执行整理”四步安全流程，并随任务状态即时更新。
-- 主工作区包含拖放导入、统计卡片、分类表格、详情面板和底部安全操作栏。
-- 分类预览提供搜索、系列筛选、状态筛选和“可见数量 / 总数量”反馈，并区分尚未扫描与筛选无结果。
-- 状态同时使用图标、文字和语义颜色表达，不只依赖颜色。
-- 复选框选中显示对勾，不使用容易与错误状态混淆的叉号。
-- 扫描、执行和撤销期间会禁用冲突操作，并显示真实任务进度。
-- 执行分类和撤销前都需要确认，文件移动期间阻止误关窗口。
-- 支持系统、浅色、深色主题，以及 Acrylic、Mica、实色三档窗口材质。
-- 界面使用低层、标准、高层三档半透明表面，导入区与操作栏更突出，统计与详情区更轻，信息层级不再依赖厚重阴影。
-- 导航栏和 Toast 使用独立 Acrylic；重复卡片使用半透明实色，避免叠加模糊造成 GPU 浪费。
-- 设置页会显示当前有效材质，以及透明效果或高对比度导致的临时回退状态。
-- 窄窗口会自动收起侧栏并隐藏常驻详情栏，详情仍可通过对话框查看。
-- 主题切换不会重建未变化的窗口背景，深色 Acrylic/Mica 下可连续切换而不冻结。
-
-动效只服务状态与空间关系：
-
-- 按钮按压使用 100 毫秒按下、160 毫秒释放的轻微缩放反馈。
-- 首次卡片进入使用强 `ease-out`、8 像素短位移和 220 毫秒时长，卡片间隔 24 毫秒。
-- 页面切换只做 4 像素、160 毫秒的轻量 reveal。
-- Toast 进入 220 毫秒、退出 140 毫秒，退出比进入更快。
-- 高频选择、筛选和键盘操作不增加等待动画。
-- 自动遵循 Windows“动画效果”设置，也可在设置页单独减少动态效果；此时取消缩放和位移，只保留短透明度反馈。
+旧 WebView 界面已经停用并从当前源码移除。最后一个包含旧界面的完整版本保存在 Git 标签 `legacy-webview-final`，不会影响当前 WinUI 代码和安装包。
 
 ## 快速开始
 
-### 使用 WinUI 便携版
+### 安装版
 
-下载并解压 Windows x64 ZIP，然后运行：
-
-```text
-LightNovelSelector.WinUI.exe
-```
-
-ZIP 是自包含发布包。普通下载者不需要安装 Python、.NET SDK 或 Windows App SDK Runtime，也不需要管理员权限。
-
-### 从源码启动 WinUI
-
-开发机需要 Windows 10 1809 或更高版本、Python 3.10+ 和 .NET 10 SDK。双击：
+从仓库 Release 下载：
 
 ```text
-run_winui.bat
+LightNovelSelector-v2.0.0-win-x64-setup.exe
 ```
 
-脚本会查找当前有效的 Python，设置 Sidecar 路径，还原 NuGet 包并启动 WinUI 3 调试版本。系统重装后不会继续引用已经失效的旧 Python 路径。
+双击安装器即可。默认安装到当前 Windows 用户目录，不需要管理员权限；安装器会创建开始菜单入口，并提供可选桌面快捷方式。应用本体自带 .NET、Windows App SDK 和 Python Sidecar，下载者不需要另装编程环境。
 
-### 使用兼容界面
+发布产物目前未进行商业代码签名。请只从本仓库 Release 获取安装器，并核对发布页提供的 SHA-256。
 
-双击 `run.bat` 可继续启动 pywebview + WebView2 兼容界面。命令行入口 `lightnovel_classifier.py` 保持不变。
+### 从源码启动
+
+开发机需要：
+
+- Windows 10 1809 或更高版本，推荐 Windows 11
+- Python 3.10 或更高版本
+- .NET 10 SDK
+
+双击 `run_winui.bat`，或在 PowerShell 中运行：
+
+```powershell
+.\run_winui.bat
+```
+
+`run.bat` 现在也是同一 WinUI 入口，不再启动旧界面。
 
 ## 使用流程
 
-1. 点击“选择目录”，或把目录和同目录中的一批小说拖入导入区。
-2. 在设置页决定是否联网、是否递归扫描、是否自动重命名，并维护自定义规则。
-3. 点击“扫描并预览”。
-4. 使用搜索、系列和状态筛选检查目标系列、置信度、识别来源和详情。
-5. 识别不准确时，选中条目并手动修正系列名。
-6. 点击“确认整理”，核对将移动、将跳过和涉及系列数量。
-7. 整理完成后在“活动与报告”查看结果和日志。
-8. 需要恢复时点击“撤销上次”。
+1. 点击“选择目录”，或把一个目录/同一目录中的一批小说拖入导入卡片。
+2. 点击“扫描并预览”，等待识别完成。
+3. 使用搜索和筛选检查分类计划，必要时在详情面板手动修正系列。
+4. 点击“确认整理”，再次核对文件数量后执行移动。
+5. 在“活动与报告”中查看移动、跳过、重复和错误条目；需要时按报告撤销。
 
-默认只扫描所选目录第一层。开启“包含子文件夹”后会递归扫描。
+常用快捷键：
+
+| 快捷键 | 操作 |
+| --- | --- |
+| `Ctrl+O` | 选择目录 |
+| `F5` | 扫描并预览 |
+| `Ctrl+Enter` | 打开整理确认对话框 |
 
 ## 文件安全
 
-LightNovelSelector 按“先预览、再执行、可撤销”工作：
-
-- 扫描不会移动文件。
+- 扫描阶段只读取文件，不移动原文件。
+- 筛选只改变当前显示，不会缩小“确认整理”的执行范围。
 - 目录或设置变化后，旧预览自动失效。
-- 重复文件先筛选候选，再使用完整 SHA-256 确认。
-- 重复项和错误项默认跳过，不会自动删除。
-- 执行前先验证报告可写；不可写时不会开始移动。
-- 每移动成功一个文件都会原子更新实际目标记录。
-- 后续文件失败时，已完成部分仍可按报告撤销。
-- 在线封面限制为 8 MiB，并验证实际图片格式。
-- 设置保存采用尽力而为策略，偏好写入失败不会阻断扫描。
+- 重复检测使用完整内容指纹；同大小且头尾相同、中间不同的文件不会被误判为重复。
+- 每个成功移动项立即进入内存报告，部分失败时仍会在 `finally` 阶段落盘。
+- 目标位置已有同名文件时不会覆盖，撤销时同样采用安全跳过策略。
 
-分类报告默认保存到：
+分类报告位于所选目录：
 
 ```text
 所选目录\classification_report.json
 ```
 
-## 自定义规则
-
-每条规则由“文件匹配模式”和“目标系列”组成，命中后优先于自动识别。例如：
-
-```text
-*SAO* -> Sword Art Online
-*无职转生* -> 无职转生
-```
-
-设置保存位置：
-
-```text
-%LOCALAPPDATA%\LightNovelSelector\settings.json
-```
-
-主题、窗口材质和减少动态效果偏好还会容错保存到：
-
-```text
-%LOCALAPPDATA%\LightNovelSelector\appearance.json
-```
-
-## 命令行模式
-
-只预览，不移动文件：
-
-```powershell
-py .\lightnovel_classifier.py "D:\你的轻小说目录" --dry-run
-```
-
-关闭联网识别并包含子文件夹：
-
-```powershell
-py .\lightnovel_classifier.py "D:\你的轻小说目录" --dry-run --no-network --recursive
-```
-
-按报告撤销：
-
-```powershell
-py .\lightnovel_classifier.py --undo-report "D:\你的轻小说目录\classification_report.json"
-```
+用户设置和元数据缓存保存在当前 Windows 账户的本地应用数据目录中，不写入安装目录。
 
 ## 支持格式
 
-```text
-.txt .epub .pdf .mobi .azw .azw3 .fb2 .doc .docx .rtf
-.md .html .htm .cbz .cbr .zip .rar .7z
+`TXT`、`EPUB`、`PDF`、`MOBI`、`AZW`、`AZW3`、`FB2`、`DOC`、`DOCX`、`RTF`、`MD`、`HTML`、`CBZ`、`CBR`、`ZIP`、`RAR`、`7Z`。
+
+EPUB、ZIP 和 CBZ 可读取本地封面与部分内容提示；其他格式仍可通过文件名、自定义规则和可选在线元数据识别。
+
+## 命令行模式
+
+Python CLI 保留给自动化和排错使用，但不再承载桌面界面：
+
+```powershell
+py .\lightnovel_classifier.py "D:\你的轻小说目录" --dry-run
+py .\lightnovel_classifier.py "D:\你的轻小说目录" --dry-run --no-network --recursive
+py .\lightnovel_classifier.py --undo-report "D:\你的轻小说目录\classification_report.json"
 ```
 
-EPUB、ZIP 和 CBZ 支持读取本地封面与部分内容提示。其他格式仍可通过文件名识别和分类。
+## 构建安装器
 
-## 隐私说明
+构建机还需要 Inno Setup 6 或更高版本：
 
-- 文件内容、哈希、设置和分类报告保存在本机。
-- 关闭联网识别后，不会调用在线元数据服务。
-- 开启联网识别时，只发送用于检索的标题或系列查询，不上传小说文件。
-- 软件不会自动删除重复文件，只会标记并跳过。
+```powershell
+winget install JRSoftware.InnoSetup
+.\build_winui.bat
+```
+
+`build_exe.bat` 是同一构建入口。脚本会在 `build\` 的干净暂存区完成 Python/C# 测试、Sidecar、WinUI 自包含发布、启动/外观冒烟和安装器编译；只有全部成功后才替换最终目录：
+
+```text
+dist\winui\LightNovelSelector-v2.0.0-win-x64-setup.exe
+```
+
+`dist\winui` 不再生成 ZIP 和时间戳便携目录。WinUI 的语言 `.mui`、原生 DLL 与 Sidecar 会封装在安装器中，下载者不会再面对数百个运行文件。详见 [开发说明](DEVELOPMENT.md)。
 
 ## 项目结构
 
 ```text
-lightnovel_classifier.py          Python 兼容入口与 CLI
-lightnovel_sidecar.py             便携包 Sidecar 入口
-lightnovel_selector/
-  application.py                 应用服务、任务状态与 UI 数据
-  classification.py              扫描计划、移动、报告、撤销
-  files.py                       文件读取、封面、哈希与重复检测
-  metadata.py                    在线元数据解析
-  parsing.py                     文件名、标题和卷号解析
-  sidecar.py                     JSON Lines 进程协议
-  storage.py                     设置、缓存和原子 JSON 存储
-  web/                           WebView 兼容界面资源
-native/LightNovelSelector.WinUI/  WinUI 3 原生界面
-native/LightNovelSelector.WinUI.Tests/  筛选、报告和连接状态的 C# 单元测试
-tests/                            Python 核心与 Sidecar 测试
-tools/generate_native_assets.py  原生图标资源生成器
-.github/workflows/windows-ci.yml Windows 自动验证
+lightnovel_selector/             Python 分类核心与 Sidecar 服务
+native/LightNovelSelector.WinUI/ WinUI 3 原生桌面界面
+native/LightNovelSelector.WinUI.Tests/ C# 纯逻辑测试
+scripts/windows/                 Windows 启动、构建与安装器脚本
+tests/                           Python 核心和协议测试
+tools/                           图标与 Sidecar 验证工具
+docs/                            架构、结构和界面资料
 ```
 
-维护者请阅读 [开发说明](DEVELOPMENT.md) 和 [WinUI 架构说明](docs/WINUI_ARCHITECTURE.md)。本次更新内容见 [更新说明](UPDATE_NOTES.md)。
+更完整的职责边界见 [项目结构说明](docs/PROJECT_STRUCTURE.md) 与 [WinUI 架构说明](docs/WINUI_ARCHITECTURE.md)，本轮变化见 [更新说明](UPDATE_NOTES.md)。

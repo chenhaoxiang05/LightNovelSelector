@@ -584,6 +584,7 @@ class ApplicationServiceTests(unittest.TestCase):
             ):
                 service = ApplicationService()
                 service.set_folder(str(root))
+                self.assertEqual(service.snapshot()["operation"]["message"], "等待扫描预览")
                 service.save_settings(
                     {
                         "use_network": False,
@@ -614,6 +615,19 @@ class ApplicationServiceTests(unittest.TestCase):
                 undone = self.wait_for_operation(service)
                 self.assertEqual(undone["operation"]["state"], "success")
                 self.assertTrue(book.exists())
+
+    def test_restored_folder_starts_ready_for_scan(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        with TemporaryDirectory() as temp_dir:
+            settings = AppSettings(last_folder=temp_dir)
+            with patch("lightnovel_selector.application.load_app_settings", return_value=settings):
+                service = ApplicationService()
+
+            snapshot = service.snapshot()
+            self.assertEqual(snapshot["folder"], str(Path(temp_dir).resolve()))
+            self.assertEqual(snapshot["operation"]["message"], "等待扫描预览")
+            self.assertIn("已恢复上次目录", snapshot["logs"][0]["message"])
 
     def test_snapshot_only_resends_plans_after_revision_change(self) -> None:
         from lightnovel_selector.application import ApplicationService

@@ -88,11 +88,16 @@ class ApplicationService:
         self.plans_revision = 0
         self.report_path: Path | None = self._report_for_folder(self.folder)
         self._operation_id = 0
-        self.operation = self._idle_operation()
+        self.operation = self._idle_operation(has_folder=self.folder is not None)
         self._cancel_event: threading.Event | None = None
         self._logs: deque[dict[str, Any]] = deque(maxlen=300)
         self._next_log_id = 0
-        self._append_log("应用已就绪。选择一个轻小说目录开始扫描。", "info")
+        initial_message = (
+            f"已恢复上次目录：{self.folder}。可以开始扫描。"
+            if self.folder is not None
+            else "应用已就绪。选择一个轻小说目录开始扫描。"
+        )
+        self._append_log(initial_message, "info")
 
     @staticmethod
     def _existing_folder(value: str) -> Path | None:
@@ -112,12 +117,12 @@ class ApplicationService:
         return candidate if candidate.exists() else None
 
     @staticmethod
-    def _idle_operation() -> dict[str, Any]:
+    def _idle_operation(*, operation_id: int = 0, has_folder: bool = False) -> dict[str, Any]:
         return {
-            "id": 0,
+            "id": operation_id,
             "kind": "idle",
             "state": "idle",
-            "message": "等待选择目录",
+            "message": "等待扫描预览" if has_folder else "等待选择目录",
             "done": 0,
             "total": 0,
             "can_cancel": False,
@@ -231,6 +236,10 @@ class ApplicationService:
             self.settings = replace(self.settings, last_folder=str(path))
             if changed:
                 self._invalidate_plans_locked()
+                self.operation = self._idle_operation(
+                    operation_id=self._operation_id,
+                    has_folder=True,
+                )
         error = try_save_app_settings(self.settings)
         if error:
             self._append_log(f"最近目录未能保存：{error}", "warning")

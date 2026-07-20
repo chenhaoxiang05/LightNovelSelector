@@ -206,7 +206,7 @@
                                 CornerRadius="8">
                                 <StackPanel Orientation="Horizontal" Spacing="7">
                                     <Ellipse x:Name="ConnectionDot" Width="7" Height="7" Fill="{ThemeResource SuccessTextBrush}" />
-                                    <TextBlock x:Name="ConnectionText" VerticalAlignment="Center" FontSize="12" Text="正在连接核心" />
+                                    <TextBlock x:Name="ConnectionText" AutomationProperties.LiveSetting="Polite" VerticalAlignment="Center" FontSize="12" Text="正在连接核心" />
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -244,6 +244,7 @@
                                 <StackPanel Grid.Column="2" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
                                     <Button
                                         x:Name="OpenFolderButton"
+                                        AutomationProperties.Name="在文件资源管理器中打开目录"
                                         Click="OnOpenFolderClick"
                                         IsEnabled="False"
                                         Style="{StaticResource IconButtonStyle}"
@@ -253,7 +254,11 @@
                                     <Button
                                         x:Name="ChooseFolderButton"
                                         Click="OnChooseFolderClick"
-                                        Style="{StaticResource ToolbarButtonStyle}">
+                                        Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTipService.ToolTip="选择目录 (Ctrl+O)">
+                                        <Button.KeyboardAccelerators>
+                                            <KeyboardAccelerator Key="O" Modifiers="Control" />
+                                        </Button.KeyboardAccelerators>
                                         <StackPanel Orientation="Horizontal" Spacing="7">
                                             <FontIcon FontSize="15" Glyph="&#xE8DA;" />
                                             <TextBlock Text="选择目录" />
@@ -265,7 +270,11 @@
                                         AutomationProperties.Name="扫描并预览"
                                         Click="OnScanClick"
                                         IsEnabled="False"
-                                        Style="{StaticResource PrimaryActionButtonStyle}">
+                                        Style="{StaticResource PrimaryActionButtonStyle}"
+                                        ToolTipService.ToolTip="扫描并预览 (F5)">
+                                        <Button.KeyboardAccelerators>
+                                            <KeyboardAccelerator Key="F5" />
+                                        </Button.KeyboardAccelerators>
                                         <StackPanel Orientation="Horizontal" Spacing="7">
                                             <ProgressRing x:Name="ScanProgressRing" Width="15" Height="15" IsActive="False" Visibility="Collapsed" />
                                             <FontIcon x:Name="ScanButtonIcon" FontSize="15" Glyph="&#xE721;" />
@@ -374,12 +383,13 @@
                                                 <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="分类预览" />
                                             </StackPanel>
                                             <Border Style="{StaticResource PillBorderStyle}">
-                                                <TextBlock x:Name="ResultCountText" FontSize="12" Text="0 个文件" />
+                                                <TextBlock x:Name="ResultCountText" AutomationProperties.LiveSetting="Polite" FontSize="12" Text="0 个文件" />
                                             </Border>
                                         </StackPanel>
                                         <Button
                                             x:Name="RefreshButton"
                                             Grid.Column="1"
+                                            AutomationProperties.Name="重新扫描"
                                             Click="OnScanClick"
                                             IsEnabled="False"
                                             Style="{StaticResource IconButtonStyle}"
@@ -431,6 +441,7 @@
                                         <Button
                                             x:Name="ClearFiltersButton"
                                             Grid.Column="3"
+                                            AutomationProperties.Name="清除筛选"
                                             Click="OnClearFiltersClick"
                                             IsEnabled="False"
                                             Style="{StaticResource IconButtonStyle}"
@@ -651,7 +662,7 @@
                                         <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="当前操作" />
                                         <TextBlock x:Name="OperationProgressText" HorizontalAlignment="Right" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
                                     </Grid>
-                                    <TextBlock x:Name="OperationMessageText" FontWeight="SemiBold" Text="等待选择目录" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock x:Name="OperationMessageText" AutomationProperties.LiveSetting="Polite" FontWeight="SemiBold" Text="等待选择目录" TextTrimming="CharacterEllipsis" />
                                     <ProgressBar x:Name="OperationProgressBar" Height="4" Maximum="100" Value="0" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="2" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
@@ -664,7 +675,10 @@
                                             <TextBlock Text="撤销上次" />
                                         </StackPanel>
                                     </Button>
-                                    <Button x:Name="ApplyButton" MinWidth="118" Click="OnApplyClick" IsEnabled="False" Style="{StaticResource PrimaryActionButtonStyle}">
+                                    <Button x:Name="ApplyButton" MinWidth="118" Click="OnApplyClick" IsEnabled="False" Style="{StaticResource PrimaryActionButtonStyle}" ToolTipService.ToolTip="确认整理 (Ctrl+Enter)">
+                                        <Button.KeyboardAccelerators>
+                                            <KeyboardAccelerator Key="Enter" Modifiers="Control" />
+                                        </Button.KeyboardAccelerators>
                                         <StackPanel Orientation="Horizontal" Spacing="7">
                                             <ProgressRing x:Name="ApplyProgressRing" Width="15" Height="15" IsActive="False" Visibility="Collapsed" />
                                             <FontIcon x:Name="ApplyButtonIcon" FontSize="14" Glyph="&#xE73E;" />
@@ -785,6 +799,7 @@
                                 <Grid Margin="0,0,0,10">
                                     <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="会话活动" />
                                     <Button
+                                        AutomationProperties.Name="清空会话活动"
                                         HorizontalAlignment="Right"
                                         Click="OnClearVisibleLogsClick"
                                         Style="{StaticResource IconButtonStyle}"
@@ -892,7 +907,7 @@
                                             <TextBlock Style="{StaticResource MutedTextStyle}" Text="默认跟随 Windows，也可为本应用固定深色或浅色。" TextWrapping="Wrap" />
                                             <TextBlock x:Name="SystemThemeStatusText" FontSize="12" Foreground="{ThemeResource AppAccentBrush}" Text="当前跟随 Windows" />
                                         </StackPanel>
-                                        <ComboBox x:Name="ThemeSelector" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnThemeSelectionChanged">
+                                        <ComboBox x:Name="ThemeSelector" Grid.Column="1" AutomationProperties.Name="颜色模式" HorizontalAlignment="Stretch" SelectionChanged="OnThemeSelectionChanged">
                                             <ComboBoxItem Content="跟随 Windows" Tag="system" />
                                             <ComboBoxItem Content="浅色" Tag="light" />
                                             <ComboBoxItem Content="深色" Tag="dark" />
@@ -911,6 +926,7 @@
                                         <ComboBox
                                             x:Name="MaterialSelector"
                                             Grid.Column="1"
+                                            AutomationProperties.Name="窗口材质"
                                             HorizontalAlignment="Stretch"
                                             SelectionChanged="OnMaterialSelectionChanged">
                                             <ComboBoxItem Content="透明亚克力（推荐）" Tag="acrylic" />
@@ -927,7 +943,7 @@
                                             <TextBlock FontWeight="SemiBold" Text="减少动态效果" />
                                             <TextBlock Style="{StaticResource MutedTextStyle}" Text="关闭非必要的进入、Toast 和按压动画。" TextWrapping="Wrap" />
                                         </StackPanel>
-                                        <ToggleSwitch x:Name="ReducedMotionToggle" Grid.Column="1" Toggled="OnReducedMotionToggled" />
+                                        <ToggleSwitch x:Name="ReducedMotionToggle" Grid.Column="1" AutomationProperties.Name="减少动态效果" Toggled="OnReducedMotionToggled" />
                                     </Grid>
                                 </StackPanel>
                             </Border>
@@ -964,7 +980,7 @@
                                                     </Grid.ColumnDefinitions>
                                                     <TextBox PlaceholderText="匹配文本，例如：刀剑神域" Text="{x:Bind Pattern, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnSettingsTextChanged" />
                                                     <TextBox Grid.Column="1" PlaceholderText="目标系列，例如：刀剑神域" Text="{x:Bind Series, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnSettingsTextChanged" />
-                                                    <Button Grid.Column="2" Click="OnDeleteRuleClick" Style="{StaticResource IconButtonStyle}" ToolTipService.ToolTip="删除规则">
+                                                    <Button Grid.Column="2" AutomationProperties.Name="删除规则" Click="OnDeleteRuleClick" Style="{StaticResource IconButtonStyle}" ToolTipService.ToolTip="删除规则">
                                                         <FontIcon FontSize="14" Glyph="&#xE74D;" />
                                                     </Button>
                                                 </Grid>
@@ -1008,6 +1024,8 @@
 
         <Border
             x:Name="ToastHost"
+            AutomationProperties.LiveSetting="Polite"
+            AutomationProperties.Name="状态通知"
             MinWidth="320"
             MaxWidth="440"
             Margin="0,16,28,0"
@@ -1029,7 +1047,7 @@
                 </Grid.ColumnDefinitions>
                 <FontIcon x:Name="ToastIcon" VerticalAlignment="Top" FontSize="16" Glyph="&#xE946;" />
                 <TextBlock x:Name="ToastMessageText" Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" />
-                <Button Grid.Column="2" Click="OnDismissToastClick" Style="{StaticResource IconButtonStyle}" ToolTipService.ToolTip="关闭通知">
+                <Button Grid.Column="2" AutomationProperties.Name="关闭通知" Click="OnDismissToastClick" Style="{StaticResource IconButtonStyle}" ToolTipService.ToolTip="关闭通知">
                     <FontIcon FontSize="12" Glyph="&#xE711;" />
                 </Button>
             </Grid>

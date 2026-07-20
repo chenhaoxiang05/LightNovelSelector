@@ -1,258 +1,157 @@
 # LightNovelSelector 开发说明
 
-本文档面向维护者。普通用户只需要阅读 `README.md` 并使用发布 ZIP 中的 `LightNovelSelector.WinUI.exe`。
+本文档面向维护者。普通用户只需要下载 `LightNovelSelector-v2.0.0-win-x64-setup.exe`。
 
 ## 技术栈
 
-推荐桌面界面：
-
-- C#、.NET 10、WinUI 3、Windows App SDK 2.3
-- XAML、Windows Composition、Desktop Acrylic、Mica
-- Python 3.10+ Sidecar
-- 标准输入输出上的 JSON Lines 通信
-
-兼容界面：
-
-- Python 3.10+
-- pywebview 6.2.1、Windows Edge WebView2
-- 原生 HTML、CSS、JavaScript
-
-测试与打包：
-
-- pytest、ruff、vulture
-- MSTest 4、Microsoft.NET.Test.Sdk
-- PyInstaller 6.21
-- Pillow 12.3，用于确定性生成原生应用图标
-- `dotnet publish` 自包含发布
-
-WinUI 运行和打包不依赖 Node、Electron、React、Qt 或本地 Web 服务器。
+- Python 3.10+：识别、解析、分类计划、文件移动、报告和撤销。
+- WinUI 3 / Windows App SDK 2.3：唯一桌面界面。
+- .NET 10：WinUI 应用和 C# 测试。
+- PyInstaller：把 Python Sidecar 构建为独立 EXE。
+- Inno Setup 6+：把 WinUI 运行文件封装为单个安装 EXE。
+- pytest、ruff、vulture、MSTest：自动验证。
 
 ## 环境准备
 
-Windows 10 1809 或更高版本：
-
 ```powershell
-winget install Python.Python.3.13
+winget install Python.Python.3.12
 winget install Microsoft.DotNet.SDK.10
+winget install JRSoftware.InnoSetup
 ```
 
-创建 Python 开发环境：
+构建脚本优先使用 `.venv-build\Scripts\python.exe`。不存在时会从 `py -3` 或 `python` 创建该环境。
 
 ```powershell
 py -3 -m venv .venv-build
 .\.venv-build\Scripts\python.exe -m pip install -r requirements-dev.txt
 ```
 
-NuGet 依赖由项目文件固定并通过 `dotnet restore` 自动还原。开发者模式可改善未打包应用调试体验，但最终便携包不要求用户开启开发者模式。
+运行时 Python 核心只使用标准库；第三方包均是开发或构建依赖。
 
-## 架构
+## 架构边界
 
 ### Python 核心
 
-- `lightnovel_classifier.py`：保留旧启动方式和旧导入路径。
-- `lightnovel_selector/cli.py`：参数解析和命令行工作流。
-- `models.py`：不可变数据模型。
-- `parsing.py`：标题清洗、卷号识别、系列名提取。
-- `files.py`：电子书提示、封面、完整内容哈希和重复检测。
-- `metadata.py`：Bangumi、AniList、Jikan 查询与缓存。
-- `classification.py`：预览计划、手动修正、移动、报告和撤销。
-- `storage.py`：设置、元数据缓存和原子 JSON 写入。
-- `application.py`：线程安全的应用服务、任务、进度、日志和 UI 序列化。
-
-### Sidecar 协议
-
-- `lightnovel_selector/sidecar.py`：请求分派、结构化错误和生命周期管理。
-- `lightnovel_sidecar.py`：PyInstaller 的最小入口。
-- 每行只包含一个 UTF-8 JSON 对象。
-- 每个请求带整数 `id`，响应使用同一 `id` 关联并发调用。
-- 标准输出只传协议；诊断只写标准错误。
-- `ping` 返回协议版本，C# 启动阶段会拒绝不兼容版本。
-- `shutdown` 负责优雅退出，父进程退出时仍会终止整个子进程树。
-
-完整边界见 [WinUI 架构说明](docs/WINUI_ARCHITECTURE.md)。
+- `classification.py`：分类计划、完整哈希重复检测、执行、部分报告和撤销。
+- `parsing.py`：文件名清洗、卷号与系列名解析。
+- `files.py`：文件扫描、内容提示、封面和网络字节读取。
+- `metadata.py`：本地/在线系列解析与缓存。
+- `storage.py`：设置、缓存和原子 JSON 持久化。
+- `application.py`：线程安全应用状态、异步任务和快照。
+- `sidecar.py`：JSON Lines 请求分发。
+- `cli.py`：自动化命令行；不再启动桌面界面。
 
 ### WinUI 原生界面
 
-- `App.xaml`：全局资源与转换器。
-- `Views/MainWindow.xaml`：透明窗口根节点、原生标题栏和页面宿主。
-- `Views/MainWindow.xaml.cs`：窗口尺寸、关闭保护和外观控制器入口。
-- `Appearance/WindowAppearanceController.cs`：Desktop Acrylic、Mica、实色切换，标题栏同步，以及系统透明和高对比度回退。
-- `Appearance/AppearancePreferences.cs`：主题、材质和动态偏好的共享容错存储。
-- `Views/MainPage.xaml`：导航、工作台、活动报告、设置、Toast 和对话框。
-- `Views/MainPage.xaml.cs`：页面生命周期、导航和共享视觉辅助。
-- `Views/MainPage.Connection.cs`、`MainPage.State.cs`：核心连接四态、一次性恢复和快照映射。
-- `Views/MainPage.Commands.cs`、`MainPage.Details.cs`：目录、扫描、整理、撤销、详情和手动修正。
-- `Views/MainPage.Activity.cs`、`MainPage.Settings.cs`：强类型报告、日志和识别设置。
-- `Views/MainPage.Appearance.cs`、`MainPage.Notifications.cs`、`MainPage.Workflow.cs`：外观设置、通知和安全流程视觉状态。
-- `ViewModels/PlanFilterController.cs`、`ConnectionStateController.cs`：不依赖 XAML 的筛选和连接状态派生。
-- `Services/PythonSidecarClient.cs`：进程发现、请求关联、超时、安全重启和错误传播。
-- `Helpers/Motion.cs`：Composition 动效和减少动态效果策略。
-- `Styles/DesignTokens.xaml`：浅色、深色、高对比度语义令牌。
-- `Models/` 与 `Converters/`：协议模型和纯视觉转换。
+- `Views/MainWindow.*`：标题栏、窗口尺寸、主题与窗口材质。
+- `Views/MainPage.*`：按状态、筛选、详情、报告、设置、通知和连接职责拆分。
+- `Services/PythonSidecarClient.cs`：进程生命周期、请求关联、超时与安全重连。
+- `ViewModels/`：连接状态、筛选等可独立测试的纯逻辑。
+- `Appearance/` 与 `Styles/`：主题、Acrylic/Mica 回退和语义设计令牌。
+- `Helpers/Motion.cs`：按压、页面 reveal、Toast 与减少动态效果。
 
-文件移动规则只存在于 Python 核心。C# 不直接执行移动、删除、重命名或报告写入。
+Sidecar 协议见 [WinUI 架构说明](docs/WINUI_ARCHITECTURE.md)。WinUI 不复制分类规则；Python 不操作窗口控件。
 
 ## 本地运行
-
-一键启动 WinUI 调试版：
 
 ```powershell
 .\run_winui.bat
 ```
 
-直接使用 .NET CLI：
+根目录 `run.bat` 指向同一 WinUI 脚本。源码模式下，WinUI 按以下顺序寻找核心：
 
-```powershell
-$env:LN_SELECTOR_PYTHON=(Resolve-Path .\.venv-build\Scripts\python.exe)
-dotnet run --project .\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj `
-  -c Debug -p:Platform=x64 -p:WindowsPackageType=None
-```
+1. `LN_SELECTOR_PYTHON` 指定解释器。
+2. `.venv-build`。
+3. `.venv`。
+4. 系统 `py` / `python`。
 
-WinUI 自动启动并关闭的冒烟测试：
-
-```powershell
-dotnet run --project .\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj `
-  -c Debug -p:Platform=x64 -p:WindowsPackageType=None -- --smoke-test
-```
-
-兼容界面仍可运行：
-
-```powershell
-.\run.bat
-```
-
-## 设计与动效约束
-
-- 专业工具中的高频操作保持即时，不为键盘操作增加动效。
-- 指针按压缩放为 `0.975`，按下 100ms、释放 160ms。
-- 工作区进入使用 8px、220ms 强 ease-out，卡片间隔 24ms。
-- 页面切换使用 4px、160ms reveal，不重复播放整组卡片动画。
-- Toast 进入 180 至 220ms，退出 140ms，并沿同一方向进出。
-- 只动画 Composition 的 `Opacity`、`Scale` 和 `Translation`。
-- 不从 `scale(0)` 开始，不使用慢启动的 ease-in。
-- 减少动态效果时取消位移和缩放，只保留 90ms 透明度反馈或控件原生颜色变化。
-- 统计数字直接更新，不在后台轮询时反复缩放。
-- 状态不得只靠颜色表达，图标、文字和 AutomationProperties 必须同时可用。
-- 控件优先使用 WinUI 原生实现，不手绘常见系统图标。
+发布版只使用应用目录中的 `LightNovelSelector.Sidecar.exe`。
 
 ## 开发验证
 
-Python 检查：
-
 ```powershell
-.\.venv-build\Scripts\python.exe -m py_compile `
-  lightnovel_classifier.py lightnovel_sidecar.py `
-  lightnovel_selector\*.py tests\*.py tools\generate_native_assets.py
+.\.venv-build\Scripts\python.exe -m py_compile lightnovel_classifier.py lightnovel_sidecar.py tools\verify_sidecar.py
 .\.venv-build\Scripts\python.exe -m pytest -q
 .\.venv-build\Scripts\python.exe -m ruff check .
-.\.venv-build\Scripts\python.exe -m vulture `
-  lightnovel_selector lightnovel_classifier.py lightnovel_sidecar.py tests `
-  --min-confidence 80
-```
+.\.venv-build\Scripts\python.exe -m vulture lightnovel_classifier.py lightnovel_selector tests --min-confidence 80
 
-WinUI 检查：
+dotnet test native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj -c Release
+dotnet build native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj -c Debug -p:Platform=x64 -p:WindowsPackageType=None
+dotnet build native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj -c Release -p:Platform=x64 -p:WindowsPackageType=None
 
-```powershell
-dotnet build .\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj `
-  -c Debug -p:Platform=x64 -p:WindowsPackageType=None
-dotnet build .\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj `
-  -c Release -p:Platform=x64 -p:WindowsPackageType=None
-dotnet test .\native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj `
-  -c Release --logger "console;verbosity=minimal"
-```
-
-深色启动与外观矩阵回归：
-
-```powershell
-$env:LN_SELECTOR_WINUI_TEST_THEME = "dark"
-$env:LN_SELECTOR_WINUI_TEST_MATERIAL = "acrylic"
-$env:LN_SELECTOR_WINUI_APPEARANCE_SMOKE_TEST = "1"
-dotnet run --project .\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj `
-  -c Debug -p:Platform=x64 -p:WindowsPackageType=None
-```
-
-该测试会轮换浅色、深色、跟随系统与 Acrylic、Mica、实色组合，并切换工作台、活动页和设置页。测试变量只影响当前进程，不写入用户外观偏好。
-
-仓库检查：
-
-```powershell
-node --check .\lightnovel_selector\web\app.js
 git diff --check
 ```
 
-当前 Python 测试共 45 项，覆盖解析、重复检测、规则、设置容错、扫描、手动修正、执行、部分失败报告、撤销、并发任务、封面限制和 Sidecar 协议。C# 测试共 14 项，覆盖组合筛选、主计划隔离、异常空字段、报告兼容和连接状态派生。
+当前基线为 46 项 Python 测试和 14 项 C# 测试。
 
-`.github/workflows/windows-ci.yml` 会在 Windows 上执行上述 Python 检查、C# 测试和 WinUI Release x64 构建。
+## UI 与动效约束
 
-外观偏好优先使用 Windows `ApplicationData.LocalSettings`，并同步写入 `%LOCALAPPDATA%\LightNovelSelector\appearance.json`。后备文件不可读或损坏时按默认值启动，并在下一次保存时自动重建。
+- 默认跟随 Windows 深浅色，首次材质为 Acrylic；透明效果关闭或高对比度时回退实色。
+- 窗口只创建一层 Desktop Acrylic，卡片使用半透明实色，避免重复模糊带来的 GPU 开销。
+- 高频列表筛选和键盘操作不增加位移动画。
+- 进入、Toast、页面切换和按压只动画 `Opacity`、`Translation`、`Scale`，单次不超过 220ms。
+- 按下 100ms、释放 160ms；Toast 进入 180/220ms、退出 140ms。
+- 动画从当前 Composition 状态继续，快速连续通知不会跳回起点。
+- “减少动态效果”或系统关闭动画时移除位移和缩放，只保留短透明度反馈。
+- 图标按钮必须同时提供 Tooltip 和 `AutomationProperties.Name`。
 
-## 生成原生图标
-
-图标由脚本按固定色值和几何规则生成，避免模板占位图和不同机器上的手工差异：
-
-```powershell
-.\.venv-build\Scripts\python.exe .\tools\generate_native_assets.py
-```
-
-生成内容包括多尺寸 PNG、未铺底任务栏资源、启动图和 `AppIcon.ico`。生成后需检查 24px 与 300px 两种尺寸，并重新构建确认 EXE 文件图标已嵌入。
-
-## 打包 WinUI 便携版
-
-运行：
+## 构建单 EXE 安装器
 
 ```powershell
 .\build_winui.bat
 ```
 
-脚本依次执行：
+`build_exe.bat` 指向相同入口。实际实现位于 `scripts\windows\build_winui.ps1`，共九步：
 
-1. 安装固定版本的 Python 构建依赖。
-2. 生成原生应用图标。
-3. 使用 PyInstaller 生成单文件 Python Sidecar。
-4. 通过真实 `ping` 和 `shutdown` 请求验证协议。
-5. 执行 C# 单元测试。
-6. 自包含发布 Windows x64 WinUI 应用。
-7. 执行深色 Acrylic 启动、主题/材质/页面矩阵回归，再生成 ZIP。
+1. 安装固定版本的开发依赖。
+2. 生成原生图标。
+3. 生成 `LightNovelSelector.Sidecar.exe`。
+4. 使用独立 Python 工具验证 `ping` / `shutdown` 协议。
+5. 执行 Python 测试、ruff 和 vulture。
+6. 执行 C# 测试。
+7. 发布自包含 WinUI 到 `build\winui-package` 暂存区。
+8. 执行启动和外观两轮冒烟。
+9. 使用 Inno Setup 编译安装器，成功后原子式替换 `dist\winui`。
 
-输出示例：
+最终只保留：
 
 ```text
-dist\winui\LightNovelSelector-v2.0.0-win-x64-构建时间\
-dist\winui\LightNovelSelector-v2.0.0-win-x64-构建时间.zip
+dist\winui\LightNovelSelector-v2.0.0-win-x64-setup.exe
 ```
 
-自包含目录约 231 MiB，压缩包约 95 MiB。体积主要来自 .NET、Windows App SDK 和 Python 运行时，换来下载者无需额外安装环境。`build`、`dist`、虚拟环境和 PyInstaller spec 均被 `.gitignore` 排除。
-
-## 兼容界面打包
-
-`build_exe.bat` 继续生成 pywebview 单文件兼容版：
+可选参数：
 
 ```powershell
-.\build_exe.bat
+.\build_winui.bat -SkipDependencyInstall
+.\build_winui.bat -SkipTests
+.\build_winui.bat -KeepStaging
 ```
 
-该产物较小，但目标机器需要 WebView2 Runtime。它用于兼容和回退，不是本分支推荐的原生体验。
+默认不保留发布暂存区。`-KeepStaging` 仅用于检查内部 WinUI 运行文件。
+
+## 为什么安装器内部有语言目录
+
+Windows App SDK 自包含发布会携带 WinUI 控件的 `.mui` 本地化资源，例如 `zh-CN`、`en-us`、`ja-JP`。它们每个目录都有实际文件，不是空目录。删除这些资源会破坏不同 Windows 语言下的系统控件文本，因此当前选择保留并封装进安装 EXE。
+
+历史上真正的空目录来自构建脚本过早把中间输出写入 `dist`：版本读取或后续构建失败后，已创建目录不会回收。新脚本只写 `build` 暂存区，并在所有验证成功后替换最终输出，因此失败构建不会污染 `dist`。
+
+## 生成目录
+
+以下目录由 Git 忽略，可重新生成：
+
+- `.venv-build/`：构建虚拟环境。
+- `.venv/`：可选源码运行环境。
+- `build/`：测试缓存、Sidecar 和临时发布文件。
+- `dist/`：最终安装器。
+- `native/**/bin/`、`native/**/obj/`：.NET 输出。
+
+旧的 `UI_test` worktree 和损坏环境归档已经从本地移除；对应源码仍在远端 `ui` 分支，旧 WebView 最终版本位于标签 `legacy-webview-final`。
 
 ## Git 工作流
 
-原生界面在独立开发分支维护，不直接提交到稳定分支。提交前应确认没有加入构建产物和用户数据：
+- 在功能分支完成修改、测试、提交和推送。
+- 不提交 `build`、`dist`、虚拟环境、安装器或临时截图。
+- 发布版本时从审查通过的分支创建标签和 Release。
+- 稳定分支不用于保存实验构建产物。
 
-```powershell
-git status --short
-git diff --check
-git add README.md DEVELOPMENT.md UPDATE_NOTES.md docs native `
-  lightnovel_selector lightnovel_sidecar.py run_winui.bat build_winui.bat scripts `
-  requirements-dev.txt tools tests
-git commit -m "..."
-git push origin <当前开发分支>
-```
-
-发布版本时再由稳定分支创建 tag 和 Release，不把实验构建目录提交到仓库。
-
-## 文档约定
-
-- `README.md` 面向使用者。
-- `UPDATE_NOTES.md` 面向版本更新与评审。
-- `DEVELOPMENT.md` 面向维护者。
-- `docs/WINUI_ARCHITECTURE.md` 记录跨进程协议和打包边界。
-- 公开文档统一使用中文，示例路径不得包含真实用户隐私数据。
+GitHub Actions 会在 Windows 上执行 Python 检查、C# 测试和 WinUI 构建。

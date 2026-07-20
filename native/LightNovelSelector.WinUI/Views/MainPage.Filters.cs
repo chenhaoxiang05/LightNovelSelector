@@ -56,7 +56,11 @@ public sealed partial class MainPage
             : $"{Plans.Count} 个文件";
         ResultsEmptyState.Visibility = VisiblePlans.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ResultsEmptyTitleText.Text = Plans.Count == 0 ? "还没有分类预览" : "没有符合条件的文件";
-        ResultsEmptyCopyText.Text = Plans.Count == 0 ? "选择目录后开始扫描" : "调整或清除当前筛选条件";
+        ResultsEmptyCopyText.Text = Plans.Count == 0
+            ? string.IsNullOrWhiteSpace(_snapshot.Folder)
+                ? "选择目录后开始扫描"
+                : "点击“扫描并预览”生成分类预览"
+            : "调整或清除当前筛选条件";
         ClearFiltersButton.IsEnabled = state.IsActive;
 
         ResultsList.SelectedItem = selectedIndex is null

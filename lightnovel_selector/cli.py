@@ -53,15 +53,9 @@ def run_cli(args: argparse.Namespace) -> int:
     return 0
 
 
-def launch_gui() -> None:
-    from .desktop import launch_desktop
-
-    launch_desktop()
-
-
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="轻小说联网分类工具")
-    parser.add_argument("folder", nargs="?", help="要分类的大文件夹；不提供时启动窗口界面")
+    parser = argparse.ArgumentParser(description="轻小说分类核心命令行工具")
+    parser.add_argument("folder", nargs="?", help="要分类的大文件夹")
     parser.add_argument("--sidecar", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--undo-report", help="按 classification_report.json 撤销一次分类移动")
     parser.add_argument("--dry-run", action="store_true", help="只预览，不移动文件")
@@ -94,5 +88,5 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.folder:
         return run_cli(args)
-    launch_gui()
-    return 0
+    print("未提供分类目录。图形界面请运行 run_winui.bat。", file=sys.stderr)
+    return 2

@@ -143,20 +143,22 @@ Python 返回不可变快照，WinUI 只把快照映射为视觉状态：
 
 ## 发布边界
 
-`build_winui.bat` 生成两部分再合并：
+`build_winui.bat` 使用受路径保护的 PowerShell 流水线生成安装器：
 
 1. PyInstaller 将 `lightnovel_sidecar.py` 冻结为单文件 Sidecar。
 2. `dotnet publish` 以 `win-x64` 自包含方式发布 WinUI。
 3. 项目文件把生成的 Sidecar 作为发布内容复制到 WinUI 目录根部。
-4. 发布目录执行真实启动冒烟，再压缩为 ZIP。
+4. 暂存发布目录执行真实启动与外观冒烟。
+5. Inno Setup 把暂存目录封装为单个 `LightNovelSelector-v<版本>-win-x64-setup.exe`。
+6. 只有以上步骤全部成功后才清理并替换 `dist\winui`；失败构建只留在可删除的 `build` 暂存区。
 
-自包含包体积较大，但不依赖目标机器已有 Python、.NET 或 Windows App SDK。`PublishTrimmed` 保持关闭，避免 XAML 和 JSON 反射元数据被错误裁剪；`PublishReadyToRun` 关闭，避免额外运行时包要求并控制体积。
+安装器解包后的应用体积较大，但不依赖目标机器已有 Python、.NET 或 Windows App SDK。Windows App SDK 的 `.mui` 语言目录都包含真实资源，安装器不创建空目录。`PublishTrimmed` 保持关闭，避免 XAML 和 JSON 反射元数据被错误裁剪；`PublishReadyToRun` 关闭，避免额外运行时包要求并控制体积。
 
 ## 故障定位
 
 界面显示“分类核心不可用”时，按顺序检查：
 
-1. 发布目录是否同时存在主程序和 Sidecar。
+1. 安装目录是否同时存在 `LightNovelSelector.exe` 和 `LightNovelSelector.Sidecar.exe`。
 2. `ping` 是否返回 `protocol_version = 1`。
 3. Sidecar 标准错误中的最近诊断。
 4. 开发模式的 `LN_SELECTOR_PYTHON` 是否指向有效解释器。

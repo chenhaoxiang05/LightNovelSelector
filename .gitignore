@@ -4,10 +4,8 @@
 .idea/
 .pytest_cache/
 .ruff_cache/
-archive_old_code/
 build/
 dist/
-UI_test/
 *.spec
 __pycache__/
 tests/__pycache__/
