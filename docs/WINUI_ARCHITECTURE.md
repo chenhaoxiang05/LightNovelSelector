@@ -107,16 +107,24 @@ Python 返回不可变快照，WinUI 只把快照映射为视觉状态：
 - 详情请求使用取消令牌，快速切换选择不会让旧响应覆盖新选择。
 - 目录或设置变化会使计划版本失效，执行前由 Python 再次验证。
 
+## 窗口材质边界
+
+- `MainWindow` 只创建一个窗口级系统背景，可在 Desktop Acrylic、Mica 和实色之间切换。
+- 导航栏与 Toast 可使用 In-App Acrylic；列表和重复卡片只使用半透明实色，不逐卡创建模糊层。
+- `UISettings.AdvancedEffectsEnabled` 关闭或高对比度启用时，有效材质临时切换为实色，但不覆盖用户选择。
+- 系统事件不可订阅的未打包环境使用低频状态复核，避免影响窗口启动。
+- 主题、材质和减少动态效果由 `AppearancePreferences` 统一读取，并使用 `%LOCALAPPDATA%` JSON 后备存储。
+
 ## 动效边界
 
 动效由 `Helpers/Motion.cs` 统一实现：
 
-- 进入、Toast、按压和统计反馈使用 Windows Composition。
+- 进入、页面 reveal、Toast 和按压反馈使用 Windows Composition。
 - 动画属性限制为 `Opacity`、`Scale` 和 `Translation`。
 - 强 ease-out 曲线为 `(0.22, 1, 0.36, 1)`。
 - 进入和退出方向一致，退出时长更短。
 - `UISettings.AnimationsEnabled` 关闭时自动降级。
-- 应用内 `ReducedMotion` 只保留必要的状态切换。
+- 应用内 `ReducedMotion` 取消缩放和位移，只保留短透明度或控件颜色反馈。
 
 ## 发布边界
 

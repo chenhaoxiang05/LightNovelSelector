@@ -4,7 +4,7 @@ namespace LightNovelSelector.WinUI;
 
 public partial class App : Application
 {
-    public static Window? MainWindow { get; private set; }
+    public static MainWindow? MainWindow { get; private set; }
     public static string LaunchArguments { get; private set; } = string.Empty;
     public static bool IsSmokeTest =>
         LaunchArguments.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains("--smoke-test")

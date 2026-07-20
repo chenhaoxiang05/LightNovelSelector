@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
@@ -21,7 +22,6 @@ namespace LightNovelSelector.WinUI;
 
 public sealed partial class MainPage : Page
 {
-    private const string ThemeSettingKey = "Theme";
     private readonly PythonSidecarClient _sidecar = new();
     private readonly DispatcherTimer _pollTimer = new();
     private readonly HashSet<int> _seenLogIds = [];
@@ -36,6 +36,7 @@ public sealed partial class MainPage : Page
     private bool _isPolling;
     private bool _settingsInitialized;
     private bool _appearanceLoading;
+    private bool _materialStateSubscribed;
     private bool _disposing;
 
     public ObservableCollection<PlanItem> Plans { get; } = [];
@@ -68,6 +69,7 @@ public sealed partial class MainPage : Page
         Loaded -= OnLoaded;
         await Task.Yield();
         LocalizeSettingsItem();
+        SubscribeToMaterialState();
         LoadAppearanceSettings();
         AttachMotionFeedback();
 
@@ -120,6 +122,7 @@ public sealed partial class MainPage : Page
         }
         _disposing = true;
         Unloaded -= OnUnloaded;
+        UnsubscribeFromMaterialState();
         _pollTimer.Stop();
         _detailCancellation?.Cancel();
         _toastCancellation?.Cancel();
@@ -139,24 +142,62 @@ public sealed partial class MainPage : Page
     private void LoadAppearanceSettings()
     {
         _appearanceLoading = true;
-        var theme = "system";
-        try
-        {
-            theme = ApplicationData.Current.LocalSettings.Values[ThemeSettingKey] as string ?? "system";
-        }
-        catch
-        {
-        }
-
+        var theme = AppearancePreferences.LoadTheme();
+        var material = AppearancePreferences.LoadMaterial();
         ThemeSelector.SelectedIndex = theme switch
         {
             "light" => 1,
             "dark" => 2,
             _ => 0,
         };
-        ApplyTheme(theme);
+        MaterialSelector.SelectedIndex = material switch
+        {
+            WindowMaterial.Mica => 1,
+            WindowMaterial.Solid => 2,
+            _ => 0,
+        };
+        if (App.MainWindow is { } window)
+        {
+            window.ApplyTheme(theme);
+            window.ApplyMaterial(material);
+        }
         ReducedMotionToggle.IsOn = Motion.ReducedMotion;
+        UpdateMaterialStatus();
         _appearanceLoading = false;
+    }
+
+    private void SubscribeToMaterialState()
+    {
+        if (_materialStateSubscribed || App.MainWindow is not { } window)
+        {
+            return;
+        }
+        window.MaterialStateChanged += OnMaterialStateChanged;
+        _materialStateSubscribed = true;
+    }
+
+    private void UnsubscribeFromMaterialState()
+    {
+        if (!_materialStateSubscribed || App.MainWindow is not { } window)
+        {
+            return;
+        }
+        window.MaterialStateChanged -= OnMaterialStateChanged;
+        _materialStateSubscribed = false;
+    }
+
+    private void OnMaterialStateChanged(object? sender, EventArgs e) => UpdateMaterialStatus();
+
+    private void UpdateMaterialStatus()
+    {
+        if (App.MainWindow is not { } window)
+        {
+            return;
+        }
+        MaterialStatusText.Text = window.MaterialState.StatusText;
+        MaterialStatusText.Foreground = ResourceBrush(
+            window.MaterialState.IsFallback ? "WarningTextBrush" : "AppAccentBrush"
+        );
     }
 
     private void AttachMotionFeedback()
@@ -170,11 +211,11 @@ public sealed partial class MainPage : Page
     private void AnimateWorkspaceEntrance()
     {
         Motion.Enter(WorkspaceHeader, 0);
-        Motion.Enter(FolderCard, 35);
-        Motion.Enter(StatsGrid, 70);
-        Motion.Enter(ResultsCard, 105);
-        Motion.Enter(DetailCard, 130);
-        Motion.Enter(OperationCard, 155);
+        Motion.Enter(FolderCard, 24);
+        Motion.Enter(StatsGrid, 48);
+        Motion.Enter(ResultsCard, 72);
+        Motion.Enter(DetailCard, 96);
+        Motion.Enter(OperationCard, 120);
     }
 
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
@@ -282,7 +323,6 @@ public sealed partial class MainPage : Page
             return;
         }
         target.Text = next;
-        Motion.Pulse(target);
     }
 
     private void UpdateOperation(OperationState operation)
@@ -384,22 +424,20 @@ public sealed partial class MainPage : Page
         {
             await Task.Yield();
             WorkspaceView.UpdateLayout();
-            Motion.Enter(WorkspaceView);
+            Motion.RevealPage(WorkspaceView);
         }
         else if (target == "activity")
         {
             await Task.Yield();
             ActivityView.UpdateLayout();
-            Motion.Enter(ActivityHeader);
-            Motion.Enter(ReportCard, 35);
-            Motion.Enter(LogsCard, 70);
+            Motion.RevealPage(ActivityView);
             await RefreshReportAsync();
         }
         else
         {
             await Task.Yield();
             SettingsView.UpdateLayout();
-            Motion.Enter(SettingsContent);
+            Motion.RevealPage(SettingsContent);
         }
     }
 
@@ -424,19 +462,35 @@ public sealed partial class MainPage : Page
         }
     }
 
+    private void OnFolderDragEnter(object sender, DragEventArgs e)
+    {
+        var acceptsStorageItems = e.DataView.Contains(StandardDataFormats.StorageItems);
+        SetFolderDragState(acceptsStorageItems);
+        e.Handled = acceptsStorageItems;
+    }
+
+    private void OnFolderDragLeave(object sender, DragEventArgs e)
+    {
+        SetFolderDragState(false);
+    }
+
     private void OnFolderDragOver(object sender, DragEventArgs e)
     {
         if (!e.DataView.Contains(StandardDataFormats.StorageItems))
         {
+            SetFolderDragState(false);
             return;
         }
+        SetFolderDragState(true);
         e.AcceptedOperation = DataPackageOperation.Link;
         e.DragUIOverride.Caption = "使用此目录";
         e.DragUIOverride.IsContentVisible = true;
+        e.Handled = true;
     }
 
     private async void OnFolderDrop(object sender, DragEventArgs e)
     {
+        SetFolderDragState(false);
         try
         {
             var items = await e.DataView.GetStorageItemsAsync();
@@ -471,6 +525,22 @@ public sealed partial class MainPage : Page
         {
             ShowToast(exc.Message, ToastKind.Error);
         }
+        finally
+        {
+            SetFolderDragState(false);
+        }
+    }
+
+    private void SetFolderDragState(bool active)
+    {
+        if (FolderCard.BackgroundTransition is BrushTransition transition)
+        {
+            transition.Duration = TimeSpan.FromMilliseconds(active ? 100 : 120);
+        }
+        FolderCard.Background = ResourceBrush(active ? "CardHoverBrush" : "CardBackgroundBrush");
+        FolderCard.BorderBrush = ResourceBrush(active ? "AppAccentBrush" : "CardBorderBrush");
+        FolderCard.BorderThickness = new Thickness(active ? 2 : 1);
+        Motion.SetEmphasis(FolderIconSurface, active);
     }
 
     private async Task SelectFolderAsync(string path)
@@ -950,24 +1020,26 @@ public sealed partial class MainPage : Page
             return;
         }
         var theme = item.Tag as string ?? "system";
-        ApplyTheme(theme);
-        try
+        App.MainWindow?.ApplyTheme(theme);
+        if (!AppearancePreferences.TrySaveTheme(theme))
         {
-            ApplicationData.Current.LocalSettings.Values[ThemeSettingKey] = theme;
-        }
-        catch
-        {
+            ShowToast("颜色模式已应用，但未能保存到当前账户。", ToastKind.Warning);
         }
     }
 
-    private void ApplyTheme(string theme)
+    private void OnMaterialSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        RootLayout.RequestedTheme = theme switch
+        if (_appearanceLoading || MaterialSelector.SelectedItem is not ComboBoxItem item)
         {
-            "light" => ElementTheme.Light,
-            "dark" => ElementTheme.Dark,
-            _ => ElementTheme.Default,
-        };
+            return;
+        }
+        var material = AppearancePreferences.FromSettingValue(item.Tag as string);
+        App.MainWindow?.ApplyMaterial(material);
+        UpdateMaterialStatus();
+        if (!AppearancePreferences.TrySaveMaterial(material))
+        {
+            ShowToast("窗口材质已应用，但未能保存到当前账户。", ToastKind.Warning);
+        }
     }
 
     private void OnReducedMotionToggled(object sender, RoutedEventArgs e)
@@ -976,7 +1048,11 @@ public sealed partial class MainPage : Page
         {
             return;
         }
-        Motion.ReducedMotion = ReducedMotionToggle.IsOn;
+        if (!Motion.TrySetReducedMotion(ReducedMotionToggle.IsOn))
+        {
+            ShowToast("动态效果偏好已应用，但未能保存到当前账户。", ToastKind.Warning);
+            return;
+        }
         ShowToast(
             ReducedMotionToggle.IsOn ? "已减少非必要动态效果。" : "已恢复界面动态效果。",
             ToastKind.Info

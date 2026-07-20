@@ -100,16 +100,21 @@
                             x:Name="FolderCard"
                             Grid.Row="1"
                             AllowDrop="True"
+                            DragEnter="OnFolderDragEnter"
+                            DragLeave="OnFolderDragLeave"
                             DragOver="OnFolderDragOver"
                             Drop="OnFolderDrop"
                             Style="{StaticResource CardBorderStyle}">
+                            <Border.BackgroundTransition>
+                                <BrushTransition Duration="0:0:0.100" />
+                            </Border.BackgroundTransition>
                             <Grid ColumnSpacing="16">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="44" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <Border Width="44" Height="44" Background="{ThemeResource AccentSubtleBrush}" CornerRadius="8">
+                                <Border x:Name="FolderIconSurface" Width="44" Height="44" Background="{ThemeResource AccentSubtleBrush}" CornerRadius="8">
                                     <FontIcon Foreground="{ThemeResource AppAccentBrush}" Glyph="&#xED25;" />
                                 </Border>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
@@ -272,6 +277,13 @@
                                             ItemsSource="{x:Bind Plans}"
                                             SelectionChanged="OnResultSelectionChanged"
                                             Style="{StaticResource ResultListViewStyle}">
+                                            <ListView.Resources>
+                                                <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="{ThemeResource ListHoverColor}" />
+                                                <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="{ThemeResource ListPressedColor}" />
+                                                <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="{ThemeResource ListSelectedColor}" />
+                                                <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="{ThemeResource ListSelectedHoverColor}" />
+                                                <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="{ThemeResource ListPressedColor}" />
+                                            </ListView.Resources>
                                             <ListView.ItemTemplate>
                                                 <DataTemplate x:DataType="models:PlanItem">
                                                     <Grid Padding="12,5" ColumnSpacing="12">
@@ -419,7 +431,7 @@
                             </Border>
                         </Grid>
 
-                        <Border x:Name="OperationCard" Grid.Row="4" Style="{StaticResource CompactCardBorderStyle}">
+                        <Border x:Name="OperationCard" Grid.Row="4" Style="{StaticResource ElevatedCardBorderStyle}">
                             <Grid ColumnSpacing="14">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -546,8 +558,12 @@
                         </Border>
                     </Grid>
 
-                    <ScrollViewer x:Name="SettingsView" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                        <StackPanel x:Name="SettingsContent" MaxWidth="860" HorizontalAlignment="Left" Spacing="12">
+                    <ScrollViewer
+                        x:Name="SettingsView"
+                        HorizontalContentAlignment="Stretch"
+                        Visibility="Collapsed"
+                        VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="SettingsContent" MaxWidth="900" HorizontalAlignment="Center" Spacing="12">
                             <StackPanel Margin="0,0,0,4" Spacing="3">
                                 <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="设置" />
                                 <TextBlock Style="{StaticResource MutedTextStyle}" Text="偏好会保存在当前 Windows 用户账户中。" />
@@ -608,6 +624,26 @@
                                             <ComboBoxItem Content="跟随 Windows" Tag="system" />
                                             <ComboBoxItem Content="浅色" Tag="light" />
                                             <ComboBoxItem Content="深色" Tag="dark" />
+                                        </ComboBox>
+                                    </Grid>
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="220" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3">
+                                            <TextBlock FontWeight="SemiBold" Text="窗口材质" />
+                                            <TextBlock Style="{StaticResource MutedTextStyle}" Text="亚克力更通透，云母更克制；系统关闭透明效果时会自动回退为实色。" TextWrapping="Wrap" />
+                                            <TextBlock x:Name="MaterialStatusText" FontSize="12" Foreground="{ThemeResource AppAccentBrush}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ComboBox
+                                            x:Name="MaterialSelector"
+                                            Grid.Column="1"
+                                            HorizontalAlignment="Stretch"
+                                            SelectionChanged="OnMaterialSelectionChanged">
+                                            <ComboBoxItem Content="透明亚克力（推荐）" Tag="acrylic" />
+                                            <ComboBoxItem Content="云母" Tag="mica" />
+                                            <ComboBoxItem Content="实色" Tag="solid" />
                                         </ComboBox>
                                     </Grid>
                                     <Grid ColumnSpacing="20">

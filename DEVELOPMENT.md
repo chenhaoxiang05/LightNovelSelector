@@ -7,7 +7,7 @@
 推荐桌面界面：
 
 - C#、.NET 10、WinUI 3、Windows App SDK 2.3
-- XAML、Windows Composition、Mica、Acrylic
+- XAML、Windows Composition、Desktop Acrylic、Mica
 - Python 3.10+ Sidecar
 - 标准输入输出上的 JSON Lines 通信
 
@@ -73,11 +73,13 @@ NuGet 依赖由项目文件固定并通过 `dotnet restore` 自动还原。开�
 ### WinUI 原生界面
 
 - `App.xaml`：全局资源与转换器。
-- `MainWindow.xaml`：Mica 窗口、原生标题栏和页面宿主。
+- `MainWindow.xaml`：透明窗口根节点、原生标题栏和页面宿主。
+- `MainWindow.xaml.cs`：Desktop Acrylic、Mica、实色切换，以及系统透明和高对比度回退。
 - `MainPage.xaml`：导航、工作台、活动报告、设置、Toast 和对话框。
 - `MainPage.xaml.cs`：界面状态映射、轮询、拖放、确认和用户操作。
 - `Services/PythonSidecarClient.cs`：进程发现、请求关联、超时和错误传播。
 - `Helpers/Motion.cs`：Composition 动效和减少动态效果策略。
+- `Helpers/AppearancePreferences.cs`：主题、材质和动态偏好的共享容错存储。
 - `Styles/DesignTokens.xaml`：浅色、深色、高对比度语义令牌。
 - `Models/` 与 `Converters/`：协议模型和纯视觉转换。
 
@@ -115,12 +117,14 @@ dotnet run --project .\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.
 ## 设计与动效约束
 
 - 专业工具中的高频操作保持即时，不为键盘操作增加动效。
-- 指针按压缩放为 `0.975`，按下 110ms、释放 180ms。
-- 工作区进入使用 240 至 280ms 强 ease-out，卡片间隔 40ms。
+- 指针按压缩放为 `0.975`，按下 100ms、释放 160ms。
+- 工作区进入使用 8px、220ms 强 ease-out，卡片间隔 24ms。
+- 页面切换使用 4px、160ms reveal，不重复播放整组卡片动画。
 - Toast 进入 180 至 220ms，退出 140ms，并沿同一方向进出。
 - 只动画 Composition 的 `Opacity`、`Scale` 和 `Translation`。
 - 不从 `scale(0)` 开始，不使用慢启动的 ease-in。
-- 减少动态效果时取消非必要位移和按压动画。
+- 减少动态效果时取消位移和缩放，只保留 90ms 透明度反馈或控件原生颜色变化。
+- 统计数字直接更新，不在后台轮询时反复缩放。
 - 状态不得只靠颜色表达，图标、文字和 AutomationProperties 必须同时可用。
 - 控件优先使用 WinUI 原生实现，不手绘常见系统图标。
 
@@ -157,6 +161,8 @@ git diff --check
 
 当前 Python 测试共 45 项，覆盖解析、重复检测、规则、设置容错、扫描、手动修正、执行、部分失败报告、撤销、并发任务、封面限制和 Sidecar 协议。
 
+外观偏好优先使用 Windows `ApplicationData.LocalSettings`，并同步写入 `%LOCALAPPDATA%\LightNovelSelector\appearance.json`。后备文件不可读或损坏时按默认值启动，并在下一次保存时自动重建。
+
 ## 生成原生图标
 
 图标由脚本按固定色值和几何规则生成，避免模板占位图和不同机器上的手工差异：
@@ -191,7 +197,7 @@ dist\winui\LightNovelSelector-v2.0.0-win-x64-构建时间\
 dist\winui\LightNovelSelector-v2.0.0-win-x64-构建时间.zip
 ```
 
-自包含目录约 230 MB，压缩包约 94 MB。体积主要来自 .NET、Windows App SDK 和 Python 运行时，换来下载者无需额外安装环境。`build`、`dist`、虚拟环境和 PyInstaller spec 均被 `.gitignore` 排除。
+自包含目录约 231 MiB，压缩包约 95 MiB。体积主要来自 .NET、Windows App SDK 和 Python 运行时，换来下载者无需额外安装环境。`build`、`dist`、虚拟环境和 PyInstaller spec 均被 `.gitignore` 排除。
 
 ## 兼容界面打包
 

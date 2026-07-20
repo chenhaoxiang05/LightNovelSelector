@@ -4,41 +4,33 @@ using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
-using Windows.Storage;
 using Windows.UI.ViewManagement;
 
 namespace LightNovelSelector.WinUI.Helpers;
 
 public static class Motion
 {
-    private const string ReducedMotionKey = "ReducedMotion";
     private static readonly ConditionalWeakTable<FrameworkElement, object> PressTargets = new();
 
     public static bool ReducedMotion
     {
         get
         {
+            var userPreference = AppearancePreferences.LoadReducedMotion();
             try
             {
-                var localValue = ApplicationData.Current.LocalSettings.Values[ReducedMotionKey];
-                return localValue is true || !new UISettings().AnimationsEnabled;
+                return userPreference || !new UISettings().AnimationsEnabled;
             }
             catch
             {
-                return false;
+                return userPreference;
             }
         }
-        set
-        {
-            try
-            {
-                ApplicationData.Current.LocalSettings.Values[ReducedMotionKey] = value;
-            }
-            catch
-            {
-            }
-        }
+        set => AppearancePreferences.TrySaveReducedMotion(value);
     }
+
+    public static bool TrySetReducedMotion(bool value) =>
+        AppearancePreferences.TrySaveReducedMotion(value);
 
     public static void AttachPressFeedback(FrameworkElement element)
     {
@@ -51,24 +43,26 @@ public static class Motion
         element.SizeChanged += (_, _) => CenterScale(element);
         element.AddHandler(
             UIElement.PointerPressedEvent,
-            new PointerEventHandler((_, _) => AnimateScale(element, 0.975f, 110)),
+            new PointerEventHandler((_, _) => AnimateScale(element, 0.975f, 100)),
             handledEventsToo: true
         );
-        element.PointerReleased += (_, _) => AnimateScale(element, 1.0f, 180);
-        element.PointerCanceled += (_, _) => AnimateScale(element, 1.0f, 180);
-        element.PointerCaptureLost += (_, _) => AnimateScale(element, 1.0f, 180);
+        element.PointerReleased += (_, _) => AnimateScale(element, 1.0f, 160);
+        element.PointerCanceled += (_, _) => AnimateScale(element, 1.0f, 160);
+        element.PointerCaptureLost += (_, _) => AnimateScale(element, 1.0f, 160);
     }
 
     public static void Enter(UIElement element, int delayMilliseconds = 0)
     {
         var visual = ElementCompositionPreview.GetElementVisual(element);
+        ElementCompositionPreview.SetIsTranslationEnabled(element, true);
         if (ReducedMotion)
         {
+            visual.StopAnimation("Translation");
+            element.Translation = Vector3.Zero;
             visual.Opacity = 1;
             return;
         }
 
-        ElementCompositionPreview.SetIsTranslationEnabled(element, true);
         var compositor = visual.Compositor;
         var easing = EaseOut(compositor);
 
@@ -76,17 +70,50 @@ public static class Motion
         var opacity = compositor.CreateScalarKeyFrameAnimation();
         opacity.InsertKeyFrame(0, 0);
         opacity.InsertKeyFrame(1, 1, easing);
-        opacity.Duration = TimeSpan.FromMilliseconds(240);
+        opacity.Duration = TimeSpan.FromMilliseconds(180);
         opacity.DelayTime = TimeSpan.FromMilliseconds(delayMilliseconds);
 
         var translation = compositor.CreateVector3KeyFrameAnimation();
-        translation.InsertKeyFrame(0, new Vector3(0, 12, 0));
+        translation.InsertKeyFrame(0, new Vector3(0, 8, 0));
         translation.InsertKeyFrame(1, Vector3.Zero, easing);
-        translation.Duration = TimeSpan.FromMilliseconds(280);
+        translation.Duration = TimeSpan.FromMilliseconds(220);
         translation.DelayTime = TimeSpan.FromMilliseconds(delayMilliseconds);
 
         visual.StartAnimation(nameof(Visual.Opacity), opacity);
         visual.StartAnimation("Translation", translation);
+    }
+
+    public static void RevealPage(UIElement element)
+    {
+        var visual = ElementCompositionPreview.GetElementVisual(element);
+        ElementCompositionPreview.SetIsTranslationEnabled(element, true);
+        if (ReducedMotion)
+        {
+            visual.StopAnimation("Translation");
+            element.Translation = Vector3.Zero;
+            visual.Opacity = 1;
+            return;
+        }
+
+        var compositor = visual.Compositor;
+        var easing = EaseOut(compositor);
+        var opacity = compositor.CreateScalarKeyFrameAnimation();
+        opacity.InsertKeyFrame(0, 0.72f);
+        opacity.InsertKeyFrame(1, 1, easing);
+        opacity.Duration = TimeSpan.FromMilliseconds(130);
+
+        var translation = compositor.CreateVector3KeyFrameAnimation();
+        translation.InsertKeyFrame(0, new Vector3(0, 4, 0));
+        translation.InsertKeyFrame(1, Vector3.Zero, easing);
+        translation.Duration = TimeSpan.FromMilliseconds(160);
+
+        visual.StartAnimation(nameof(Visual.Opacity), opacity);
+        visual.StartAnimation("Translation", translation);
+    }
+
+    public static void SetEmphasis(UIElement element, bool emphasized)
+    {
+        AnimateScale(element, emphasized ? 1.04f : 1.0f, emphasized ? 100 : 120);
     }
 
     public static void ShowTransient(UIElement element, bool show)
@@ -95,7 +122,13 @@ public static class Motion
         ElementCompositionPreview.SetIsTranslationEnabled(element, true);
         if (ReducedMotion)
         {
-            visual.Opacity = show ? 1 : 0;
+            visual.StopAnimation("Translation");
+            element.Translation = Vector3.Zero;
+            var fade = visual.Compositor.CreateScalarKeyFrameAnimation();
+            fade.InsertKeyFrame(1, show ? 1 : 0, EaseOut(visual.Compositor));
+            fade.Duration = TimeSpan.FromMilliseconds(90);
+            fade.StopBehavior = AnimationStopBehavior.SetToFinalValue;
+            visual.StartAnimation(nameof(Visual.Opacity), fade);
             return;
         }
 
@@ -116,28 +149,14 @@ public static class Motion
         visual.StartAnimation("Translation", translation);
     }
 
-    public static void Pulse(UIElement element)
-    {
-        if (ReducedMotion)
-        {
-            return;
-        }
-        CenterScale(element);
-        var visual = ElementCompositionPreview.GetElementVisual(element);
-        var animation = visual.Compositor.CreateVector3KeyFrameAnimation();
-        animation.InsertKeyFrame(0, new Vector3(0.96f));
-        animation.InsertKeyFrame(1, Vector3.One, EaseOut(visual.Compositor));
-        animation.Duration = TimeSpan.FromMilliseconds(220);
-        visual.StartAnimation(nameof(Visual.Scale), animation);
-    }
-
     private static void AnimateScale(UIElement element, float scale, int milliseconds)
     {
         var visual = ElementCompositionPreview.GetElementVisual(element);
         CenterScale(element);
         if (ReducedMotion)
         {
-            visual.Scale = new Vector3(scale);
+            visual.StopAnimation(nameof(Visual.Scale));
+            visual.Scale = Vector3.One;
             return;
         }
 
