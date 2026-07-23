@@ -114,7 +114,7 @@ git diff --check
 4. 使用独立 Python 工具验证 `ping` / `shutdown` 协议。
 5. 执行 Python 测试、类型检查、静态安全扫描和依赖漏洞审计。
 6. 执行 C# 测试。
-7. 发布自包含 WinUI 到 `build\winui-package` 暂存区，并剔除 PDB 与开发期 runtime 配置。
+7. 发布自包含 WinUI 到 `build\winui-package` 暂存区，剔除调试产物并收集第三方许可证全文。
 8. 执行启动和外观两轮冒烟。
 9. 使用 Inno Setup 编译安装器，成功后原子式替换 `dist\winui`。
 
@@ -124,7 +124,7 @@ git diff --check
 dist\winui\LightNovelSelector-v2.0.1-win-x64-setup.exe
 ```
 
-安装器会在安装前显示根目录中的 MIT `LICENSE`，并把许可证保留在应用安装目录。
+安装器会在安装前显示根目录中的 MIT `LICENSE`，并把项目许可证、`THIRD_PARTY_NOTICES.md` 以及 Python、PyInstaller、defusedxml、.NET、Windows App SDK、WebView2 和 Inno Setup 的原始许可文本保留在应用安装目录。
 
 可选参数：
 
