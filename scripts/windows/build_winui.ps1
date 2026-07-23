@@ -243,8 +243,29 @@ Invoke-External -FilePath $dotnet -Arguments @(
     "-c", "Release", "-r", "win-x64",
     "-p:Platform=x64", "-p:WindowsPackageType=None",
     "-p:WindowsAppSDKSelfContained=true", "-p:SelfContained=true", "-p:PublishTrimmed=false",
+    "-p:DebugType=None", "-p:DebugSymbols=false",
     "--no-restore", "--output", $publishRoot
 )
+
+$releaseOnlyArtifacts = @(
+    Get-ChildItem -LiteralPath $publishRoot -Recurse -File |
+        Where-Object {
+            $_.Extension -ieq ".pdb" -or
+            $_.Name -ilike "*.runtimeconfig.dev.json"
+        }
+)
+foreach ($artifact in $releaseOnlyArtifacts) {
+    $safeArtifact = Assert-ChildPath -Path $artifact.FullName -Parent $publishRoot
+    Remove-Item -LiteralPath $safeArtifact -Force
+}
+
+$unexpectedReleaseArtifacts = @(
+    $releaseOnlyArtifacts | Where-Object { Test-Path -LiteralPath $_.FullName }
+)
+if ($unexpectedReleaseArtifacts.Count -gt 0) {
+    $artifactNames = ($unexpectedReleaseArtifacts | ForEach-Object { $_.FullName }) -join ", "
+    throw "Release staging still contains development-only artifacts: $artifactNames"
+}
 
 $appExe = Join-Path $publishRoot "LightNovelSelector.exe"
 $publishedSidecar = Join-Path $publishRoot "LightNovelSelector.Sidecar.exe"
