@@ -114,7 +114,7 @@ git diff --check
 4. 使用独立 Python 工具验证 `ping` / `shutdown` 协议。
 5. 执行 Python 测试、类型检查、静态安全扫描和依赖漏洞审计。
 6. 执行 C# 测试。
-7. 发布自包含 WinUI 到 `build\winui-package` 暂存区。
+7. 发布自包含 WinUI 到 `build\winui-package` 暂存区，并剔除 PDB 与开发期 runtime 配置。
 8. 执行启动和外观两轮冒烟。
 9. 使用 Inno Setup 编译安装器，成功后原子式替换 `dist\winui`。
 
@@ -134,7 +134,7 @@ dist\winui\LightNovelSelector-v2.0.1-win-x64-setup.exe
 .\build_winui.bat -KeepStaging
 ```
 
-默认不保留发布暂存区。`-KeepStaging` 仅用于检查内部 WinUI 运行文件。
+默认不保留发布暂存区。`-KeepStaging` 仅用于检查内部 WinUI 运行文件；正式暂存区不应包含 `.pdb` 或 `*.runtimeconfig.dev.json`。
 
 ## 为什么安装器内部有语言目录
 

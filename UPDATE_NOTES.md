@@ -47,6 +47,7 @@
 - 新增 Dependabot，按周检查 GitHub Actions、pip 和两个 NuGet 项目。
 - Windows CI 新增 Mypy、Bandit、pip-audit、`pip check` 和锁定模式还原。
 - 新增中文发布检查清单，覆盖密钥、隐私、文件安全、构建、安装、Defender、签名和 Release 校验。
+- 正式安装器不再包含 PDB 或开发期 runtime 配置，并在打包前自动复查发布暂存区。
 
 ## 验证结果
 
