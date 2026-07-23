@@ -20,6 +20,7 @@ from .constants import (
     COVER_MAX_BYTES,
     FILE_FINGERPRINT_CHUNK_SIZE,
     LOCAL_COVER_EXTENSIONS,
+    REMOTE_JSON_MAX_BYTES,
     USER_AGENT,
 )
 from .models import CustomRule
@@ -35,7 +36,13 @@ def http_json(url: str, *, payload: dict | None = None, timeout: float = 10.0) -
     request = urllib.request.Request(url, data=data, headers=headers)
     with urllib.request.urlopen(request, timeout=timeout) as response:
         charset = response.headers.get_content_charset() or "utf-8"
-        result = json.loads(response.read().decode(charset, errors="replace"))
+        response_data = response.read(REMOTE_JSON_MAX_BYTES + 1)
+    if len(response_data) > REMOTE_JSON_MAX_BYTES:
+        raise RuntimeError(f"远程接口返回的 JSON 超过允许大小（{REMOTE_JSON_MAX_BYTES} 字节）。")
+    try:
+        result = json.loads(response_data.decode(charset, errors="replace"))
+    except (json.JSONDecodeError, LookupError) as exc:
+        raise RuntimeError("远程接口返回了无效 JSON。") from exc
     if not isinstance(result, dict):
         raise RuntimeError("远程接口返回的 JSON 根节点不是对象。")
     return result
