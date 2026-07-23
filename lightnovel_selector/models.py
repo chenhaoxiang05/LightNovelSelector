@@ -51,6 +51,8 @@ class ClassificationPlan:
     resolver_source: str
     confidence: float
     local_guess: str
+    source_size: int | None = None
+    source_mtime_ns: int | None = None
     metadata_title: str | None = None
     metadata_summary: str | None = None
     metadata_cover_url: str | None = None
@@ -58,6 +60,7 @@ class ClassificationPlan:
     local_cover_bytes: bytes | None = None
     identity_hint: str | None = None
     identity_query: str | None = None
+    network_query: str | None = None
     rename_to: str | None = None
     series_key: str | None = None
     status: str = "ready"

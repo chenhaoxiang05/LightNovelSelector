@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using LightNovelSelector.WinUI.Helpers;
 using LightNovelSelector.WinUI.Services;
 using Microsoft.UI.Xaml;
@@ -7,6 +6,7 @@ using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Pickers;
+using Windows.System;
 using WinRT.Interop;
 
 namespace LightNovelSelector.WinUI;
@@ -226,22 +226,45 @@ public sealed partial class MainPage
         }
     }
 
-    private void OnOpenFolderClick(object sender, RoutedEventArgs e)
+    private async void OnOpenFolderClick(object sender, RoutedEventArgs e)
     {
         if (!string.IsNullOrWhiteSpace(_snapshot.Folder))
         {
-            OpenInExplorer(_snapshot.Folder);
+            await OpenInExplorerAsync(_snapshot.Folder);
         }
     }
 
-    private static void OpenInExplorer(string path, bool selectFile = false)
+    private async Task OpenInExplorerAsync(string path, bool selectFile = false)
     {
-        var startInfo = new ProcessStartInfo
+        try
         {
-            FileName = "explorer.exe",
-            UseShellExecute = true,
-        };
-        startInfo.ArgumentList.Add(selectFile ? $"/select,{path}" : path);
-        Process.Start(startInfo);
+            bool launched;
+            if (selectFile)
+            {
+                var file = await StorageFile.GetFileFromPathAsync(path);
+                var folder = await file.GetParentAsync();
+                if (folder is null)
+                {
+                    throw new DirectoryNotFoundException("无法定位文件所在目录。");
+                }
+                var options = new FolderLauncherOptions();
+                options.ItemsToSelect.Add(file);
+                launched = await Launcher.LaunchFolderAsync(folder, options);
+            }
+            else
+            {
+                var folder = await StorageFolder.GetFolderFromPathAsync(path);
+                launched = await Launcher.LaunchFolderAsync(folder);
+            }
+
+            if (!launched)
+            {
+                ShowToast("Windows 未能打开该位置。", ToastKind.Warning);
+            }
+        }
+        catch (Exception exc)
+        {
+            ShowToast(exc.Message, ToastKind.Error);
+        }
     }
 }

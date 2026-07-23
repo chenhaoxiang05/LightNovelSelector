@@ -14,6 +14,7 @@ public sealed partial class MainPage : Page
 {
     private readonly PythonSidecarClient _sidecar = new();
     private readonly DispatcherTimer _pollTimer = new();
+    private readonly SemaphoreSlim _detailRequestLock = new(1, 1);
     private readonly HashSet<int> _seenLogIds = [];
     private CancellationTokenSource? _detailCancellation;
     private AppSnapshot _snapshot = new();
@@ -23,6 +24,7 @@ public sealed partial class MainPage : Page
     private int _lastOperationId;
     private string _lastOperationState = "idle";
     private bool _isPolling;
+    private bool _isDetailRequestActive;
     private bool _isRecovering;
     private bool _settingsInitialized;
     private bool _disposing;
@@ -125,7 +127,11 @@ public sealed partial class MainPage : Page
         UnsubscribeFromMaterialState();
         _pollTimer.Stop();
         _detailCancellation?.Cancel();
+        _detailCancellation?.Dispose();
+        _detailCancellation = null;
         _toastCancellation?.Cancel();
+        _toastCancellation?.Dispose();
+        _toastCancellation = null;
         try
         {
             if (_sidecar.IsRunning && _snapshot.Operation.State == "running" && _snapshot.Operation.CanCancel)
@@ -176,7 +182,7 @@ public sealed partial class MainPage : Page
 
     private async void OnPollTimerTick(object? sender, object e)
     {
-        if (_isPolling)
+        if (_isPolling || _isDetailRequestActive)
         {
             return;
         }

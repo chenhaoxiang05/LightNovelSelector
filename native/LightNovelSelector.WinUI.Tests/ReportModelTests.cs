@@ -20,6 +20,8 @@ public sealed class ReportModelTests
             {
               "path": "D:\\books\\classification_report.json",
               "created_at": "2026-07-20T12:00:00+08:00",
+              "item_count": 2,
+              "items_truncated": true,
               "summary": { "total": 2, "moved": 1, "skipped": 1, "duplicates": 1, "errors": 0 },
               "items": [
                 {
@@ -41,6 +43,8 @@ public sealed class ReportModelTests
 
         Assert.IsNotNull(report);
         Assert.AreEqual(1, report.Summary.Moved);
+        Assert.AreEqual(2, report.ItemCount);
+        Assert.IsTrue(report.ItemsTruncated);
         Assert.AreEqual(1, report.Items.Count);
         Assert.AreEqual("demo.epub", report.Items[0].FileName);
         Assert.AreEqual("已移动", report.Items[0].OperationLabel);
@@ -63,6 +67,8 @@ public sealed class ReportModelTests
 
         Assert.IsNotNull(report);
         Assert.AreEqual(0, report.Summary.Errors);
+        Assert.AreEqual(0, report.ItemCount);
+        Assert.IsFalse(report.ItemsTruncated);
         Assert.AreEqual("Archive\\old.txt", report.Items[0].DestinationPath);
         Assert.AreEqual("已跳过", report.Items[0].OperationLabel);
     }

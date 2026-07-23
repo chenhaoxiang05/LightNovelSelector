@@ -15,7 +15,8 @@
 ## 验证结果
 
 - [ ] Python 测试通过
-- [ ] Ruff 与 Vulture 通过
+- [ ] Ruff、Mypy、Bandit 与 Vulture 通过
+- [ ] Python 和 NuGet 依赖漏洞检查通过
 - [ ] C# 测试通过
 - [ ] WinUI 3 Release x64 构建通过
 - [ ] 已手动验证相关工作流

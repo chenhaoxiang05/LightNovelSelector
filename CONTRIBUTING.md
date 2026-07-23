@@ -43,7 +43,10 @@
 ```powershell
 python -m pytest -q
 python -m ruff check .
+python -m mypy lightnovel_classifier.py lightnovel_sidecar.py lightnovel_selector tests
+python -m bandit -q -r lightnovel_selector lightnovel_classifier.py lightnovel_sidecar.py
 python -m vulture lightnovel_classifier.py lightnovel_selector tests --min-confidence 80
+python -m pip_audit -r requirements-dev.txt --strict
 dotnet test native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj -c Release
 dotnet build native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj -c Release -p:Platform=x64 -p:WindowsPackageType=None
 git diff --check

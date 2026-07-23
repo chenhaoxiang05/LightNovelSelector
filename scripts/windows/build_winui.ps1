@@ -130,7 +130,16 @@ function Invoke-AppSmokeTest {
     }
 
     try {
-        $process = Start-Process -FilePath $AppPath -PassThru -Wait
+        $process = Start-Process -FilePath $AppPath -PassThru
+        if (-not $process.WaitForExit(30000)) {
+            try {
+                $process.Kill($true)
+                $process.WaitForExit(5000)
+            }
+            catch {
+            }
+            throw "WinUI $Mode smoke test timed out after 30 seconds."
+        }
         if ($process.ExitCode -ne 0) {
             throw "WinUI $Mode smoke test failed with exit code $($process.ExitCode)."
         }
@@ -207,14 +216,18 @@ $numericVersion = ($appVersion -split "[-+]", 2)[0]
 
 if (-not $SkipTests) {
     Write-Host "[5/9] Running Python checks..."
+    Invoke-External -FilePath $python -Arguments @("-m", "pip", "check")
     Invoke-External -FilePath $python -Arguments @("-m", "py_compile", (Join-Path $ProjectRoot "lightnovel_classifier.py"), (Join-Path $ProjectRoot "lightnovel_sidecar.py"))
     Invoke-External -FilePath $python -Arguments @("-m", "pytest", "-q")
     Invoke-External -FilePath $python -Arguments @("-m", "ruff", "check", ".")
+    Invoke-External -FilePath $python -Arguments @("-m", "mypy", "lightnovel_classifier.py", "lightnovel_sidecar.py", "lightnovel_selector", "tests")
+    Invoke-External -FilePath $python -Arguments @("-m", "bandit", "-q", "-r", "lightnovel_selector", "lightnovel_classifier.py", "lightnovel_sidecar.py")
     Invoke-External -FilePath $python -Arguments @("-m", "vulture", "lightnovel_classifier.py", "lightnovel_selector", "tests", "--min-confidence", "80")
+    Invoke-External -FilePath $python -Arguments @("-m", "pip_audit", "-r", "requirements-dev.txt", "--strict")
 
     Write-Host "[6/9] Running C# tests..."
     $testProject = Join-Path $ProjectRoot "native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj"
-    Invoke-External -FilePath $dotnet -Arguments @("restore", $testProject)
+    Invoke-External -FilePath $dotnet -Arguments @("restore", $testProject, "--locked-mode")
     Invoke-External -FilePath $dotnet -Arguments @("test", $testProject, "-c", "Release", "--no-restore", "--logger", "console;verbosity=minimal")
 }
 else {
@@ -224,7 +237,7 @@ else {
 
 Write-Host "[7/9] Publishing the self-contained WinUI app to staging..."
 $appProject = Join-Path $ProjectRoot "native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj"
-Invoke-External -FilePath $dotnet -Arguments @("restore", $appProject, "-r", "win-x64", "-p:Platform=x64", "-p:WindowsPackageType=None")
+Invoke-External -FilePath $dotnet -Arguments @("restore", $appProject, "--locked-mode", "-r", "win-x64", "-p:Platform=x64", "-p:WindowsPackageType=None")
 Invoke-External -FilePath $dotnet -Arguments @(
     "publish", $appProject,
     "-c", "Release", "-r", "win-x64",

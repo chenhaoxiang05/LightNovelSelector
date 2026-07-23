@@ -31,7 +31,7 @@ public sealed partial class MainWindow : Window
         );
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        AppWindow.SetIcon("Assets/AppIcon.ico");
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
         SizeAndCenterWindow();
         _appearance = new WindowAppearanceController(
             this,
@@ -48,6 +48,19 @@ public sealed partial class MainWindow : Window
     public void ApplyTheme(string theme) => _appearance.ApplyTheme(theme);
 
     public void ApplyMaterial(WindowMaterial material) => _appearance.ApplyMaterial(material);
+
+    public void ActivateExistingInstance()
+    {
+        if (AppWindow.Presenter is OverlappedPresenter
+            {
+                State: OverlappedPresenterState.Minimized,
+            } presenter)
+        {
+            presenter.Restore();
+        }
+        AppWindow.Show();
+        Activate();
+    }
 
     private void OnClosed(object sender, WindowEventArgs args)
     {

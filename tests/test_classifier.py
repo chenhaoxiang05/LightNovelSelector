@@ -102,6 +102,8 @@ class FilenameParsingTests(unittest.TestCase):
 
     def test_safe_folder_name(self) -> None:
         self.assertEqual(safe_folder_name('A:B/C*D?'), "A_B_C_D_")
+        self.assertEqual(safe_folder_name("CON"), "_CON")
+        self.assertEqual(safe_folder_name("LPT1.txt"), "_LPT1.txt")
 
     def test_uses_content_hint_for_weak_file_name(self) -> None:
         self.assertEqual(
@@ -147,6 +149,41 @@ class MovePlanTests(unittest.TestCase):
             self.assertTrue((root / "Sword Art Online" / first.name).exists())
             self.assertTrue((root / "Sword Art Online" / second.name).exists())
 
+    def test_weak_filename_content_hint_never_becomes_network_query(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "1.txt"
+            book.write_text("刀剑神域 第01卷 第一章", encoding="utf-8")
+            with (
+                patch("lightnovel_selector.metadata.SeriesResolver._resolve_with_network") as series_network,
+                patch(
+                    "lightnovel_selector.metadata.SeriesResolver.resolve_book_metadata_for_query"
+                ) as metadata_network,
+            ):
+                plans = build_classification_plan(
+                    root,
+                    use_network=True,
+                    auto_rename=True,
+                )
+
+            self.assertEqual(plans[0].series_name, "刀剑神域")
+            self.assertEqual(plans[0].resolver_source, "本地内容提示")
+            self.assertIsNone(plans[0].network_query)
+            series_network.assert_not_called()
+            metadata_network.assert_not_called()
+
+    def test_weak_filename_without_content_hint_uses_local_rule_label(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "1.pdf"
+            book.write_bytes(b"%PDF-1.4")
+
+            plans = build_classification_plan(root, use_network=True)
+
+            self.assertEqual(plans[0].series_name, "1")
+            self.assertEqual(plans[0].resolver_source, "本地规则")
+            self.assertIsNone(plans[0].network_query)
+
     def test_duplicate_file_is_marked_and_skipped(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -183,6 +220,58 @@ class MovePlanTests(unittest.TestCase):
 
             self.assertEqual(duplicates, {same: first})
 
+    def test_duplicate_detection_runs_cancellation_checkpoint(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "first.txt"
+            second = root / "second.txt"
+            first.write_text("same", encoding="utf-8")
+            second.write_text("same", encoding="utf-8")
+            checkpoints = 0
+
+            def checkpoint() -> None:
+                nonlocal checkpoints
+                checkpoints += 1
+                if checkpoints == 2:
+                    raise RuntimeError("cancelled")
+
+            with self.assertRaisesRegex(RuntimeError, "cancelled"):
+                find_duplicate_files(
+                    [first, second],
+                    checkpoint=checkpoint,
+                )
+
+    def test_full_fingerprint_checks_cancellation_between_chunks(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            book = Path(temp_dir) / "book.txt"
+            book.write_bytes(b"0123456789")
+            checkpoints = 0
+
+            def checkpoint() -> None:
+                nonlocal checkpoints
+                checkpoints += 1
+                if checkpoints == 2:
+                    raise RuntimeError("cancelled")
+
+            with (
+                patch("lightnovel_selector.files.FILE_FINGERPRINT_CHUNK_SIZE", 4),
+                self.assertRaisesRegex(RuntimeError, "cancelled"),
+            ):
+                lightnovel_classifier.file_fingerprint(
+                    book,
+                    checkpoint=checkpoint,
+                )
+
+    def test_scan_rejects_excessive_supported_file_count(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for index in range(3):
+                (root / f"book-{index}.txt").write_text("content", encoding="utf-8")
+
+            with patch("lightnovel_selector.classification.SCAN_MAX_FILES", 2):
+                with self.assertRaisesRegex(ValueError, "单次扫描最多支持 2 个"):
+                    build_classification_plan(root, use_network=False)
+
     def test_duplicate_detection_checks_full_file_content(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -196,6 +285,23 @@ class MovePlanTests(unittest.TestCase):
             duplicates = find_duplicate_files([first, second])
 
             self.assertEqual(duplicates, {})
+
+    def test_plan_revalidates_stale_duplicate_candidate(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A Sword.Art.Online.Vol.01.txt"
+            second = root / "B Sword.Art.Online.Vol.02.txt"
+            first.write_text("first content", encoding="utf-8")
+            second.write_text("different content", encoding="utf-8")
+
+            with patch(
+                "lightnovel_selector.classification.find_duplicate_files",
+                return_value={second: first},
+            ):
+                plans = build_classification_plan(root, use_network=False)
+
+            self.assertFalse(any(plan.status == "duplicate" for plan in plans))
+            self.assertTrue(all(plan.will_move for plan in plans))
 
     def test_duplicate_detection_skips_full_hash_for_unique_signatures(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -213,18 +319,21 @@ class MovePlanTests(unittest.TestCase):
 
     def test_http_bytes_rejects_oversized_response(self) -> None:
         response = unittest.mock.MagicMock()
-        response.__enter__.return_value.read.return_value = b"12345"
-        with patch("lightnovel_selector.files.urllib.request.urlopen", return_value=response):
+        opened_response = response.__enter__.return_value
+        opened_response.geturl.return_value = "https://example.test/cover.jpg"
+        opened_response.read.return_value = b"12345"
+        with patch("lightnovel_selector.files._open_https", return_value=response):
             with self.assertRaisesRegex(RuntimeError, "超过允许大小"):
                 http_bytes("https://example.test/cover.jpg", max_bytes=4)
 
     def test_http_json_rejects_non_object_root(self) -> None:
         response = unittest.mock.MagicMock()
         opened_response = response.__enter__.return_value
+        opened_response.geturl.return_value = "https://example.test/search"
         opened_response.headers.get_content_charset.return_value = "utf-8"
         opened_response.read.return_value = b"[]"
 
-        with patch("lightnovel_selector.files.urllib.request.urlopen", return_value=response):
+        with patch("lightnovel_selector.files._open_https", return_value=response):
             with self.assertRaisesRegex(RuntimeError, "JSON 根节点不是对象"):
                 http_json("https://example.test/search")
 
@@ -314,6 +423,16 @@ class MovePlanTests(unittest.TestCase):
             self.assertEqual(revised.resolver_source, "手动修正")
             self.assertIsNone(revised.duplicate_of)
 
+    def test_manual_revision_rejects_oversized_series(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "book.txt"
+            book.write_text("content", encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+
+            with self.assertRaisesRegex(ValueError, "不能超过 120"):
+                revise_classification_plan(plans, 0, "x" * 121)
+
     def test_custom_rule_overrides_local_guess(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -373,6 +492,8 @@ class MovePlanTests(unittest.TestCase):
             self.assertEqual(book.read_text(encoding="utf-8"), "one")
 
     def test_failed_move_writes_partial_report_for_undo(self) -> None:
+        from shutil import move as real_move
+
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             first = root / "A Sword.Art.Online.Vol.01.txt"
@@ -381,10 +502,15 @@ class MovePlanTests(unittest.TestCase):
             missing.write_text("two", encoding="utf-8")
             report_path = root / "classification_report.json"
             plans = build_classification_plan(root, use_network=False)
-            missing.unlink()
 
-            with self.assertRaises(FileNotFoundError):
-                execute_classification_plan(plans, report_path=report_path)
+            def fail_second_move(source, target):
+                if Path(source) == missing:
+                    raise FileNotFoundError("simulated missing source")
+                return real_move(source, target)
+
+            with patch("lightnovel_selector.classification.shutil.move", side_effect=fail_second_move):
+                with self.assertRaises(FileNotFoundError):
+                    execute_classification_plan(plans, report_path=report_path)
 
             self.assertTrue(report_path.exists())
             report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -396,17 +522,64 @@ class MovePlanTests(unittest.TestCase):
             self.assertEqual((restored, skipped), (1, 0))
             self.assertTrue(first.exists())
 
+    def test_execute_rejects_file_changed_after_scan(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "Sword.Art.Online.Vol.01.txt"
+            book.write_text("one", encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+            book.write_text("changed after preview", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "扫描后发生变化"):
+                execute_classification_plan(plans, report_path=root / "classification_report.json")
+
+            self.assertTrue(book.exists())
+            self.assertFalse((root / "Sword Art Online" / book.name).exists())
+
+    def test_execute_rechecks_each_source_during_long_batch(self) -> None:
+        from shutil import move as real_move
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A Sword.Art.Online.Vol.01.txt"
+            second = root / "B Sword.Art.Online.Vol.02.txt"
+            first.write_text("one", encoding="utf-8")
+            second.write_text("two", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            plans = build_classification_plan(root, use_network=False)
+
+            def change_second_after_first(source, target):
+                result = real_move(source, target)
+                if Path(source) == first:
+                    second.write_text("changed while batch was running", encoding="utf-8")
+                return result
+
+            with patch(
+                "lightnovel_selector.classification.shutil.move",
+                side_effect=change_second_after_first,
+            ):
+                with self.assertRaisesRegex(ValueError, "扫描后发生变化"):
+                    execute_classification_plan(plans, report_path=report_path)
+
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["summary"]["moved"], 1)
+            self.assertTrue(second.exists())
+            self.assertEqual(undo_classification_report(report_path), (1, 0))
+            self.assertTrue(first.exists())
+
     def test_unwritable_report_fails_before_moving_files(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             book = root / "Sword.Art.Online.Vol.01.txt"
             book.write_text("one", encoding="utf-8")
-            blocked_parent = root / "not-a-directory"
-            blocked_parent.write_text("blocked", encoding="utf-8")
             plans = build_classification_plan(root, use_network=False)
 
-            with self.assertRaises(OSError):
-                execute_classification_plan(plans, report_path=blocked_parent / "report.json")
+            with patch(
+                "lightnovel_selector.classification.write_json_atomic",
+                side_effect=PermissionError("blocked"),
+            ):
+                with self.assertRaises(OSError):
+                    execute_classification_plan(plans, report_path=root / "report.json")
 
             self.assertTrue(book.exists())
             self.assertFalse((root / "Sword Art Online" / book.name).exists())
@@ -496,6 +669,19 @@ class BangumiMetadataTests(unittest.TestCase):
         )
         self.assertEqual(bangumi_cover_url(item), "https://example.test/common.jpg")
 
+    def test_malformed_remote_metadata_degrades_without_type_errors(self) -> None:
+        item = {
+            "name": {"unexpected": "object"},
+            "name_cn": ["unexpected", "array"],
+            "images": ["unexpected"],
+            "image": "http://example.test/cover.jpg",
+            "infobox": {"unexpected": "object"},
+        }
+
+        self.assertEqual(bangumi_title_candidates(item), [])
+        self.assertIsNone(bangumi_cover_url(item))
+        self.assertIsNone(clean_summary({"unexpected": "object"}))
+
     def test_clean_summary_removes_empty_lines(self) -> None:
         self.assertEqual(clean_summary(" A\r\n\r\n B "), "A\nB")
 
@@ -526,6 +712,24 @@ class BangumiMetadataTests(unittest.TestCase):
             loaded = book_metadata_from_dict(PersistentMetadataCache(Path(temp_dir) / "cache.json").get(key) or {})
 
             self.assertEqual(loaded, metadata)
+
+    def test_cached_metadata_rejects_invalid_types_and_non_finite_confidence(self) -> None:
+        self.assertIsNone(book_metadata_from_dict({"title": ["not", "text"]}))
+        self.assertIsNone(book_metadata_from_dict({"title": "Broken", "confidence": "nan"}))
+
+        loaded = book_metadata_from_dict(
+            {
+                "title": "Valid",
+                "confidence": 0.75,
+                "summary": {"not": "text"},
+                "cover_url": ["not", "text"],
+            }
+        )
+
+        self.assertIsNotNone(loaded)
+        assert loaded is not None
+        self.assertIsNone(loaded.summary)
+        self.assertIsNone(loaded.cover_url)
 
     def test_persistent_metadata_cache_ignores_bad_timestamp(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -558,6 +762,20 @@ class BangumiMetadataTests(unittest.TestCase):
             cache = PersistentMetadataCache(cache_path)
 
             self.assertEqual(cache.data, {"version": 1, "entries": {}})
+
+    def test_persistent_metadata_cache_stays_within_size_limit(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "cache.json"
+            with patch("lightnovel_selector.storage.METADATA_CACHE_MAX_BYTES", 900):
+                cache = PersistentMetadataCache(cache_path)
+                for index in range(12):
+                    cache.set(
+                        f"book:{index}",
+                        {"title": f"Book {index}", "summary": "x" * 280},
+                    )
+
+                self.assertLessEqual(cache_path.stat().st_size, 900)
+                self.assertLess(len(cache.data["entries"]), 12)
 
 
 class ApplicationServiceTests(unittest.TestCase):
@@ -629,6 +847,30 @@ class ApplicationServiceTests(unittest.TestCase):
             self.assertEqual(snapshot["operation"]["message"], "等待扫描预览")
             self.assertIn("已恢复上次目录", snapshot["logs"][0]["message"])
 
+    def test_local_cover_is_loaded_only_when_detail_is_requested(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "Sword.Art.Online.Vol.01.zip"
+            with ZipFile(book, "w", compression=ZIP_DEFLATED) as archive:
+                archive.writestr("cover.png", MINIMAL_PNG)
+            plans = build_classification_plan(root, use_network=False)
+            self.assertIsNone(plans[0].local_cover_bytes)
+
+            with patch(
+                "lightnovel_selector.application.load_app_settings",
+                return_value=AppSettings(use_network=False),
+            ):
+                service = ApplicationService()
+            service.folder = root
+            service.plans = plans
+
+            detail = service.get_detail(0)
+            self.assertEqual(detail["cover_source"], "本地封面")
+            self.assertTrue(detail["cover_data_url"].startswith("data:image/png;base64,"))
+            self.assertIsNone(service.plans[0].local_cover_bytes)
+
     def test_snapshot_only_resends_plans_after_revision_change(self) -> None:
         from lightnovel_selector.application import ApplicationService
 
@@ -639,6 +881,100 @@ class ApplicationServiceTests(unittest.TestCase):
 
         self.assertEqual(first["plans"], [])
         self.assertIsNone(second["plans"])
+
+    def test_report_view_sanitizes_malformed_field_types(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            report_path = root / "classification_report.json"
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "total": True,
+                            "moved": -1,
+                            "skipped": 2,
+                            "duplicates": "1",
+                            "errors": 0,
+                        },
+                        "created_at": {"unexpected": "object"},
+                        "items": [
+                            {
+                                "source_path": ["unexpected"],
+                                "target_path": str(root / "Series" / "book.txt"),
+                                "series_name": {"unexpected": "object"},
+                                "confidence": float("nan"),
+                                "operation": "moved",
+                            },
+                            "unexpected",
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch(
+                "lightnovel_selector.application.load_app_settings",
+                return_value=AppSettings(use_network=False),
+            ):
+                service = ApplicationService()
+            service.folder = root
+            service.report_path = report_path
+
+            report = service.report_summary()
+
+            self.assertEqual(report["summary"]["total"], 0)
+            self.assertEqual(report["summary"]["skipped"], 2)
+            self.assertIsNone(report["created_at"])
+            self.assertEqual(report["item_count"], 2)
+            self.assertFalse(report["items_truncated"])
+            self.assertEqual(len(report["items"]), 1)
+            self.assertEqual(report["items"][0]["source_path"], "")
+            self.assertEqual(report["items"][0]["confidence"], 0.0)
+
+    def test_report_view_caps_large_item_lists(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            report_path = root / "classification_report.json"
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "total": 2,
+                            "moved": 2,
+                            "skipped": 0,
+                            "duplicates": 0,
+                            "errors": 0,
+                        },
+                        "items": [
+                            {
+                                "source_path": str(root / f"book-{index}.txt"),
+                                "target_path": str(root / "Series" / f"book-{index}.txt"),
+                                "operation": "moved",
+                            }
+                            for index in range(2)
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch(
+                    "lightnovel_selector.application.load_app_settings",
+                    return_value=AppSettings(use_network=False),
+                ),
+                patch("lightnovel_selector.application.REPORT_UI_MAX_ITEMS", 1),
+            ):
+                service = ApplicationService()
+                service.folder = root
+                service.report_path = report_path
+                report = service.report_summary()
+
+            self.assertEqual(report["item_count"], 2)
+            self.assertTrue(report["items_truncated"])
+            self.assertEqual(len(report["items"]), 1)
 
     def test_rejected_concurrent_scan_does_not_change_revision(self) -> None:
         from lightnovel_selector.application import ApplicationService

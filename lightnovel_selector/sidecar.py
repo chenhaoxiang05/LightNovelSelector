@@ -7,11 +7,17 @@ from collections.abc import Callable
 from typing import Any, TextIO
 
 from .application import ApplicationService
-from .constants import APP_NAME, APP_VERSION
+from .constants import (
+    APP_NAME,
+    APP_VERSION,
+    LOCAL_PATH_MAX_CHARS,
+    SERIES_NAME_MAX_CHARS,
+)
 
 
 PROTOCOL_VERSION = 1
 MAX_REQUEST_CHARS = 1024 * 1024
+MAX_REQUEST_ID = 2**63 - 1
 
 
 class ProtocolError(ValueError):
@@ -62,7 +68,13 @@ class SidecarServer:
         )
 
     def _set_folder(self, params: dict[str, Any]) -> dict[str, Any]:
-        return self._service.set_folder(self._string(params, "path"))
+        return self._service.set_folder(
+            self._string(
+                params,
+                "path",
+                max_chars=LOCAL_PATH_MAX_CHARS,
+            )
+        )
 
     def _save_settings(self, params: dict[str, Any]) -> dict[str, Any]:
         settings = params.get("settings")
@@ -73,7 +85,11 @@ class SidecarServer:
     def _edit_plan(self, params: dict[str, Any]) -> dict[str, Any]:
         return self._service.edit_plan(
             self._integer(params, "index"),
-            self._string(params, "series_name"),
+            self._string(
+                params,
+                "series_name",
+                max_chars=SERIES_NAME_MAX_CHARS,
+            ),
         )
 
     def _get_detail(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -86,18 +102,22 @@ class SidecarServer:
                 return default
             raise ProtocolError(f"缺少参数：{name}")
         value = params[name]
-        if isinstance(value, bool):
+        if isinstance(value, bool) or not isinstance(value, int):
             raise ProtocolError(f"参数 {name} 必须是整数。")
-        try:
-            return int(value)
-        except (TypeError, ValueError) as exc:
-            raise ProtocolError(f"参数 {name} 必须是整数。") from exc
+        return value
 
     @staticmethod
-    def _string(params: dict[str, Any], name: str) -> str:
+    def _string(
+        params: dict[str, Any],
+        name: str,
+        *,
+        max_chars: int | None = None,
+    ) -> str:
         value = params.get(name)
         if not isinstance(value, str):
             raise ProtocolError(f"参数 {name} 必须是字符串。")
+        if max_chars is not None and len(value) > max_chars:
+            raise ProtocolError(f"参数 {name} 不能超过 {max_chars} 个字符。")
         return value
 
     def _dispatch(self, request: Any) -> tuple[dict[str, Any], bool]:
@@ -107,6 +127,13 @@ class SidecarServer:
         request_id = request.get("id")
         method = request.get("method")
         params = request.get("params", {})
+        if (
+            isinstance(request_id, bool)
+            or not isinstance(request_id, int)
+            or request_id < 1
+            or request_id > MAX_REQUEST_ID
+        ):
+            raise ProtocolError("id 必须是范围有效的正整数。")
         if not isinstance(method, str) or not method:
             raise ProtocolError("method 必须是非空字符串。")
         if not isinstance(params, dict):
@@ -132,21 +159,32 @@ class SidecarServer:
         }
 
     def _write(self, response: dict[str, Any]) -> None:
-        self._output.write(json.dumps(response, ensure_ascii=False, separators=(",", ":")) + "\n")
+        self._output.write(json.dumps(response, ensure_ascii=True, separators=(",", ":")) + "\n")
         self._output.flush()
 
     def serve_forever(self) -> int:
-        for raw_line in self._input:
+        while True:
+            raw_line = self._input.readline(MAX_REQUEST_CHARS + 2)
+            if not raw_line:
+                break
             if not raw_line.strip():
                 continue
 
             request_id: Any = None
             try:
                 if len(raw_line) > MAX_REQUEST_CHARS:
+                    while raw_line and not raw_line.endswith("\n"):
+                        raw_line = self._input.readline(MAX_REQUEST_CHARS + 2)
                     raise ProtocolError("请求超过允许大小。")
                 request = json.loads(raw_line)
                 if isinstance(request, dict):
-                    request_id = request.get("id")
+                    candidate_id = request.get("id")
+                    if (
+                        isinstance(candidate_id, int)
+                        and not isinstance(candidate_id, bool)
+                        and 1 <= candidate_id <= MAX_REQUEST_ID
+                    ):
+                        request_id = candidate_id
                 response, should_stop = self._dispatch(request)
             except (json.JSONDecodeError, ProtocolError, OSError, RuntimeError, ValueError, TypeError, IndexError) as exc:
                 response = self._error_response(request_id, exc)

@@ -8,8 +8,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable
 
-from .constants import APP_NAME, APP_VERSION, REPORT_SCHEMA_VERSION, SUPPORTED_EXTENSIONS
-from .files import find_duplicate_files, match_custom_rule, read_identity_hint, read_local_cover_bytes
+from .constants import (
+    APP_NAME,
+    APP_VERSION,
+    REPORT_MAX_BYTES,
+    REPORT_SCHEMA_VERSION,
+    SCAN_MAX_FILES,
+    SERIES_NAME_MAX_CHARS,
+    SUPPORTED_EXTENSIONS,
+)
+from .files import (
+    file_fingerprint,
+    find_duplicate_files,
+    match_custom_rule,
+    read_identity_hint,
+)
 from .metadata import SeriesResolver, suggest_renamed_filename
 from .models import ClassificationPlan, CustomRule, ResolveResult
 from .parsing import (
@@ -18,23 +31,51 @@ from .parsing import (
     identity_query_for_path,
     collapse_spaces,
     safe_folder_name,
+    weak_file_name_query,
 )
 from .storage import write_json_atomic
 
 
+def validate_classification_root(root: Path) -> Path:
+    root = root.expanduser().resolve()
+    if not root.exists():
+        raise FileNotFoundError(f"大文件夹不存在：{root}")
+    if not root.is_dir():
+        raise NotADirectoryError(f"不是文件夹：{root}")
+    if root.parent == root:
+        raise ValueError("为保护系统文件，请选择驱动器或共享根目录下的专用文件夹。")
+    return root
+
+
+def _is_supported_regular_file(path: Path) -> bool:
+    try:
+        return (
+            not path.is_symlink()
+            and path.is_file()
+            and path.suffix.casefold() in SUPPORTED_EXTENSIONS
+        )
+    except OSError:
+        return False
+
+
 def find_novel_files(root: Path, recursive: bool = False) -> list[Path]:
     iterator = root.rglob("*") if recursive else root.iterdir()
-    files = [
-        path
-        for path in iterator
-        if path.is_file() and path.suffix.casefold() in SUPPORTED_EXTENSIONS
-    ]
+    files: list[Path] = []
+    for path in iterator:
+        if not _is_supported_regular_file(path):
+            continue
+        files.append(path)
+        if len(files) > SCAN_MAX_FILES:
+            raise ValueError(
+                f"单次扫描最多支持 {SCAN_MAX_FILES} 个小说文件，请分目录处理。"
+            )
     return sorted(files, key=lambda item: item.name.casefold())
 
 
 def unique_target_path(target_path: Path, reserved: set[Path]) -> Path:
-    normalized = target_path.resolve() if target_path.exists() else target_path.absolute()
-    if not target_path.exists() and normalized not in reserved:
+    normalized = target_path.absolute()
+    occupied = target_path.exists() or target_path.is_symlink()
+    if not occupied and normalized not in reserved:
         reserved.add(normalized)
         return target_path
 
@@ -44,8 +85,9 @@ def unique_target_path(target_path: Path, reserved: set[Path]) -> Path:
     counter = 1
     while True:
         candidate = parent / f"{stem} ({counter}){suffix}"
-        normalized_candidate = candidate.resolve() if candidate.exists() else candidate.absolute()
-        if not candidate.exists() and normalized_candidate not in reserved:
+        normalized_candidate = candidate.absolute()
+        occupied = candidate.exists() or candidate.is_symlink()
+        if not occupied and normalized_candidate not in reserved:
             reserved.add(normalized_candidate)
             return candidate
         counter += 1
@@ -70,6 +112,8 @@ def classification_plan_to_report_item(
         "rename_to": plan.rename_to,
         "metadata_title": plan.metadata_title,
         "metadata_url": plan.metadata_url,
+        "source_size": plan.source_size,
+        "source_mtime_ns": plan.source_mtime_ns,
     }
 
 
@@ -104,6 +148,111 @@ def write_classification_report(
     write_json_atomic(report_path, report)
 
 
+def load_classification_report(report_path: Path) -> dict:
+    with report_path.open("rb") as handle:
+        data = handle.read(REPORT_MAX_BYTES + 1)
+    if len(data) > REPORT_MAX_BYTES:
+        raise ValueError(f"分类报告超过允许大小（{REPORT_MAX_BYTES} 字节）。")
+    try:
+        report = json.loads(data.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError, RecursionError, ValueError) as exc:
+        raise ValueError("分类报告格式无效：文件不是有效的 UTF-8 JSON。") from exc
+    if not isinstance(report, dict):
+        raise ValueError("分类报告格式无效：根节点必须是对象。")
+    return report
+
+
+def _resolved_child_path(path: Path, *, root_path: Path, field_name: str) -> Path:
+    try:
+        resolved_path = path.expanduser().resolve()
+        relative_path = resolved_path.relative_to(root_path)
+    except OSError as exc:
+        raise ValueError(f"无法解析分类计划的 {field_name}：{exc}") from exc
+    except ValueError as exc:
+        raise ValueError(f"分类计划的 {field_name} 超出分类根目录。") from exc
+    if not relative_path.parts:
+        raise ValueError(f"分类计划的 {field_name} 不能指向分类根目录本身。")
+    return resolved_path
+
+
+def _validate_source_state(plan: ClassificationPlan) -> None:
+    if plan.source_path.is_symlink():
+        raise ValueError("分类计划的源文件已变为符号链接，请重新扫描。")
+    if not plan.source_path.is_file():
+        raise ValueError("分类计划的源文件已不存在或不再是普通文件，请重新扫描。")
+    try:
+        current_stat = plan.source_path.stat()
+    except OSError as exc:
+        raise ValueError(f"无法重新校验源文件：{plan.source_path}") from exc
+    if (
+        plan.source_size is not None
+        and plan.source_mtime_ns is not None
+        and (
+            current_stat.st_size != plan.source_size
+            or current_stat.st_mtime_ns != plan.source_mtime_ns
+        )
+    ):
+        raise ValueError(f"源文件在扫描后发生变化，请重新扫描：{plan.source_path.name}")
+
+
+def _validate_target_state(plan: ClassificationPlan) -> tuple[Path, Path]:
+    try:
+        root_path = plan.target_dir.parent.expanduser().resolve()
+    except OSError as exc:
+        raise ValueError(f"无法解析分类根目录：{exc}") from exc
+    if root_path.parent == root_path:
+        raise ValueError("分类计划不能直接整理驱动器或共享根目录。")
+    if plan.target_dir.is_symlink():
+        raise ValueError("分类计划的目标目录已变为符号链接，请重新扫描。")
+    target_dir = _resolved_child_path(
+        plan.target_dir,
+        root_path=root_path,
+        field_name="target_dir",
+    )
+    target_path = _resolved_child_path(
+        plan.target_path,
+        root_path=root_path,
+        field_name="target_path",
+    )
+    if target_path.parent != target_dir:
+        raise ValueError("分类计划的 target_path 不在对应的 target_dir 中。")
+    if plan.target_dir.exists() and not plan.target_dir.is_dir():
+        raise ValueError("分类计划的目标目录已被其他文件占用，请重新扫描。")
+    return root_path, target_dir
+
+
+def _validate_execution_plan(
+    plans: list[ClassificationPlan],
+    report_path: Path | None,
+) -> None:
+    if not plans:
+        return
+    roots = {plan.target_dir.parent.expanduser().resolve() for plan in plans}
+    if len(roots) != 1:
+        raise ValueError("分类计划包含多个根目录，已拒绝执行。")
+    root_path = roots.pop()
+    if root_path.parent == root_path:
+        raise ValueError("分类计划不能直接整理驱动器或共享根目录。")
+    if report_path is not None and report_path.expanduser().resolve().parent != root_path:
+        raise ValueError("分类报告必须保存在分类根目录中。")
+    seen_sources: set[Path] = set()
+    seen_targets: set[Path] = set()
+    for plan in plans:
+        source_path = _resolved_child_path(plan.source_path, root_path=root_path, field_name="source_path")
+        target_dir = _resolved_child_path(plan.target_dir, root_path=root_path, field_name="target_dir")
+        target_path = _resolved_child_path(plan.target_path, root_path=root_path, field_name="target_path")
+        if plan.will_move and target_path.parent != target_dir:
+            raise ValueError("分类计划的 target_path 不在对应的 target_dir 中。")
+        if source_path in seen_sources:
+            raise ValueError("分类计划包含重复的源路径。")
+        seen_sources.add(source_path)
+        if plan.will_move:
+            if target_path in seen_targets:
+                raise ValueError("分类计划包含重复的目标路径。")
+            seen_targets.add(target_path)
+            _validate_source_state(plan)
+
+
 def _report_root(report: dict, report_path: Path) -> Path:
     if report.get("app") != APP_NAME:
         raise ValueError("撤销报告格式无效：应用标识不匹配。")
@@ -133,31 +282,53 @@ def _report_root(report: dict, report_path: Path) -> Path:
 
 
 def _undo_item_path(value: object, *, field_name: str, item_number: int, root_path: Path) -> Path:
+    item_label = (
+        f"撤销报告第 {item_number} 项"
+        if item_number > 0
+        else "当前撤销操作"
+    )
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"撤销报告第 {item_number} 项缺少有效的 {field_name}。")
+        raise ValueError(f"{item_label}缺少有效的 {field_name}。")
     path = Path(value).expanduser()
     if not path.is_absolute():
-        raise ValueError(f"撤销报告第 {item_number} 项的 {field_name} 必须是绝对路径。")
+        raise ValueError(f"{item_label}的 {field_name} 必须是绝对路径。")
     try:
         resolved_path = path.resolve()
     except OSError as exc:
-        raise ValueError(f"无法解析撤销报告第 {item_number} 项的 {field_name}：{exc}") from exc
+        raise ValueError(f"无法解析{item_label}的 {field_name}：{exc}") from exc
     try:
         relative_path = resolved_path.relative_to(root_path)
     except ValueError as exc:
-        raise ValueError(f"撤销报告第 {item_number} 项的 {field_name} 超出分类根目录。") from exc
+        raise ValueError(f"{item_label}的 {field_name} 超出分类根目录。") from exc
     if not relative_path.parts:
-        raise ValueError(f"撤销报告第 {item_number} 项的 {field_name} 不能指向分类根目录本身。")
+        raise ValueError(f"{item_label}的 {field_name} 不能指向分类根目录本身。")
     return resolved_path
 
 
-def _validated_undo_items(report: dict, report_path: Path) -> list[tuple[Path, Path]]:
+def _optional_undo_integer(
+    item: dict,
+    *,
+    field_name: str,
+    item_number: int,
+) -> int | None:
+    value = item.get(field_name)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"撤销报告第 {item_number} 项的 {field_name} 必须是非负整数。")
+    return value
+
+
+def _validated_undo_items(
+    report: dict,
+    report_path: Path,
+) -> list[tuple[Path, Path, int | None, int | None]]:
     root_path = _report_root(report, report_path)
     items = report.get("items")
     if not isinstance(items, list):
         raise ValueError("撤销报告格式无效：items 必须是数组。")
 
-    moved_items: list[tuple[Path, Path]] = []
+    moved_items: list[tuple[Path, Path, int | None, int | None]] = []
     seen_sources: set[Path] = set()
     seen_targets: set[Path] = set()
     for item_number, item in enumerate(items, start=1):
@@ -184,8 +355,63 @@ def _validated_undo_items(report: dict, report_path: Path) -> list[tuple[Path, P
             raise ValueError(f"撤销报告第 {item_number} 项包含重复的文件路径。")
         seen_sources.add(source_path)
         seen_targets.add(target_path)
-        moved_items.append((source_path, target_path))
+        source_size = _optional_undo_integer(
+            item,
+            field_name="source_size",
+            item_number=item_number,
+        )
+        source_mtime_ns = _optional_undo_integer(
+            item,
+            field_name="source_mtime_ns",
+            item_number=item_number,
+        )
+        if (source_size is None) != (source_mtime_ns is None):
+            raise ValueError(
+                f"撤销报告第 {item_number} 项的文件状态字段必须同时存在或同时省略。"
+            )
+        moved_items.append((source_path, target_path, source_size, source_mtime_ns))
     return moved_items
+
+
+def _validate_undo_move_state(
+    source_path: Path,
+    target_path: Path,
+    *,
+    root_path: Path,
+    expected_size: int | None,
+    expected_mtime_ns: int | None,
+) -> None:
+    current_source = _undo_item_path(
+        str(source_path),
+        field_name="source_path",
+        item_number=0,
+        root_path=root_path,
+    )
+    current_target = _undo_item_path(
+        str(target_path),
+        field_name="target_path",
+        item_number=0,
+        root_path=root_path,
+    )
+    if current_source != source_path or current_target != target_path:
+        raise ValueError("撤销路径在操作期间发生变化，已停止撤销。")
+    if source_path.exists() or source_path.is_symlink():
+        raise ValueError(f"撤销源位置已被占用：{source_path}")
+    if target_path.is_symlink() or not target_path.is_file():
+        raise ValueError(f"撤销目标不再是原来的普通文件：{target_path}")
+    try:
+        target_stat = target_path.stat()
+    except OSError as exc:
+        raise ValueError(f"无法重新校验撤销目标：{target_path}") from exc
+    if (
+        expected_size is not None
+        and expected_mtime_ns is not None
+        and (
+            target_stat.st_size != expected_size
+            or target_stat.st_mtime_ns != expected_mtime_ns
+        )
+    ):
+        raise ValueError(f"分类后的文件已发生变化，为避免移动错误内容，已拒绝撤销：{target_path.name}")
 
 
 def build_classification_plan(
@@ -197,24 +423,51 @@ def build_classification_plan(
     custom_rules: Iterable[CustomRule] | None = None,
     progress: Callable[[str], None] | None = None,
     progress_count: Callable[[int, int], None] | None = None,
+    checkpoint: Callable[[], None] | None = None,
 ) -> list[ClassificationPlan]:
-    root = root.expanduser().resolve()
-    if not root.exists():
-        raise FileNotFoundError(f"大文件夹不存在：{root}")
-    if not root.is_dir():
-        raise NotADirectoryError(f"不是文件夹：{root}")
+    root = validate_classification_root(root)
 
     files = find_novel_files(root, recursive=recursive)
-    duplicates = find_duplicate_files(files)
+    if files and progress:
+        progress(f"正在检查 {len(files)} 个文件的重复内容…")
+
+    duplicates = find_duplicate_files(
+        files,
+        checkpoint=checkpoint,
+    )
     rules = tuple(custom_rules or ())
     resolver = SeriesResolver(use_network=use_network)
     plans: list[ClassificationPlan] = []
     reserved_targets: set[Path] = set()
+    duplicate_fingerprints: dict[Path, str | None] = {}
+
+    def current_fingerprint(path: Path) -> str | None:
+        if path not in duplicate_fingerprints:
+            try:
+                duplicate_fingerprints[path] = file_fingerprint(
+                    path,
+                    checkpoint=checkpoint,
+                )
+            except OSError:
+                duplicate_fingerprints[path] = None
+        return duplicate_fingerprints[path]
 
     for index, path in enumerate(files, start=1):
+        try:
+            source_stat = path.stat()
+        except OSError:
+            source_stat = None
         if progress:
             progress(f"[{index}/{len(files)}] 识别：{path.name}")
         duplicate_of = duplicates.get(path)
+        if duplicate_of is not None:
+            candidate_fingerprint = current_fingerprint(path)
+            original_fingerprint = current_fingerprint(duplicate_of)
+            if (
+                candidate_fingerprint is None
+                or candidate_fingerprint != original_fingerprint
+            ):
+                duplicate_of = None
         if duplicate_of is not None:
             local_guess = extract_series_guess(path.name)
             folder_name = safe_folder_name(local_guess)
@@ -227,6 +480,8 @@ def build_classification_plan(
                     resolver_source="重复文件检测",
                     confidence=1.0,
                     local_guess=local_guess,
+                    source_size=source_stat.st_size if source_stat else None,
+                    source_mtime_ns=source_stat.st_mtime_ns if source_stat else None,
                     identity_query=extract_book_lookup_query(path.name),
                     series_key=folder_name,
                     status="duplicate",
@@ -241,23 +496,34 @@ def build_classification_plan(
         try:
             identity_hint = read_identity_hint(path)
             identity_query = identity_query_for_path(path, identity_hint)
+            file_query = extract_book_lookup_query(path.name)
+            network_query = None if weak_file_name_query(path.name) else file_query
             custom_rule = match_custom_rule(path.name, identity_query, rules)
             if custom_rule is not None:
+                network_query = custom_rule.series
                 result = ResolveResult(
                     series_name=safe_folder_name(custom_rule.series),
                     source="自定义规则",
                     confidence=1.0,
                     local_guess=identity_query,
                 )
+            elif network_query is None:
+                used_content_hint = bool(identity_hint and identity_query != file_query)
+                result = ResolveResult(
+                    series_name=extract_series_guess(identity_query),
+                    source="本地内容提示" if used_content_hint else "本地规则",
+                    confidence=0.6 if used_content_hint else 0.45,
+                    local_guess=identity_query,
+                )
             else:
-                result = resolver.resolve(identity_query)
+                result = resolver.resolve(network_query)
             folder_name = safe_folder_name(result.series_name)
             target_dir = root / folder_name
             metadata = None
             rename_to = None
             target_name = path.name
-            if auto_rename and use_network:
-                metadata = resolver.resolve_book_metadata_for_query(identity_query, series_name=folder_name)
+            if auto_rename and use_network and network_query:
+                metadata = resolver.resolve_book_metadata_for_query(network_query, series_name=folder_name)
                 rename_to = suggest_renamed_filename(
                     path,
                     series_name=folder_name,
@@ -287,13 +553,15 @@ def build_classification_plan(
                     resolver_source=result.source,
                     confidence=result.confidence,
                     local_guess=result.local_guess,
+                    source_size=source_stat.st_size if source_stat else None,
+                    source_mtime_ns=source_stat.st_mtime_ns if source_stat else None,
                     metadata_title=(metadata.title if metadata else result.metadata_title),
                     metadata_summary=(metadata.summary if metadata else result.metadata_summary),
                     metadata_cover_url=(metadata.cover_url if metadata else result.metadata_cover_url),
                     metadata_url=(metadata.url if metadata else result.metadata_url),
-                    local_cover_bytes=read_local_cover_bytes(path),
                     identity_hint=identity_hint,
                     identity_query=identity_query,
+                    network_query=network_query,
                     rename_to=rename_to,
                     series_key=folder_name,
                     status=status,
@@ -312,6 +580,8 @@ def build_classification_plan(
                     resolver_source="文件读取失败",
                     confidence=0.0,
                     local_guess=local_guess,
+                    source_size=source_stat.st_size if source_stat else None,
+                    source_mtime_ns=source_stat.st_mtime_ns if source_stat else None,
                     identity_query=extract_book_lookup_query(path.name),
                     series_key=folder_name,
                     status="error",
@@ -334,6 +604,8 @@ def revise_classification_plan(
     clean_series = collapse_spaces(series_name)
     if not clean_series:
         raise ValueError("系列名不能为空。")
+    if len(clean_series) > SERIES_NAME_MAX_CHARS:
+        raise ValueError(f"系列名不能超过 {SERIES_NAME_MAX_CHARS} 个字符。")
 
     plan = plans[index]
     if plan.status == "moved":
@@ -372,6 +644,7 @@ def revise_classification_plan(
         metadata_summary=None,
         metadata_cover_url=None,
         metadata_url=None,
+        network_query=folder_name,
         rename_to=None,
         series_key=folder_name,
         status=status,
@@ -387,6 +660,7 @@ def execute_classification_plan(
     progress_count: Callable[[int, int], None] | None = None,
     report_path: Path | None = None,
 ) -> tuple[int, int]:
+    _validate_execution_plan(plans, report_path)
     moved = 0
     skipped = 0
     actual_targets: dict[Path, Path] = {}
@@ -401,16 +675,45 @@ def execute_classification_plan(
                 continue
             if progress:
                 progress(f"[{index}/{len(plans)}] 移动：{plan.source_path.name} -> {plan.target_dir.name}")
+            _validate_source_state(plan)
+            root_path, target_dir = _validate_target_state(plan)
             plan.target_dir.mkdir(parents=True, exist_ok=True)
-            final_target = unique_target_path(plan.target_path, set()) if plan.target_path.exists() else plan.target_path
+            root_path, target_dir = _validate_target_state(plan)
+            final_target = unique_target_path(plan.target_path, set())
+            resolved_final_target = _resolved_child_path(
+                final_target,
+                root_path=root_path,
+                field_name="final_target",
+            )
+            if resolved_final_target.parent != target_dir:
+                raise ValueError("分类计划的最终目标文件超出目标目录。")
             shutil.move(str(plan.source_path), str(final_target))
             actual_targets[plan.source_path] = final_target
             moved += 1
+            if report_path is not None:
+                write_classification_report(
+                    plans,
+                    report_path,
+                    moved=moved,
+                    skipped=skipped,
+                    actual_targets=actual_targets,
+                )
             if progress_count:
                 progress_count(index, len(plans))
-    except Exception:
+    except Exception as exc:
         if report_path is not None:
-            write_classification_report(plans, report_path, moved=moved, skipped=skipped, actual_targets=actual_targets)
+            try:
+                write_classification_report(
+                    plans,
+                    report_path,
+                    moved=moved,
+                    skipped=skipped,
+                    actual_targets=actual_targets,
+                )
+            except OSError as report_exc:
+                raise RuntimeError(
+                    f"分类中断，且部分撤销报告无法更新：{report_exc}"
+                ) from exc
         raise
     if report_path is not None:
         write_classification_report(plans, report_path, moved=moved, skipped=skipped, actual_targets=actual_targets)
@@ -424,21 +727,56 @@ def undo_classification_report(
     progress_count: Callable[[int, int], None] | None = None,
 ) -> tuple[int, int]:
     report_path = report_path.expanduser().resolve()
-    report = json.loads(report_path.read_text(encoding="utf-8"))
-    if not isinstance(report, dict):
-        raise ValueError("撤销报告格式无效：根节点必须是对象。")
+    report = load_classification_report(report_path)
+    root_path = _report_root(report, report_path)
     moved_items = list(reversed(_validated_undo_items(report, report_path)))
+    for source_path, target_path, expected_size, expected_mtime_ns in moved_items:
+        if source_path.exists() or (
+            not target_path.exists()
+            and not target_path.is_symlink()
+        ):
+            continue
+        _validate_undo_move_state(
+            source_path,
+            target_path,
+            root_path=root_path,
+            expected_size=expected_size,
+            expected_mtime_ns=expected_mtime_ns,
+        )
+
     restored = 0
     skipped = 0
-    for index, (source_path, target_path) in enumerate(moved_items, start=1):
-        if not target_path.exists() or source_path.exists():
+    for index, (
+        source_path,
+        target_path,
+        expected_size,
+        expected_mtime_ns,
+    ) in enumerate(moved_items, start=1):
+        if (
+            not target_path.exists()
+            and not target_path.is_symlink()
+        ) or source_path.exists():
             skipped += 1
             if progress_count:
                 progress_count(index, len(moved_items))
             continue
+        _validate_undo_move_state(
+            source_path,
+            target_path,
+            root_path=root_path,
+            expected_size=expected_size,
+            expected_mtime_ns=expected_mtime_ns,
+        )
         if progress:
             progress(f"撤销：{target_path.name} -> {source_path}")
         source_path.parent.mkdir(parents=True, exist_ok=True)
+        _validate_undo_move_state(
+            source_path,
+            target_path,
+            root_path=root_path,
+            expected_size=expected_size,
+            expected_mtime_ns=expected_mtime_ns,
+        )
         shutil.move(str(target_path), str(source_path))
         restored += 1
         try:

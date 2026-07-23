@@ -1,6 +1,6 @@
 # LightNovelSelector 开发说明
 
-本文档面向维护者。普通用户只需要下载 `LightNovelSelector-v2.0.0-win-x64-setup.exe`。
+本文档面向维护者。普通用户只需要下载 `LightNovelSelector-v2.0.1-win-x64-setup.exe`。
 
 ## 技术栈
 
@@ -9,7 +9,8 @@
 - .NET 10：WinUI 应用和 C# 测试。
 - PyInstaller：把 Python Sidecar 构建为独立 EXE。
 - Inno Setup 6+：把 WinUI 运行文件封装为单个安装 EXE。
-- pytest、ruff、vulture、MSTest：自动验证。
+- defusedxml：安全读取 EPUB XML。
+- pytest、ruff、mypy、bandit、vulture、pip-audit、MSTest：自动验证。
 
 ## 环境准备
 
@@ -26,7 +27,7 @@ py -3 -m venv .venv-build
 .\.venv-build\Scripts\python.exe -m pip install -r requirements-dev.txt
 ```
 
-运行时 Python 核心只使用标准库；第三方包均是开发或构建依赖。
+运行时依赖固定在 `requirements-runtime.txt`；开发、测试和打包依赖固定在 `requirements-dev.txt`。
 
 ## 架构边界
 
@@ -73,16 +74,20 @@ Sidecar 协议见 [WinUI 架构说明](docs/WINUI_ARCHITECTURE.md)。WinUI 不�
 .\.venv-build\Scripts\python.exe -m py_compile lightnovel_classifier.py lightnovel_sidecar.py tools\verify_sidecar.py
 .\.venv-build\Scripts\python.exe -m pytest -q
 .\.venv-build\Scripts\python.exe -m ruff check .
+.\.venv-build\Scripts\python.exe -m mypy lightnovel_classifier.py lightnovel_sidecar.py lightnovel_selector tests
+.\.venv-build\Scripts\python.exe -m bandit -q -r lightnovel_selector lightnovel_classifier.py lightnovel_sidecar.py
 .\.venv-build\Scripts\python.exe -m vulture lightnovel_classifier.py lightnovel_selector tests --min-confidence 80
+.\.venv-build\Scripts\python.exe -m pip_audit -r requirements-dev.txt --strict
 
-dotnet test native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj -c Release
+dotnet restore native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj --locked-mode
+dotnet test native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj -c Release --no-restore
 dotnet build native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj -c Debug -p:Platform=x64 -p:WindowsPackageType=None
 dotnet build native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj -c Release -p:Platform=x64 -p:WindowsPackageType=None
 
 git diff --check
 ```
 
-当前基线为 53 项 Python 测试和 14 项 C# 测试。
+测试数量会随回归覆盖增长，不在文档中固定；以命令输出和 GitHub Actions 为准。
 
 ## UI 与动效约束
 
@@ -107,7 +112,7 @@ git diff --check
 2. 生成原生图标。
 3. 生成 `LightNovelSelector.Sidecar.exe`。
 4. 使用独立 Python 工具验证 `ping` / `shutdown` 协议。
-5. 执行 Python 测试、ruff 和 vulture。
+5. 执行 Python 测试、类型检查、静态安全扫描和依赖漏洞审计。
 6. 执行 C# 测试。
 7. 发布自包含 WinUI 到 `build\winui-package` 暂存区。
 8. 执行启动和外观两轮冒烟。
@@ -116,7 +121,7 @@ git diff --check
 最终只保留：
 
 ```text
-dist\winui\LightNovelSelector-v2.0.0-win-x64-setup.exe
+dist\winui\LightNovelSelector-v2.0.1-win-x64-setup.exe
 ```
 
 安装器会在安装前显示根目录中的 MIT `LICENSE`，并把许可证保留在应用安装目录。
@@ -147,7 +152,7 @@ Windows App SDK 自包含发布会携带 WinUI 控件的 `.mui` 本地化资源�
 - `dist/`：最终安装器。
 - `native/**/bin/`、`native/**/obj/`：.NET 输出。
 
-旧的 `UI_test` worktree 和损坏环境归档已经从本地移除；对应源码仍在远端 `ui` 分支，旧 WebView 最终版本位于标签 `legacy-webview-final`。
+旧 WebView 最终版本位于标签 `legacy-webview-final`，早期界面实验保留在远端 `ui` 分支。
 
 ## Git 工作流
 
@@ -157,4 +162,4 @@ Windows App SDK 自包含发布会携带 WinUI 控件的 `.mui` 本地化资源�
 - 稳定分支不用于保存实验构建产物。
 - 正式 Release 从 `main` 创建；旧架构使用 `legacy/*` 分支和不可变标签归档。
 
-GitHub Actions 会在 Windows 上执行 Python 检查、C# 测试和 WinUI 构建。
+GitHub Actions 会在 Windows 上执行 Python 检查、C# 测试和 WinUI 构建；CodeQL 分析 Python 与 C#。GitHub Actions 均固定到完整提交 SHA，NuGet 使用已提交的锁文件。

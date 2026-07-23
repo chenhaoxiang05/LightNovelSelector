@@ -26,8 +26,6 @@ public sealed class PythonSidecarClient : IAsyncDisposable
     private long _requestId;
     private bool _disposed;
 
-    public event Action<string>? DiagnosticReceived;
-
     public bool IsRunning => _process is { HasExited: false };
 
     public async Task<SidecarPing> StartAsync(CancellationToken cancellationToken = default)
@@ -256,6 +254,7 @@ public sealed class PythonSidecarClient : IAsyncDisposable
 
     private void HandleResponse(string line)
     {
+        long? responseId = null;
         try
         {
             using var document = JsonDocument.Parse(line);
@@ -264,6 +263,7 @@ public sealed class PythonSidecarClient : IAsyncDisposable
             {
                 throw new SidecarProtocolException("响应缺少有效请求编号。");
             }
+            responseId = id;
             if (!_pending.TryGetValue(id, out var completion))
             {
                 return;
@@ -286,9 +286,18 @@ public sealed class PythonSidecarClient : IAsyncDisposable
                 new SidecarRemoteException(errorType ?? "RemoteError", message ?? "Python 服务返回未知错误。")
             );
         }
-        catch (Exception exc) when (exc is JsonException or InvalidOperationException or SidecarProtocolException)
+        catch (Exception exc) when (
+            exc is JsonException
+                or InvalidOperationException
+                or KeyNotFoundException
+                or SidecarProtocolException
+        )
         {
             AddDiagnostic($"忽略无效的 Python 服务响应：{exc.Message}");
+            if (responseId is long id && _pending.TryGetValue(id, out var completion))
+            {
+                completion.TrySetException(new SidecarProtocolException($"Python 服务响应格式无效：{exc.Message}"));
+            }
         }
     }
 
@@ -313,7 +322,11 @@ public sealed class PythonSidecarClient : IAsyncDisposable
         {
             await process.WaitForExitAsync().ConfigureAwait(false);
         }
-        catch (Exception exc) when (exc is InvalidOperationException or ObjectDisposedException)
+        catch (Exception exc) when (
+            exc is InvalidOperationException
+                or ObjectDisposedException
+                or System.ComponentModel.Win32Exception
+        )
         {
             return;
         }
@@ -346,7 +359,6 @@ public sealed class PythonSidecarClient : IAsyncDisposable
         {
             _diagnostics.TryDequeue(out _);
         }
-        DiagnosticReceived?.Invoke(message.Trim());
     }
 
     private string DiagnosticSuffix()
@@ -364,29 +376,38 @@ public sealed class PythonSidecarClient : IAsyncDisposable
         }
 
         var root = FindRepositoryRoot()
-            ?? throw new SidecarUnavailableException("未找到 Python 核心目录。请重新运行构建脚本。\n");
+            ?? throw new SidecarUnavailableException("未找到 Python 核心目录。请重新运行构建脚本。");
         var configuredPython = Environment.GetEnvironmentVariable("LN_SELECTOR_PYTHON");
-        var candidates = new[]
+        var candidates = new List<string?>
         {
             configuredPython,
             Path.Combine(root, ".venv-build", "Scripts", "python.exe"),
             Path.Combine(root, ".venv", "Scripts", "python.exe"),
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Programs",
-                "Python",
-                "Python313",
-                "python.exe"
-            ),
         };
-        var python = candidates.FirstOrDefault(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path));
-        if (python is null)
+        var localPrograms = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Programs",
+            "Python"
+        );
+        for (var minor = 19; minor >= 10; minor--)
         {
-            throw new SidecarUnavailableException(
-                "未找到可用的 Python。请设置 LN_SELECTOR_PYTHON，或运行项目环境安装脚本。"
-            );
+            candidates.Add(Path.Combine(localPrograms, $"Python3{minor}", "python.exe"));
         }
-        return new LaunchCommand(python, root, ["-u", "-m", "lightnovel_selector.sidecar"]);
+        var python = candidates.FirstOrDefault(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path));
+        if (python is not null)
+        {
+            return new LaunchCommand(python, root, ["-u", "-m", "lightnovel_selector.sidecar"]);
+        }
+
+        var windowsDirectory = Directory.GetParent(Environment.SystemDirectory)?.FullName;
+        var launcher = windowsDirectory is null ? null : Path.Combine(windowsDirectory, "py.exe");
+        if (launcher is not null && File.Exists(launcher))
+        {
+            return new LaunchCommand(launcher, root, ["-3", "-u", "-m", "lightnovel_selector.sidecar"]);
+        }
+        throw new SidecarUnavailableException(
+            "未找到可用的 Python。请设置 LN_SELECTOR_PYTHON，或运行项目环境安装脚本。"
+        );
     }
 
     private static string? FindRepositoryRoot()
@@ -417,7 +438,11 @@ public sealed class PythonSidecarClient : IAsyncDisposable
                 process.WaitForExit(3000);
             }
         }
-        catch (InvalidOperationException)
+        catch (Exception exc) when (
+            exc is InvalidOperationException
+                or NotSupportedException
+                or System.ComponentModel.Win32Exception
+        )
         {
         }
         finally
@@ -455,7 +480,12 @@ public sealed class PythonSidecarClient : IAsyncDisposable
                     using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                     await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
                 }
-                catch (Exception exc) when (exc is IOException or InvalidOperationException or OperationCanceledException)
+                catch (Exception exc) when (
+                    exc is IOException
+                        or InvalidOperationException
+                        or OperationCanceledException
+                        or System.ComponentModel.Win32Exception
+                )
                 {
                     TerminateProcess();
                 }
@@ -468,7 +498,12 @@ public sealed class PythonSidecarClient : IAsyncDisposable
                     await Task.WhenAll(_stdoutTask ?? Task.CompletedTask, _stderrTask ?? Task.CompletedTask)
                         .ConfigureAwait(false);
                 }
-                catch (Exception exc) when (exc is IOException or ObjectDisposedException or InvalidOperationException)
+                catch (Exception exc) when (
+                    exc is IOException
+                        or ObjectDisposedException
+                        or InvalidOperationException
+                        or System.ComponentModel.Win32Exception
+                )
                 {
                 }
             }

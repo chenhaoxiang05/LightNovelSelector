@@ -16,7 +16,8 @@ sequenceDiagram
     Client->>Sidecar: 启动子进程
     Client->>Sidecar: ping + protocol_version
     Sidecar-->>Client: 版本握手结果
-    UI->>Sidecar: start_scan(folder, settings)
+    UI->>Sidecar: set_folder + save_settings
+    UI->>Sidecar: start_scan
     Sidecar->>Service: 后台扫描
     loop 任务运行期间
         UI->>Sidecar: poll(log_cursor)
@@ -45,19 +46,19 @@ sequenceDiagram
 请求：
 
 ```json
-{"id": 12, "method": "start_scan", "params": {"folder": "D:\\Books"}}
+{"id":12,"method":"set_folder","params":{"path":"D:\\Books"}}
 ```
 
 成功响应：
 
 ```json
-{"id": 12, "result": {"accepted": true}}
+{"id":12,"ok":true,"result":{"folder":"D:\\Books"}}
 ```
 
 失败响应：
 
 ```json
-{"id": 12, "error": {"type": "ValueError", "message": "目录不存在"}}
+{"id":12,"ok":false,"error":{"type":"ValueError","message":"目录不存在"}}
 ```
 
 约束：
@@ -65,6 +66,7 @@ sequenceDiagram
 - `id` 是正整数，同一连接内唯一。
 - `method` 必须位于 Sidecar 白名单。
 - 未识别方法、非法参数和 Python 异常都转换为错误对象。
+- 单条请求上限为 1 MiB，超限行会被丢弃，后续合法请求仍可继续。
 - 协议内容只写标准输出；标准错误保留最近诊断。
 - C# 使用并发字典按 `id` 完成等待中的任务。
 - 普通请求和启动握手都有超时，进程退出会使所有等待请求失败。
@@ -79,7 +81,7 @@ sequenceDiagram
 | `set_folder` | 更新当前目录并使旧预览失效 |
 | `save_settings` | 保存偏好和自定义规则 |
 | `start_scan` | 启动后台扫描 |
-| `cancel` | 请求取消当前可取消任务 |
+| `cancel_operation` | 请求取消当前可取消任务 |
 | `edit_plan` | 手动修正单条分类计划 |
 | `get_detail` | 获取封面、简介和目标详情 |
 | `start_apply` | 启动文件整理 |
@@ -89,16 +91,17 @@ sequenceDiagram
 
 ## 生命周期
 
-1. WinUI 启动时优先查找应用目录中的 `LightNovelSelector.Sidecar.exe`。
-2. 开发模式下向上查找仓库根目录，并按环境变量、`.venv-build`、`.venv`、系统 Python 顺序选择解释器。
-3. Sidecar 启动后立即执行 `ping`，确认协议版本。
-4. WinUI 定时 `poll`，但使用互斥标记避免轮询重入。
-5. 启动、调用途中或两次轮询之间发现进程退出时，界面自动执行一次 `RestartAsync` 和 `bootstrap`。
-6. 重启只恢复连接、持久化设置和最近报告；内存预览会明确清空，不自动重跑扫描、整理或撤销。
-7. 自动恢复失败后停止轮询并进入 `Disconnected`，由用户通过错误栏手动重新连接，避免无限重启。
-8. 页面卸载与启动、重启共用生命周期锁，关闭时不会与新进程创建发生竞态。
-9. 正常退出先发送 `shutdown`；超时或管道损坏时终止整个进程树。
-10. 文件移动或撤销运行中，窗口关闭事件会被取消并显示警告。
+1. WinUI 注册单实例键；重复启动把激活请求转交给现有窗口，不创建第二个 Sidecar。
+2. WinUI 启动时优先查找应用目录中的 `LightNovelSelector.Sidecar.exe`。
+3. 开发模式下向上查找仓库根目录，并按环境变量、`.venv-build`、`.venv`、系统 Python 顺序选择解释器。
+4. Sidecar 启动后立即执行 `ping`，确认协议版本。
+5. WinUI 定时 `poll`，但使用互斥标记避免轮询重入。
+6. 启动、调用途中或两次轮询之间发现进程退出时，界面自动执行一次 `RestartAsync` 和 `bootstrap`。
+7. 重启只恢复连接、持久化设置和最近报告；内存预览会明确清空，不自动重跑扫描、整理或撤销。
+8. 自动恢复失败后停止轮询并进入 `Disconnected`，由用户通过错误栏手动重新连接，避免无限重启。
+9. 页面卸载与启动、重启共用生命周期锁，关闭时不会与新进程创建发生竞态。
+10. 正常退出先发送 `shutdown`；超时或管道损坏时终止整个进程树。
+11. 文件移动或撤销运行中，窗口关闭事件会被取消并显示警告。
 
 ## UI 状态边界
 

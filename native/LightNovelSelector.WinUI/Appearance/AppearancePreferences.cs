@@ -35,9 +35,14 @@ public readonly record struct WindowMaterialState(
 
 public static class AppearancePreferences
 {
+    private const int MaxFallbackFileBytes = 64 * 1024;
     private const string TestThemeEnvironmentVariable = "LN_SELECTOR_WINUI_TEST_THEME";
     private const string TestMaterialEnvironmentVariable = "LN_SELECTOR_WINUI_TEST_MATERIAL";
     private static readonly object FallbackFileLock = new();
+    private static readonly JsonSerializerOptions FallbackJsonOptions = new()
+    {
+        WriteIndented = true,
+    };
     private static readonly string FallbackFilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "LightNovelSelector",
@@ -169,17 +174,34 @@ public static class AppearancePreferences
     {
         lock (FallbackFileLock)
         {
-            var temporaryPath = $"{FallbackFilePath}.tmp";
+            var temporaryPath = $"{FallbackFilePath}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
             try
             {
                 var values = ReadFallbackValues();
                 values[key] = value;
                 Directory.CreateDirectory(Path.GetDirectoryName(FallbackFilePath)!);
-                File.WriteAllText(
+                using (var stream = new FileStream(
                     temporaryPath,
-                    JsonSerializer.Serialize(values, new JsonSerializerOptions { WriteIndented = true }),
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    4096,
+                    FileOptions.WriteThrough
+                ))
+                using (var writer = new StreamWriter(
+                    stream,
                     new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
-                );
+                ))
+                {
+                    writer.Write(
+                        JsonSerializer.Serialize(
+                            values,
+                            FallbackJsonOptions
+                        )
+                    );
+                    writer.Flush();
+                    stream.Flush(flushToDisk: true);
+                }
                 File.Move(temporaryPath, FallbackFilePath, overwrite: true);
                 return true;
             }
@@ -201,11 +223,29 @@ public static class AppearancePreferences
     {
         try
         {
-            return File.Exists(FallbackFilePath)
-                ? JsonSerializer.Deserialize<Dictionary<string, string>>(
-                    File.ReadAllText(FallbackFilePath, Encoding.UTF8)
-                ) ?? []
-                : [];
+            if (!File.Exists(FallbackFilePath))
+            {
+                return [];
+            }
+            using var stream = new FileStream(
+                FallbackFilePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite
+            );
+            if (stream.Length > MaxFallbackFileBytes)
+            {
+                return [];
+            }
+            using var reader = new StreamReader(
+                stream,
+                Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: true
+            );
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(
+                reader.ReadToEnd(),
+                FallbackJsonOptions
+            ) ?? [];
         }
         catch
         {

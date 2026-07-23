@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import ipaddress
 import json
 import posixpath
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
-from typing import Iterable
-from xml.etree import ElementTree
+from typing import Callable, Iterable
+
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 
 from .constants import (
     ARCHIVE_TEXT_MAX_BYTES,
@@ -21,40 +25,132 @@ from .constants import (
     FILE_FINGERPRINT_CHUNK_SIZE,
     LOCAL_COVER_EXTENSIONS,
     REMOTE_JSON_MAX_BYTES,
+    REMOTE_URL_MAX_CHARS,
     USER_AGENT,
 )
 from .models import CustomRule
 from .parsing import collapse_spaces, html_to_text, normalize_for_match
 
 
+_PROXY_SYNTHETIC_NETWORKS = (ipaddress.ip_network("198.18.0.0/15"),)
+_PROXY_SYNTHETIC_DOMAIN_SUFFIXES = (
+    "anilist.co",
+    "bgm.tv",
+    "jikan.moe",
+    "myanimelist.net",
+)
+
+
+def validate_https_url(url: str) -> str:
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("远程地址不能为空。")
+    url = url.strip()
+    if len(url) > REMOTE_URL_MAX_CHARS:
+        raise ValueError("远程地址过长。")
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError("远程地址格式无效。") from exc
+    if (
+        parsed.scheme.casefold() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError("仅允许访问不含登录信息的 HTTPS 地址。")
+    hostname = parsed.hostname.rstrip(".").casefold()
+    if hostname == "localhost" or hostname.endswith((".localhost", ".local", ".internal", ".home.arpa")):
+        raise ValueError("不允许访问本机或内部网络地址。")
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        pass
+    else:
+        if not address.is_global:
+            raise ValueError("不允许访问本机或内部网络地址。")
+    return url
+
+
+def _validate_public_hostname_resolution(url: str) -> None:
+    parsed = urllib.parse.urlsplit(url)
+    hostname = parsed.hostname
+    if not hostname:
+        raise urllib.error.URLError("远程地址缺少主机名。")
+    normalized_hostname = hostname.rstrip(".").casefold()
+    trusted_proxy_domain = any(
+        normalized_hostname == suffix or normalized_hostname.endswith(f".{suffix}")
+        for suffix in _PROXY_SYNTHETIC_DOMAIN_SUFFIXES
+    )
+    try:
+        addresses = {
+            ipaddress.ip_address(str(item[4][0]).split("%", 1)[0])
+            for item in socket.getaddrinfo(
+                hostname,
+                parsed.port or 443,
+                type=socket.SOCK_STREAM,
+            )
+        }
+    except (OSError, ValueError) as exc:
+        raise urllib.error.URLError(f"无法安全解析远程主机：{hostname}") from exc
+    if not addresses or any(
+        not address.is_global
+        and not (
+            trusted_proxy_domain
+            and any(address in network for network in _PROXY_SYNTHETIC_NETWORKS)
+        )
+        for address in addresses
+    ):
+        raise urllib.error.URLError("远程主机解析到了本机或内部网络地址。")
+
+
+class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        validate_https_url(newurl)
+        _validate_public_hostname_resolution(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_HTTPS_OPENER = urllib.request.build_opener(_HttpsOnlyRedirectHandler)
+
+
+def _open_https(request: urllib.request.Request, *, timeout: float):
+    _validate_public_hostname_resolution(request.full_url)
+    return _HTTPS_OPENER.open(request, timeout=timeout)
+
+
 def http_json(url: str, *, payload: dict | None = None, timeout: float = 10.0) -> dict:
+    url = validate_https_url(url)
     headers = {"User-Agent": USER_AGENT}
     data = None
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=data, headers=headers)
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with _open_https(request, timeout=timeout) as response:
+        validate_https_url(response.geturl())
         charset = response.headers.get_content_charset() or "utf-8"
         response_data = response.read(REMOTE_JSON_MAX_BYTES + 1)
     if len(response_data) > REMOTE_JSON_MAX_BYTES:
         raise RuntimeError(f"远程接口返回的 JSON 超过允许大小（{REMOTE_JSON_MAX_BYTES} 字节）。")
     try:
         result = json.loads(response_data.decode(charset, errors="replace"))
-    except (json.JSONDecodeError, LookupError) as exc:
+    except (json.JSONDecodeError, LookupError, RecursionError, ValueError) as exc:
         raise RuntimeError("远程接口返回了无效 JSON。") from exc
     if not isinstance(result, dict):
         raise RuntimeError("远程接口返回的 JSON 根节点不是对象。")
     return result
 
 
-def http_bytes(url: str, *, timeout: float = 10.0, max_bytes: int | None = None) -> bytes:
-    if max_bytes is not None and max_bytes < 1:
+def http_bytes(url: str, *, timeout: float = 10.0, max_bytes: int = COVER_MAX_BYTES) -> bytes:
+    if max_bytes < 1:
         raise ValueError("max_bytes 必须大于 0。")
+    url = validate_https_url(url)
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        data = response.read(max_bytes + 1 if max_bytes is not None else -1)
-    if max_bytes is not None and len(data) > max_bytes:
+    with _open_https(request, timeout=timeout) as response:
+        validate_https_url(response.geturl())
+        data = response.read(max_bytes + 1)
+    if len(data) > max_bytes:
         raise RuntimeError(f"远程文件超过允许大小（{max_bytes} 字节）。")
     return data
 
@@ -173,7 +269,14 @@ def read_epub_cover_bytes(path: Path) -> bytes | None:
             fallback_name = pick_archive_cover_name(resolve_zip_member(rootfile_path, href) for href in image_hrefs)
             if fallback_name:
                 return read_zip_member(epub, fallback_name, max_bytes=COVER_MAX_BYTES)
-    except (OSError, KeyError, RuntimeError, zipfile.BadZipFile, ElementTree.ParseError):
+    except (
+        OSError,
+        KeyError,
+        RuntimeError,
+        zipfile.BadZipFile,
+        ElementTree.ParseError,
+        DefusedXmlException,
+    ):
         return None
     return None
 
@@ -243,7 +346,14 @@ def read_epub_identity_hint(path: Path) -> str | None:
                     break
             hint = collapse_spaces(" ".join(text_parts))
             return hint[:CONTENT_HINT_MAX_CHARS] or None
-    except (OSError, KeyError, RuntimeError, zipfile.BadZipFile, ElementTree.ParseError):
+    except (
+        OSError,
+        KeyError,
+        RuntimeError,
+        zipfile.BadZipFile,
+        ElementTree.ParseError,
+        DefusedXmlException,
+    ):
         return None
 
 
@@ -289,31 +399,58 @@ def read_local_cover_bytes(path: Path) -> bytes | None:
     return None
 
 
-def file_fingerprint(path: Path) -> str:
-    stat = path.stat()
+def file_fingerprint(
+    path: Path,
+    *,
+    checkpoint: Callable[[], None] | None = None,
+) -> str:
+    initial_stat = path.stat()
     digest = hashlib.sha256()
     with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(FILE_FINGERPRINT_CHUNK_SIZE), b""):
+        while True:
+            if checkpoint:
+                checkpoint()
+            chunk = handle.read(FILE_FINGERPRINT_CHUNK_SIZE)
+            if not chunk:
+                break
             digest.update(chunk)
-    return f"{stat.st_size}:{digest.hexdigest()}"
+    final_stat = path.stat()
+    if (
+        initial_stat.st_size != final_stat.st_size
+        or initial_stat.st_mtime_ns != final_stat.st_mtime_ns
+    ):
+        raise OSError(f"文件在计算指纹时发生变化：{path}")
+    return f"{final_stat.st_size}:{digest.hexdigest()}"
 
 
 def file_quick_signature(path: Path) -> str:
-    stat = path.stat()
+    initial_stat = path.stat()
     digest = hashlib.sha256()
-    digest.update(str(stat.st_size).encode("ascii"))
+    digest.update(str(initial_stat.st_size).encode("ascii"))
     with path.open("rb") as handle:
         digest.update(handle.read(FILE_FINGERPRINT_CHUNK_SIZE))
-        if stat.st_size > FILE_FINGERPRINT_CHUNK_SIZE:
-            handle.seek(max(0, stat.st_size - FILE_FINGERPRINT_CHUNK_SIZE))
+        if initial_stat.st_size > FILE_FINGERPRINT_CHUNK_SIZE:
+            handle.seek(max(0, initial_stat.st_size - FILE_FINGERPRINT_CHUNK_SIZE))
             digest.update(handle.read(FILE_FINGERPRINT_CHUNK_SIZE))
-    return f"{stat.st_size}:{digest.hexdigest()}"
+    final_stat = path.stat()
+    if (
+        initial_stat.st_size != final_stat.st_size
+        or initial_stat.st_mtime_ns != final_stat.st_mtime_ns
+    ):
+        raise OSError(f"文件在计算快速签名时发生变化：{path}")
+    return f"{final_stat.st_size}:{digest.hexdigest()}"
 
 
-def find_duplicate_files(paths: Iterable[Path]) -> dict[Path, Path]:
+def find_duplicate_files(
+    paths: Iterable[Path],
+    *,
+    checkpoint: Callable[[], None] | None = None,
+) -> dict[Path, Path]:
     candidates: dict[str, list[Path]] = {}
     duplicates: dict[Path, Path] = {}
     for path in paths:
+        if checkpoint:
+            checkpoint()
         try:
             signature = file_quick_signature(path)
         except OSError:
@@ -325,8 +462,10 @@ def find_duplicate_files(paths: Iterable[Path]) -> dict[Path, Path]:
             continue
         seen: dict[str, Path] = {}
         for path in group:
+            if checkpoint:
+                checkpoint()
             try:
-                fingerprint = file_fingerprint(path)
+                fingerprint = file_fingerprint(path, checkpoint=checkpoint)
             except OSError:
                 continue
             first_seen = seen.get(fingerprint)

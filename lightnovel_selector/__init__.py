@@ -8,10 +8,12 @@ from .classification import (
     count_plan_statuses,
     execute_classification_plan,
     find_novel_files,
+    load_classification_report,
     plan_status_label,
     revise_classification_plan,
     undo_classification_report,
     unique_target_path,
+    validate_classification_root,
     write_classification_report,
 )
 from .constants import *  # noqa: F403
@@ -33,6 +35,7 @@ from .files import (
     read_text_identity_hint,
     read_zip_member,
     resolve_zip_member,
+    validate_https_url,
     xml_local_name,
 )
 from .metadata import (
@@ -79,6 +82,7 @@ from .storage import (
     get_persistent_metadata_cache,
     load_app_settings,
     metadata_cache_path,
+    read_json_bounded,
     resolve_result_from_dict,
     resolve_result_to_dict,
     save_app_settings,
