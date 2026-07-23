@@ -1,0 +1,62 @@
+name: CodeQL 安全分析
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "23 18 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: 分析 ${{ matrix.language }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: python
+            build-mode: none
+            os: ubuntu-latest
+          - language: csharp
+            build-mode: manual
+            os: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 初始化 CodeQL
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: 配置 .NET
+        if: matrix.language == 'csharp'
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: 构建 WinUI 3
+        if: matrix.language == 'csharp'
+        shell: pwsh
+        run: |
+          dotnet restore native/LightNovelSelector.WinUI/LightNovelSelector.WinUI.csproj --locked-mode -p:Platform=x64 -p:WindowsPackageType=None
+          dotnet build native/LightNovelSelector.WinUI/LightNovelSelector.WinUI.csproj -c Release -p:Platform=x64 -p:WindowsPackageType=None --no-restore
+
+      - name: 执行 CodeQL 分析
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          category: /language:${{ matrix.language }}

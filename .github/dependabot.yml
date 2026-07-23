@@ -1,0 +1,47 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:00"
+      timezone: Asia/Hong_Kong
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - security
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:15"
+      timezone: Asia/Hong_Kong
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+
+  - package-ecosystem: nuget
+    directory: /native/LightNovelSelector.WinUI
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:30"
+      timezone: Asia/Hong_Kong
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+
+  - package-ecosystem: nuget
+    directory: /native/LightNovelSelector.WinUI.Tests
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:45"
+      timezone: Asia/Hong_Kong
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies

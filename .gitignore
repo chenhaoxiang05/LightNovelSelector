@@ -4,6 +4,12 @@
 .idea/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.vs/
+TestResults/
+.coverage
+coverage.xml
+*.sarif
 build/
 dist/
 *.spec

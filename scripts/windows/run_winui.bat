@@ -53,6 +53,6 @@ if errorlevel 1 (
 
 set "LN_SELECTOR_PYTHON=%PYTHON_EXE%"
 echo 正在启动 WinUI 3 原生界面...
-"%DOTNET_EXE%" restore "%PROJECT_ROOT%\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj" -p:Platform=x64 -p:WindowsPackageType=None
+"%DOTNET_EXE%" restore "%PROJECT_ROOT%\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj" --locked-mode -p:Platform=x64 -p:WindowsPackageType=None
 if errorlevel 1 exit /b 1
 "%DOTNET_EXE%" run --project "%PROJECT_ROOT%\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj" -c Debug -p:Platform=x64 -p:WindowsPackageType=None --no-restore
