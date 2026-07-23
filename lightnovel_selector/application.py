@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import math
 import threading
 from collections import deque
 from dataclasses import replace
@@ -25,6 +26,7 @@ from .constants import (
     CUSTOM_RULE_MAX_COUNT,
     CUSTOM_RULE_PATTERN_MAX_CHARS,
     REPORT_FILE_NAME,
+    REPORT_UI_MAX_ITEMS,
     SERIES_NAME_MAX_CHARS,
 )
 from .files import http_bytes, read_local_cover_bytes
@@ -86,6 +88,42 @@ def _data_uri(data: bytes | None) -> str | None:
         return None
     encoded = base64.b64encode(data).decode("ascii")
     return f"data:{mime};base64,{encoded}"
+
+
+def _report_text(value: object, *, max_chars: int, default: str = "") -> str:
+    return value[:max_chars] if isinstance(value, str) else default
+
+
+def _report_count(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def _report_confidence(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0.0
+    result = float(value)
+    return max(0.0, min(result, 1.0)) if math.isfinite(result) else 0.0
+
+
+def _report_item_for_ui(item: object) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    actual_target = item.get("actual_target_path")
+    return {
+        "source_path": _report_text(item.get("source_path"), max_chars=4_096),
+        "target_path": _report_text(item.get("target_path"), max_chars=4_096),
+        "actual_target_path": (
+            _report_text(actual_target, max_chars=4_096)
+            if isinstance(actual_target, str)
+            else None
+        ),
+        "series_name": _report_text(item.get("series_name"), max_chars=120),
+        "resolver_source": _report_text(item.get("resolver_source"), max_chars=120),
+        "confidence": _report_confidence(item.get("confidence")),
+        "status": _report_text(item.get("status"), max_chars=32),
+        "operation": _report_text(item.get("operation"), max_chars=32),
+        "note": _report_text(item.get("note"), max_chars=2_000),
+    }
 
 
 class ApplicationService:
@@ -262,8 +300,12 @@ class ApplicationService:
         for position, item in enumerate(raw_rules, start=1):
             if not isinstance(item, dict):
                 raise ValueError(f"第 {position} 条规则格式无效。")
-            pattern = collapse_spaces(str(item.get("pattern") or ""))
-            series = collapse_spaces(str(item.get("series") or ""))
+            pattern_value = item.get("pattern")
+            series_value = item.get("series")
+            if not isinstance(pattern_value, str) or not isinstance(series_value, str):
+                raise ValueError(f"第 {position} 条规则的匹配模式和系列名必须是字符串。")
+            pattern = collapse_spaces(pattern_value)
+            series = collapse_spaces(series_value)
             if not pattern or not series:
                 raise ValueError(f"第 {position} 条规则需要同时填写匹配模式和系列名。")
             if len(pattern) > CUSTOM_RULE_PATTERN_MAX_CHARS:
@@ -357,6 +399,10 @@ class ApplicationService:
                         raise OperationCancelled("扫描已取消。")
                     self._update_operation(operation_id, done=done, total=total)
 
+                def checkpoint() -> None:
+                    if cancel_event.is_set():
+                        raise OperationCancelled("扫描已取消。")
+
                 plans = build_classification_plan(
                     folder,
                     recursive=settings.recursive,
@@ -365,6 +411,7 @@ class ApplicationService:
                     custom_rules=settings.custom_rules,
                     progress=log,
                     progress_count=progress,
+                    checkpoint=checkpoint,
                 )
                 if cancel_event.is_set():
                     raise OperationCancelled("扫描已取消。")
@@ -533,10 +580,10 @@ class ApplicationService:
 
         metadata = None
         warning = None
-        if use_network and plan.identity_query:
+        if use_network and plan.network_query:
             try:
                 metadata = SeriesResolver(use_network=True).resolve_book_metadata_for_query(
-                    plan.identity_query,
+                    plan.network_query,
                     series_name=plan.series_name,
                 )
             except (OSError, RuntimeError) as exc:
@@ -585,11 +632,24 @@ class ApplicationService:
         items = report.get("items")
         if not isinstance(summary, dict) or not isinstance(items, list):
             raise ValueError("分类报告格式无效：summary 或 items 类型错误。")
+        safe_items = [
+            safe_item
+            for item in items[:REPORT_UI_MAX_ITEMS]
+            if (safe_item := _report_item_for_ui(item)) is not None
+        ]
         return {
             "path": str(report_path),
-            "created_at": report.get("created_at"),
-            "summary": summary,
-            "items": items,
+            "created_at": _report_text(report.get("created_at"), max_chars=64) or None,
+            "item_count": len(items),
+            "items_truncated": len(items) > REPORT_UI_MAX_ITEMS,
+            "summary": {
+                "total": _report_count(summary.get("total")),
+                "moved": _report_count(summary.get("moved")),
+                "skipped": _report_count(summary.get("skipped")),
+                "duplicates": _report_count(summary.get("duplicates")),
+                "errors": _report_count(summary.get("errors")),
+            },
+            "items": safe_items,
         }
 
     def current_folder(self) -> Path | None:

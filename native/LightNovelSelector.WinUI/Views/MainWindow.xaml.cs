@@ -49,6 +49,19 @@ public sealed partial class MainWindow : Window
 
     public void ApplyMaterial(WindowMaterial material) => _appearance.ApplyMaterial(material);
 
+    public void ActivateExistingInstance()
+    {
+        if (AppWindow.Presenter is OverlappedPresenter
+            {
+                State: OverlappedPresenterState.Minimized,
+            } presenter)
+        {
+            presenter.Restore();
+        }
+        AppWindow.Show();
+        Activate();
+    }
+
     private void OnClosed(object sender, WindowEventArgs args)
     {
         WindowRoot.ActualThemeChanged -= OnWindowRootActualThemeChanged;

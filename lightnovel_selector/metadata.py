@@ -12,8 +12,9 @@ from .constants import (
     BANGUMI_SEARCH_URL,
     BANGUMI_SUBJECT_WEB_URL,
     METADATA_SUMMARY_MAX_CHARS,
+    METADATA_TEXT_MAX_CHARS,
 )
-from .files import http_json
+from .files import http_json, validate_https_url
 from .models import BookMetadata, ResolveResult
 from .parsing import (
     acceptance_threshold,
@@ -36,37 +37,51 @@ from .storage import (
 )
 
 
-def unique_existing(values: Iterable[str | None]) -> list[str]:
+def unique_existing(values: Iterable[object]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for value in values:
-        if not value:
+        if not isinstance(value, str) or not value:
             continue
-        clean = collapse_spaces(str(value))
+        clean = collapse_spaces(value)[:METADATA_TEXT_MAX_CHARS]
         if clean and clean not in seen:
             seen.add(clean)
             result.append(clean)
+        if len(result) >= 100:
+            break
     return result
 
 
-def flatten_bangumi_value(value: object) -> list[str]:
+def flatten_bangumi_value(value: object, *, depth: int = 0) -> list[str]:
+    if depth >= 8:
+        return []
     if value is None:
         return []
     if isinstance(value, str):
-        return [value]
+        return [value[:METADATA_TEXT_MAX_CHARS]]
     if isinstance(value, dict):
-        return flatten_bangumi_value(value.get("v") or value.get("value") or value.get("name"))
+        return flatten_bangumi_value(
+            value.get("v") or value.get("value") or value.get("name"),
+            depth=depth + 1,
+        )
     if isinstance(value, list):
         result: list[str] = []
-        for item in value:
-            result.extend(flatten_bangumi_value(item))
+        for item in value[:100]:
+            result.extend(flatten_bangumi_value(item, depth=depth + 1))
+            if len(result) >= 100:
+                break
         return result
-    return [str(value)]
+    return []
 
 
 def bangumi_title_candidates(item: dict) -> list[str]:
     values: list[str | None] = [item.get("name_cn"), item.get("name")]
-    for row in item.get("infobox") or []:
+    infobox = item.get("infobox")
+    if not isinstance(infobox, list):
+        infobox = []
+    for row in infobox[:100]:
+        if not isinstance(row, dict):
+            continue
         key = str(row.get("key") or "").casefold()
         if any(label in key for label in ("别名", "alias", "title")):
             values.extend(flatten_bangumi_value(row.get("value")))
@@ -74,18 +89,28 @@ def bangumi_title_candidates(item: dict) -> list[str]:
 
 
 def bangumi_cover_url(item: dict) -> str | None:
-    images = item.get("images") or {}
-    return (
-        images.get("common")
-        or images.get("medium")
-        or images.get("large")
-        or images.get("small")
-        or item.get("image")
+    images = item.get("images")
+    if not isinstance(images, dict):
+        images = {}
+    candidates = (
+        images.get("common"),
+        images.get("medium"),
+        images.get("large"),
+        images.get("small"),
+        item.get("image"),
     )
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        try:
+            return validate_https_url(candidate)
+        except ValueError:
+            continue
+    return None
 
 
-def clean_summary(value: str | None) -> str | None:
-    if not value:
+def clean_summary(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
         return None
     lines = [line.strip() for line in value.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
     summary = "\n".join(line for line in lines if line).strip()
@@ -94,11 +119,14 @@ def clean_summary(value: str | None) -> str | None:
 
 def bangumi_subject_url(item: dict) -> str | None:
     subject_id = item.get("id")
-    return BANGUMI_SUBJECT_WEB_URL.format(subject_id=subject_id) if subject_id else None
+    if isinstance(subject_id, bool) or not isinstance(subject_id, int) or subject_id <= 0:
+        return None
+    return BANGUMI_SUBJECT_WEB_URL.format(subject_id=subject_id)
 
 
 def bangumi_metadata_from_item(item: dict, *, confidence: float, query: str) -> BookMetadata:
-    title = item.get("name_cn") or item.get("name") or query
+    candidates = bangumi_title_candidates(item)
+    title = candidates[0] if candidates else query[:METADATA_TEXT_MAX_CHARS]
     return BookMetadata(
         title=title,
         source="Bangumi",
@@ -128,7 +156,7 @@ def bangumi_search_items(query: str, *, timeout: float, pages: int = 1) -> list[
         page_items = data.get("data", [])
         if not isinstance(page_items, list):
             raise RuntimeError("Bangumi 接口返回的 data 不是数组。")
-        for item in page_items:
+        for item in page_items[:BANGUMI_SEARCH_LIMIT]:
             if not isinstance(item, dict):
                 continue
             subject_id = item.get("id")
@@ -228,6 +256,7 @@ class SeriesResolver:
             cached_payload = self.persistent_cache.get(persistent_key)
             result = resolve_result_from_dict(cached_payload) if cached_payload else None
             if result is None:
+                self.last_network_error = None
                 result = self._resolve_with_network(local_guess)
                 if result is not None:
                     self.persistent_cache.set(persistent_key, resolve_result_to_dict(result))
@@ -282,9 +311,19 @@ class SeriesResolver:
             return cached_metadata
 
         volume_number = parse_volume_number(query)
+        self.last_network_error = None
         try:
             items = bangumi_search_items(query, timeout=self.timeout, pages=BANGUMI_DETAIL_PAGES)
-        except (urllib.error.URLError, TimeoutError, OSError, RuntimeError, json.JSONDecodeError) as exc:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            OSError,
+            RuntimeError,
+            json.JSONDecodeError,
+            KeyError,
+            TypeError,
+            ValueError,
+        ) as exc:
             self.last_network_error = f"resolve_book_metadata: {exc}"
             return None
 
@@ -334,7 +373,16 @@ class SeriesResolver:
         for provider in (self._search_bangumi, self._search_anilist, self._search_jikan):
             try:
                 result = provider(query)
-            except (urllib.error.URLError, TimeoutError, OSError, RuntimeError, json.JSONDecodeError) as exc:
+            except (
+                urllib.error.URLError,
+                TimeoutError,
+                OSError,
+                RuntimeError,
+                json.JSONDecodeError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ) as exc:
                 self.last_network_error = f"{provider.__name__}: {exc}"
                 result = None
             if result is not None:
@@ -360,7 +408,8 @@ class SeriesResolver:
             return None
 
         item = best[2]
-        display_title = item.get("name_cn") or item.get("name") or best[1]
+        display_titles = bangumi_title_candidates(item)
+        display_title = display_titles[0] if display_titles else best[1]
         return ResolveResult(
             series_name=safe_folder_name(display_title),
             source="Bangumi",
@@ -403,13 +452,18 @@ class SeriesResolver:
         for item in media_items:
             if not isinstance(item, dict):
                 continue
-            titles = item.get("title") or {}
+            titles = item.get("title")
+            if not isinstance(titles, dict):
+                titles = {}
+            synonyms = item.get("synonyms")
+            if not isinstance(synonyms, list):
+                synonyms = []
             candidates = unique_existing(
                 [
                     titles.get("english"),
                     titles.get("romaji"),
                     titles.get("native"),
-                    *(item.get("synonyms") or []),
+                    *synonyms,
                 ]
             )
             for candidate in candidates:
@@ -420,8 +474,18 @@ class SeriesResolver:
         if best is None or best[0] < acceptance_threshold(query):
             return None
 
-        titles = best[2].get("title") or {}
-        canonical = titles.get("english") or titles.get("romaji") or titles.get("native") or best[1]
+        titles = best[2].get("title")
+        if not isinstance(titles, dict):
+            titles = {}
+        canonical_candidates = unique_existing(
+            [
+                titles.get("english"),
+                titles.get("romaji"),
+                titles.get("native"),
+                best[1],
+            ]
+        )
+        canonical = canonical_candidates[0]
         return ResolveResult(
             series_name=safe_folder_name(canonical),
             source="AniList",
@@ -446,8 +510,12 @@ class SeriesResolver:
                 item.get("title"),
                 item.get("title_japanese"),
             ]
-            for title in item.get("titles") or []:
-                title_values.append(title.get("title"))
+            titles = item.get("titles")
+            if not isinstance(titles, list):
+                titles = []
+            for title in titles[:100]:
+                if isinstance(title, dict):
+                    title_values.append(title.get("title"))
             candidates = unique_existing(title_values)
             for candidate in candidates:
                 score = score_title(query, candidate)
@@ -457,7 +525,14 @@ class SeriesResolver:
         if best is None or best[0] < acceptance_threshold(query):
             return None
 
-        canonical = best[2].get("title_english") or best[2].get("title") or best[1]
+        canonical_candidates = unique_existing(
+            [
+                best[2].get("title_english"),
+                best[2].get("title"),
+                best[1],
+            ]
+        )
+        canonical = canonical_candidates[0]
         return ResolveResult(
             series_name=safe_folder_name(canonical),
             source="Jikan",

@@ -1,4 +1,6 @@
 import json
+import os
+import socket
 import unittest
 import zipfile
 from io import StringIO
@@ -24,7 +26,7 @@ from lightnovel_selector.application import ApplicationService
 from lightnovel_selector.constants import SETTINGS_MAX_BYTES
 from lightnovel_selector.models import ClassificationPlan
 from lightnovel_selector.sidecar import MAX_REQUEST_CHARS, SidecarServer
-from lightnovel_selector.storage import load_app_settings
+from lightnovel_selector.storage import load_app_settings, write_json_atomic
 
 
 class RemoteResponseSafetyTests(unittest.TestCase):
@@ -49,6 +51,20 @@ class RemoteResponseSafetyTests(unittest.TestCase):
 
         opened_response.geturl.return_value = "https://example.test/search"
         with patch("lightnovel_selector.files._open_https", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "无效 JSON"):
+                http_json("https://example.test/search")
+
+    def test_http_json_normalizes_excessive_nesting(self) -> None:
+        response = MagicMock()
+        opened_response = response.__enter__.return_value
+        opened_response.geturl.return_value = "https://example.test/search"
+        opened_response.headers.get_content_charset.return_value = "utf-8"
+        opened_response.read.return_value = b"{}"
+
+        with (
+            patch("lightnovel_selector.files._open_https", return_value=response),
+            patch("lightnovel_selector.files.json.loads", side_effect=RecursionError),
+        ):
             with self.assertRaisesRegex(RuntimeError, "无效 JSON"):
                 http_json("https://example.test/search")
 
@@ -81,6 +97,69 @@ class RemoteResponseSafetyTests(unittest.TestCase):
                 "http://example.test/cover.jpg",
             )
 
+    def test_remote_request_rejects_domain_resolving_to_private_address(self) -> None:
+        with (
+            patch(
+                "lightnovel_selector.files.socket.getaddrinfo",
+                return_value=[
+                    (
+                        socket.AddressFamily.AF_INET,
+                        socket.SocketKind.SOCK_STREAM,
+                        socket.IPPROTO_TCP,
+                        "",
+                        ("127.0.0.1", 443),
+                    )
+                ],
+            ),
+            patch("lightnovel_selector.files._HTTPS_OPENER.open") as opener,
+        ):
+            with self.assertRaisesRegex(OSError, "内部网络"):
+                http_bytes("https://example.test/cover.jpg", max_bytes=32)
+            opener.assert_not_called()
+
+    def test_remote_request_allows_trusted_provider_proxy_synthetic_address(self) -> None:
+        response = MagicMock()
+        opened_response = response.__enter__.return_value
+        opened_response.geturl.return_value = "https://api.bgm.tv/cover.jpg"
+        opened_response.read.return_value = b"image"
+        with (
+            patch(
+                "lightnovel_selector.files.socket.getaddrinfo",
+                return_value=[
+                    (
+                        socket.AddressFamily.AF_INET,
+                        socket.SocketKind.SOCK_STREAM,
+                        socket.IPPROTO_TCP,
+                        "",
+                        ("198.18.0.1", 443),
+                    )
+                ],
+            ),
+            patch("lightnovel_selector.files._HTTPS_OPENER.open", return_value=response) as opener,
+        ):
+            self.assertEqual(http_bytes("https://api.bgm.tv/cover.jpg", max_bytes=32), b"image")
+            opener.assert_called_once()
+
+    def test_remote_request_rejects_untrusted_proxy_synthetic_address(self) -> None:
+        with (
+            patch(
+                "lightnovel_selector.files.socket.getaddrinfo",
+                return_value=[
+                    (
+                        socket.AddressFamily.AF_INET,
+                        socket.SocketKind.SOCK_STREAM,
+                        socket.IPPROTO_TCP,
+                        "",
+                        ("198.18.0.1", 443),
+                    )
+                ],
+            ),
+            patch("lightnovel_selector.files._HTTPS_OPENER.open") as opener,
+        ):
+            with self.assertRaisesRegex(OSError, "内部网络"):
+                http_bytes("https://example.test/cover.jpg", max_bytes=32)
+            opener.assert_not_called()
+
     def test_validate_https_url_accepts_public_https(self) -> None:
         self.assertEqual(
             validate_https_url("https://api.bgm.tv/v0/search/subjects"),
@@ -112,6 +191,32 @@ class SettingsSafetyTests(unittest.TestCase):
             path.write_bytes(b" " * (SETTINGS_MAX_BYTES + 1))
             self.assertEqual(load_app_settings(path).last_folder, "")
 
+    def test_excessively_nested_settings_fall_back_to_defaults(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "settings.json"
+            path.write_text("{}", encoding="utf-8")
+
+            with patch("lightnovel_selector.storage.json.loads", side_effect=RecursionError):
+                self.assertEqual(load_app_settings(path).last_folder, "")
+
+    def test_atomic_json_write_does_not_reuse_predictable_temporary_path(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "settings.json"
+            predictable_path = root / f".settings.json.{os.getpid()}.tmp"
+            predictable_path.write_text("sentinel", encoding="utf-8")
+
+            write_json_atomic(path, {"saved": True})
+
+            self.assertEqual(
+                json.loads(path.read_text(encoding="utf-8")),
+                {"saved": True},
+            )
+            self.assertEqual(
+                predictable_path.read_text(encoding="utf-8"),
+                "sentinel",
+            )
+
     def test_string_booleans_are_not_treated_as_true(self) -> None:
         service = ApplicationService()
         with self.assertRaisesRegex(ValueError, "必须是布尔值"):
@@ -124,6 +229,42 @@ class SettingsSafetyTests(unittest.TestCase):
                 }
             )
 
+    def test_malformed_rule_types_and_oversized_folder_are_ignored_on_load(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "settings.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "last_folder": "x" * 40_000,
+                        "custom_rules": [
+                            {"pattern": ["not", "text"], "series": "Series"},
+                            {"pattern": "valid", "series": {"not": "text"}},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            settings = load_app_settings(path)
+
+            self.assertEqual(settings.last_folder, "")
+            self.assertEqual(settings.custom_rules, ())
+
+    def test_sidecar_settings_reject_non_string_rule_fields(self) -> None:
+        service = ApplicationService()
+
+        with self.assertRaisesRegex(ValueError, "必须是字符串"):
+            service.save_settings(
+                {
+                    "use_network": False,
+                    "recursive": False,
+                    "auto_rename": False,
+                    "custom_rules": [
+                        {"pattern": ["not", "text"], "series": "Series"},
+                    ],
+                }
+            )
+
 
 class ReportSafetyTests(unittest.TestCase):
     def test_oversized_report_is_rejected_without_unbounded_read(self) -> None:
@@ -132,6 +273,15 @@ class ReportSafetyTests(unittest.TestCase):
             report_path.write_text('{"payload":"too large"}', encoding="utf-8")
             with patch("lightnovel_selector.classification.REPORT_MAX_BYTES", 8):
                 with self.assertRaisesRegex(ValueError, "超过允许大小"):
+                    load_classification_report(report_path)
+
+    def test_excessively_nested_report_is_rejected(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            report_path = Path(temp_dir) / "classification_report.json"
+            report_path.write_text("{}", encoding="utf-8")
+
+            with patch("lightnovel_selector.classification.json.loads", side_effect=RecursionError):
+                with self.assertRaisesRegex(ValueError, "格式无效"):
                     load_classification_report(report_path)
 
 
@@ -188,7 +338,108 @@ class UndoReportSafetyTests(unittest.TestCase):
 
             self.assertEqual(report["schema_version"], REPORT_SCHEMA_VERSION)
             self.assertEqual(Path(report["root_path"]), root.resolve())
+            self.assertEqual(report["items"][0]["source_size"], 3)
+            self.assertIsInstance(report["items"][0]["source_mtime_ns"], int)
             self.assertEqual(undo_classification_report(report_path), (1, 0))
+
+    def test_undo_rejects_file_modified_after_classification(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("original", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            plans = build_classification_plan(root, use_network=False)
+            execute_classification_plan(plans, report_path=report_path)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            target = Path(report["items"][0]["actual_target_path"])
+            target.write_text("changed after classification", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "已发生变化"):
+                undo_classification_report(report_path)
+
+            self.assertFalse(source.exists())
+            self.assertTrue(target.exists())
+
+    def test_undo_rejects_target_replaced_by_directory(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("original", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            plans = build_classification_plan(root, use_network=False)
+            execute_classification_plan(plans, report_path=report_path)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            target = Path(report["items"][0]["actual_target_path"])
+            target.unlink()
+            target.mkdir()
+
+            with self.assertRaisesRegex(ValueError, "不再是原来的普通文件"):
+                undo_classification_report(report_path)
+
+            self.assertFalse(source.exists())
+            self.assertTrue(target.is_dir())
+
+    def test_undo_rejects_incomplete_file_state_fields(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "book.txt"
+            target = root / "Series" / "book.txt"
+            target.parent.mkdir()
+            target.write_text("content", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            self.write_report(
+                report_path,
+                root_path=root,
+                source_path=source,
+                target_path=target,
+            )
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report["items"][0]["source_size"] = target.stat().st_size
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "必须同时存在或同时省略"):
+                undo_classification_report(report_path)
+
+            self.assertFalse(source.exists())
+            self.assertTrue(target.exists())
+
+    def test_undo_rechecks_each_target_during_long_batch(self) -> None:
+        from shutil import move as real_move
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A Sword.Art.Online.Vol.01.txt"
+            second = root / "B Sword.Art.Online.Vol.02.txt"
+            first.write_text("first", encoding="utf-8")
+            second.write_text("second", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            plans = build_classification_plan(root, use_network=False)
+            execute_classification_plan(plans, report_path=report_path)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            first_target = Path(report["items"][0]["actual_target_path"])
+            move_count = 0
+
+            def change_next_target_after_first_restore(source_path, target_path):
+                nonlocal move_count
+                result = real_move(source_path, target_path)
+                move_count += 1
+                if move_count == 1:
+                    first_target.write_text(
+                        "changed while undo was running",
+                        encoding="utf-8",
+                    )
+                return result
+
+            with patch(
+                "lightnovel_selector.classification.shutil.move",
+                side_effect=change_next_target_after_first_restore,
+            ):
+                with self.assertRaisesRegex(ValueError, "已发生变化"):
+                    undo_classification_report(report_path)
+
+            self.assertFalse(first.exists())
+            self.assertTrue(first_target.exists())
+            self.assertTrue(second.exists())
 
     def test_execute_rejects_source_outside_root_before_moving(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -213,6 +464,40 @@ class UndoReportSafetyTests(unittest.TestCase):
 
             self.assertTrue(outside.exists())
             self.assertFalse(target_dir.exists())
+
+    def test_execute_rejects_source_replaced_by_directory(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("content", encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+
+            source.unlink()
+            source.mkdir()
+
+            with self.assertRaisesRegex(ValueError, "不再是普通文件"):
+                execute_classification_plan(plans, report_path=root / "classification_report.json")
+
+            self.assertTrue(source.is_dir())
+            self.assertFalse((root / "classification_report.json").exists())
+
+    def test_execute_rejects_target_directory_replaced_by_file(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("content", encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+            target_dir = plans[0].target_dir
+            target_dir.write_text("occupied", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "目标目录已被其他文件占用"):
+                execute_classification_plan(
+                    plans,
+                    report_path=root / "classification_report.json",
+                )
+
+            self.assertTrue(source.exists())
+            self.assertTrue(target_dir.is_file())
 
     def test_undo_rejects_source_outside_classification_root(self) -> None:
         with TemporaryDirectory() as temp_dir:

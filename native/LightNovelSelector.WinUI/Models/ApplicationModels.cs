@@ -136,6 +136,8 @@ public sealed class ReportSummary
 {
     public string Path { get; init; } = string.Empty;
     public string? CreatedAt { get; init; }
+    public int ItemCount { get; init; }
+    public bool ItemsTruncated { get; init; }
     public ReportStats Summary { get; init; } = new();
     public IReadOnlyList<ReportItem> Items { get; init; } = [];
 }

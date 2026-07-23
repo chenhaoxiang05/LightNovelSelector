@@ -26,9 +26,12 @@ public sealed partial class MainPage
             var createdAt = DateTimeOffset.TryParse(report.CreatedAt, out var timestamp)
                 ? timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
                 : report.CreatedAt;
-            ReportStatusText.Text = string.IsNullOrWhiteSpace(createdAt)
+            var reportStatus = string.IsNullOrWhiteSpace(createdAt)
                 ? report.Path
                 : $"生成于 {createdAt} · {report.Path}";
+            ReportStatusText.Text = report.ItemsTruncated
+                ? $"{reportStatus} · 显示前 {report.Items.Count} / {report.ItemCount} 项"
+                : reportStatus;
             ReportMovedText.Text = $"移动 {report.Summary.Moved}";
             ReportSkippedText.Text = $"跳过 {report.Summary.Skipped}";
             ReportDuplicateText.Text = $"重复 {report.Summary.Duplicates}";

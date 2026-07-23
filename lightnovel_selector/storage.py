@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -9,16 +11,47 @@ from pathlib import Path
 from .constants import (
     CUSTOM_RULE_MAX_COUNT,
     CUSTOM_RULE_PATTERN_MAX_CHARS,
+    LOCAL_PATH_MAX_CHARS,
     METADATA_CACHE_MAX_BYTES,
     METADATA_CACHE_MAX_ENTRIES,
     METADATA_CACHE_TTL_SECONDS,
     METADATA_CACHE_VERSION,
+    METADATA_SUMMARY_MAX_CHARS,
+    METADATA_TEXT_MAX_CHARS,
+    REMOTE_URL_MAX_CHARS,
     SERIES_NAME_MAX_CHARS,
     SETTINGS_FILE_NAME,
     SETTINGS_MAX_BYTES,
 )
 from .models import AppSettings, BookMetadata, CustomRule, ResolveResult
 from .parsing import collapse_spaces
+
+
+def _required_text(value: object, *, max_chars: int) -> str:
+    if not isinstance(value, str):
+        raise TypeError("字段必须是字符串。")
+    text = collapse_spaces(value)[:max_chars]
+    if not text:
+        raise ValueError("字段不能为空。")
+    return text
+
+
+def _optional_text(value: object, *, max_chars: int, preserve_lines: bool = False) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip() if preserve_lines else collapse_spaces(value)
+    return text[:max_chars] or None
+
+
+def _confidence(value: object) -> float:
+    if isinstance(value, bool):
+        raise TypeError("置信度不能是布尔值。")
+    if not isinstance(value, (int, float, str)):
+        raise TypeError("置信度必须是数值。")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError("置信度必须是有限数值。")
+    return max(0.0, min(result, 1.0))
 
 
 def book_metadata_to_dict(metadata: BookMetadata) -> dict:
@@ -36,13 +69,17 @@ def book_metadata_to_dict(metadata: BookMetadata) -> dict:
 def book_metadata_from_dict(data: dict) -> BookMetadata | None:
     try:
         return BookMetadata(
-            title=str(data["title"]),
-            source=str(data.get("source") or "Bangumi"),
-            confidence=float(data.get("confidence") or 0.0),
-            query=str(data.get("query") or data["title"]),
-            summary=data.get("summary"),
-            cover_url=data.get("cover_url"),
-            url=data.get("url"),
+            title=_required_text(data["title"], max_chars=METADATA_TEXT_MAX_CHARS),
+            source=_required_text(data.get("source") or "Bangumi", max_chars=80),
+            confidence=_confidence(data.get("confidence") or 0.0),
+            query=_required_text(data.get("query") or data["title"], max_chars=METADATA_TEXT_MAX_CHARS),
+            summary=_optional_text(
+                data.get("summary"),
+                max_chars=METADATA_SUMMARY_MAX_CHARS,
+                preserve_lines=True,
+            ),
+            cover_url=_optional_text(data.get("cover_url"), max_chars=REMOTE_URL_MAX_CHARS),
+            url=_optional_text(data.get("url"), max_chars=REMOTE_URL_MAX_CHARS),
         )
     except (KeyError, TypeError, ValueError):
         return None
@@ -64,14 +101,24 @@ def resolve_result_to_dict(result: ResolveResult) -> dict:
 def resolve_result_from_dict(data: dict) -> ResolveResult | None:
     try:
         return ResolveResult(
-            series_name=str(data["series_name"]),
-            source=str(data.get("source") or "缓存"),
-            confidence=float(data.get("confidence") or 0.0),
-            local_guess=str(data.get("local_guess") or data["series_name"]),
-            metadata_title=data.get("metadata_title"),
-            metadata_summary=data.get("metadata_summary"),
-            metadata_cover_url=data.get("metadata_cover_url"),
-            metadata_url=data.get("metadata_url"),
+            series_name=_required_text(data["series_name"], max_chars=SERIES_NAME_MAX_CHARS),
+            source=_required_text(data.get("source") or "缓存", max_chars=80),
+            confidence=_confidence(data.get("confidence") or 0.0),
+            local_guess=_required_text(
+                data.get("local_guess") or data["series_name"],
+                max_chars=METADATA_TEXT_MAX_CHARS,
+            ),
+            metadata_title=_optional_text(data.get("metadata_title"), max_chars=METADATA_TEXT_MAX_CHARS),
+            metadata_summary=_optional_text(
+                data.get("metadata_summary"),
+                max_chars=METADATA_SUMMARY_MAX_CHARS,
+                preserve_lines=True,
+            ),
+            metadata_cover_url=_optional_text(
+                data.get("metadata_cover_url"),
+                max_chars=REMOTE_URL_MAX_CHARS,
+            ),
+            metadata_url=_optional_text(data.get("metadata_url"), max_chars=REMOTE_URL_MAX_CHARS),
         )
     except (KeyError, TypeError, ValueError):
         return None
@@ -102,7 +149,7 @@ def read_json_bounded(path: Path, *, max_bytes: int) -> object | None:
         if len(data) > max_bytes:
             return None
         return json.loads(data.decode("utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError, ValueError):
         return None
 
 
@@ -112,19 +159,29 @@ def settings_path() -> Path:
 
 def write_json_atomic(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary_path: Path | None = None
     try:
-        with temporary_path.open("w", encoding="utf-8", newline="\n") as handle:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=path.parent,
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
             json.dump(payload, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary_path, path)
     finally:
-        try:
-            temporary_path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def app_settings_from_dict(data: dict) -> AppSettings:
@@ -135,8 +192,12 @@ def app_settings_from_dict(data: dict) -> AppSettings:
     for item in raw_rules[:CUSTOM_RULE_MAX_COUNT]:
         if not isinstance(item, dict):
             continue
-        pattern = collapse_spaces(str(item.get("pattern") or ""))
-        series = collapse_spaces(str(item.get("series") or ""))
+        pattern_value = item.get("pattern")
+        series_value = item.get("series")
+        if not isinstance(pattern_value, str) or not isinstance(series_value, str):
+            continue
+        pattern = collapse_spaces(pattern_value)
+        series = collapse_spaces(series_value)
         if (
             pattern
             and series
@@ -153,7 +214,11 @@ def app_settings_from_dict(data: dict) -> AppSettings:
         recursive=recursive if isinstance(recursive, bool) else False,
         auto_rename=auto_rename if isinstance(auto_rename, bool) else False,
         custom_rules=tuple(rules),
-        last_folder=last_folder if isinstance(last_folder, str) else "",
+        last_folder=(
+            last_folder
+            if isinstance(last_folder, str) and len(last_folder) <= LOCAL_PATH_MAX_CHARS
+            else ""
+        ),
     )
 
 

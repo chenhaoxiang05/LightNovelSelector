@@ -60,6 +60,7 @@ class ClassificationPlan:
     local_cover_bytes: bytes | None = None
     identity_hint: str | None = None
     identity_query: str | None = None
+    network_query: str | None = None
     rename_to: str | None = None
     series_key: str | None = None
     status: str = "ready"

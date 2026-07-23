@@ -26,8 +26,6 @@ public sealed class PythonSidecarClient : IAsyncDisposable
     private long _requestId;
     private bool _disposed;
 
-    public event Action<string>? DiagnosticReceived;
-
     public bool IsRunning => _process is { HasExited: false };
 
     public async Task<SidecarPing> StartAsync(CancellationToken cancellationToken = default)
@@ -288,7 +286,12 @@ public sealed class PythonSidecarClient : IAsyncDisposable
                 new SidecarRemoteException(errorType ?? "RemoteError", message ?? "Python 服务返回未知错误。")
             );
         }
-        catch (Exception exc) when (exc is JsonException or InvalidOperationException or SidecarProtocolException)
+        catch (Exception exc) when (
+            exc is JsonException
+                or InvalidOperationException
+                or KeyNotFoundException
+                or SidecarProtocolException
+        )
         {
             AddDiagnostic($"忽略无效的 Python 服务响应：{exc.Message}");
             if (responseId is long id && _pending.TryGetValue(id, out var completion))
@@ -319,7 +322,11 @@ public sealed class PythonSidecarClient : IAsyncDisposable
         {
             await process.WaitForExitAsync().ConfigureAwait(false);
         }
-        catch (Exception exc) when (exc is InvalidOperationException or ObjectDisposedException)
+        catch (Exception exc) when (
+            exc is InvalidOperationException
+                or ObjectDisposedException
+                or System.ComponentModel.Win32Exception
+        )
         {
             return;
         }
@@ -352,7 +359,6 @@ public sealed class PythonSidecarClient : IAsyncDisposable
         {
             _diagnostics.TryDequeue(out _);
         }
-        DiagnosticReceived?.Invoke(message.Trim());
     }
 
     private string DiagnosticSuffix()
@@ -432,7 +438,11 @@ public sealed class PythonSidecarClient : IAsyncDisposable
                 process.WaitForExit(3000);
             }
         }
-        catch (InvalidOperationException)
+        catch (Exception exc) when (
+            exc is InvalidOperationException
+                or NotSupportedException
+                or System.ComponentModel.Win32Exception
+        )
         {
         }
         finally
@@ -470,7 +480,12 @@ public sealed class PythonSidecarClient : IAsyncDisposable
                     using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                     await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
                 }
-                catch (Exception exc) when (exc is IOException or InvalidOperationException or OperationCanceledException)
+                catch (Exception exc) when (
+                    exc is IOException
+                        or InvalidOperationException
+                        or OperationCanceledException
+                        or System.ComponentModel.Win32Exception
+                )
                 {
                     TerminateProcess();
                 }
@@ -483,7 +498,12 @@ public sealed class PythonSidecarClient : IAsyncDisposable
                     await Task.WhenAll(_stdoutTask ?? Task.CompletedTask, _stderrTask ?? Task.CompletedTask)
                         .ConfigureAwait(false);
                 }
-                catch (Exception exc) when (exc is IOException or ObjectDisposedException or InvalidOperationException)
+                catch (Exception exc) when (
+                    exc is IOException
+                        or ObjectDisposedException
+                        or InvalidOperationException
+                        or System.ComponentModel.Win32Exception
+                )
                 {
                 }
             }

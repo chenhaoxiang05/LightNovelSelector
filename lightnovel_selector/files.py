@@ -5,12 +5,13 @@ import hashlib
 import ipaddress
 import json
 import posixpath
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
@@ -29,6 +30,15 @@ from .constants import (
 )
 from .models import CustomRule
 from .parsing import collapse_spaces, html_to_text, normalize_for_match
+
+
+_PROXY_SYNTHETIC_NETWORKS = (ipaddress.ip_network("198.18.0.0/15"),)
+_PROXY_SYNTHETIC_DOMAIN_SUFFIXES = (
+    "anilist.co",
+    "bgm.tv",
+    "jikan.moe",
+    "myanimelist.net",
+)
 
 
 def validate_https_url(url: str) -> str:
@@ -62,9 +72,42 @@ def validate_https_url(url: str) -> str:
     return url
 
 
+def _validate_public_hostname_resolution(url: str) -> None:
+    parsed = urllib.parse.urlsplit(url)
+    hostname = parsed.hostname
+    if not hostname:
+        raise urllib.error.URLError("远程地址缺少主机名。")
+    normalized_hostname = hostname.rstrip(".").casefold()
+    trusted_proxy_domain = any(
+        normalized_hostname == suffix or normalized_hostname.endswith(f".{suffix}")
+        for suffix in _PROXY_SYNTHETIC_DOMAIN_SUFFIXES
+    )
+    try:
+        addresses = {
+            ipaddress.ip_address(str(item[4][0]).split("%", 1)[0])
+            for item in socket.getaddrinfo(
+                hostname,
+                parsed.port or 443,
+                type=socket.SOCK_STREAM,
+            )
+        }
+    except (OSError, ValueError) as exc:
+        raise urllib.error.URLError(f"无法安全解析远程主机：{hostname}") from exc
+    if not addresses or any(
+        not address.is_global
+        and not (
+            trusted_proxy_domain
+            and any(address in network for network in _PROXY_SYNTHETIC_NETWORKS)
+        )
+        for address in addresses
+    ):
+        raise urllib.error.URLError("远程主机解析到了本机或内部网络地址。")
+
+
 class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         validate_https_url(newurl)
+        _validate_public_hostname_resolution(newurl)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -72,6 +115,7 @@ _HTTPS_OPENER = urllib.request.build_opener(_HttpsOnlyRedirectHandler)
 
 
 def _open_https(request: urllib.request.Request, *, timeout: float):
+    _validate_public_hostname_resolution(request.full_url)
     return _HTTPS_OPENER.open(request, timeout=timeout)
 
 
@@ -91,7 +135,7 @@ def http_json(url: str, *, payload: dict | None = None, timeout: float = 10.0) -
         raise RuntimeError(f"远程接口返回的 JSON 超过允许大小（{REMOTE_JSON_MAX_BYTES} 字节）。")
     try:
         result = json.loads(response_data.decode(charset, errors="replace"))
-    except (json.JSONDecodeError, LookupError) as exc:
+    except (json.JSONDecodeError, LookupError, RecursionError, ValueError) as exc:
         raise RuntimeError("远程接口返回了无效 JSON。") from exc
     if not isinstance(result, dict):
         raise RuntimeError("远程接口返回的 JSON 根节点不是对象。")
@@ -355,11 +399,20 @@ def read_local_cover_bytes(path: Path) -> bytes | None:
     return None
 
 
-def file_fingerprint(path: Path) -> str:
+def file_fingerprint(
+    path: Path,
+    *,
+    checkpoint: Callable[[], None] | None = None,
+) -> str:
     initial_stat = path.stat()
     digest = hashlib.sha256()
     with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(FILE_FINGERPRINT_CHUNK_SIZE), b""):
+        while True:
+            if checkpoint:
+                checkpoint()
+            chunk = handle.read(FILE_FINGERPRINT_CHUNK_SIZE)
+            if not chunk:
+                break
             digest.update(chunk)
     final_stat = path.stat()
     if (
@@ -388,10 +441,16 @@ def file_quick_signature(path: Path) -> str:
     return f"{final_stat.st_size}:{digest.hexdigest()}"
 
 
-def find_duplicate_files(paths: Iterable[Path]) -> dict[Path, Path]:
+def find_duplicate_files(
+    paths: Iterable[Path],
+    *,
+    checkpoint: Callable[[], None] | None = None,
+) -> dict[Path, Path]:
     candidates: dict[str, list[Path]] = {}
     duplicates: dict[Path, Path] = {}
     for path in paths:
+        if checkpoint:
+            checkpoint()
         try:
             signature = file_quick_signature(path)
         except OSError:
@@ -403,8 +462,10 @@ def find_duplicate_files(paths: Iterable[Path]) -> dict[Path, Path]:
             continue
         seen: dict[str, Path] = {}
         for path in group:
+            if checkpoint:
+                checkpoint()
             try:
-                fingerprint = file_fingerprint(path)
+                fingerprint = file_fingerprint(path, checkpoint=checkpoint)
             except OSError:
                 continue
             first_seen = seen.get(fingerprint)

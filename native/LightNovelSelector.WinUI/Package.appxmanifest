@@ -10,7 +10,7 @@
   <Identity
     Name="2BC7D233-A3F2-4E65-9F3A-43E7AA9493C9"
     Publisher="CN=chenhaoxiang05"
-    Version="2.0.0.0" />
+    Version="2.0.1.0" />
 
   <mp:PhoneIdentity PhoneProductId="2BC7D233-A3F2-4E65-9F3A-43E7AA9493C9" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
