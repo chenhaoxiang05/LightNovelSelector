@@ -20,6 +20,7 @@ LightNovelSelector/
 │  │  ├─ Appearance/             主题和窗口材质
 │  │  ├─ Helpers/                动效辅助
 │  │  ├─ Models/                 C# 协议与界面模型
+│  │  ├─ Security/               外部 URI 等系统边界校验
 │  │  ├─ Services/               Sidecar 客户端
 │  │  ├─ Styles/                 语义设计令牌
 │  │  ├─ ViewModels/             筛选与连接状态逻辑
@@ -36,6 +37,8 @@ LightNovelSelector/
 │  └─ verify_sidecar.py          验证打包 Sidecar 协议
 ├─ docs/                          架构、截图与维护说明
 ├─ LICENSE                        MIT 开源许可证
+├─ Directory.Build.props          NuGet 锁定、审计与确定性构建
+├─ requirements-runtime.txt       Python 运行依赖
 ├─ lightnovel_classifier.py      Python CLI/API 兼容入口
 ├─ lightnovel_sidecar.py         PyInstaller Sidecar 入口
 ├─ run.bat / run_winui.bat       WinUI 启动入口
@@ -60,4 +63,4 @@ LightNovelSelector/
 - 远端 `legacy/webview-v2` 分支：可直接检出和维护的旧 WebView 版本。
 - 远端 `ui` 分支：早期隔离 UI 试验分支。
 
-当前源码不保留 `UI_test` worktree、WebView 静态资源或损坏虚拟环境归档。
+当前源码不保留旧 WebView 静态资源或损坏虚拟环境归档。

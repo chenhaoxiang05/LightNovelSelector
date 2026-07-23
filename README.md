@@ -6,6 +6,8 @@
 
   <p>
     <a href="https://github.com/chenhaoxiang05/LightNovelSelector/actions/workflows/windows-ci.yml"><img alt="Windows 持续集成" src="https://github.com/chenhaoxiang05/LightNovelSelector/actions/workflows/windows-ci.yml/badge.svg"></a>
+    <a href="https://github.com/chenhaoxiang05/LightNovelSelector/actions/workflows/codeql.yml"><img alt="CodeQL 安全分析" src="https://github.com/chenhaoxiang05/LightNovelSelector/actions/workflows/codeql.yml/badge.svg"></a>
+    <a href="https://github.com/chenhaoxiang05/LightNovelSelector/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/chenhaoxiang05/LightNovelSelector?display_name=tag"></a>
     <img alt="Windows 10 和 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows11&logoColor=white">
     <img alt="WinUI 3" src="https://img.shields.io/badge/UI-WinUI%203-005FB8">
     <img alt="Python 3.10 或更高版本" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
@@ -28,7 +30,7 @@
 </picture>
 
 > [!TIP]
-> 最新稳定版是 **WinUI 3 原生版 `v2.0.0`**。可直接下载 [Windows x64 安装器](https://github.com/chenhaoxiang05/LightNovelSelector/releases/download/v2.0.0/LightNovelSelector-v2.0.0-win-x64-setup.exe)，不需要另装 Python、.NET 或 Windows App SDK。
+> 最新稳定版是 **WinUI 3 原生版 `v2.0.1`**。可直接下载 [Windows x64 安装器](https://github.com/chenhaoxiang05/LightNovelSelector/releases/download/v2.0.1/LightNovelSelector-v2.0.1-win-x64-setup.exe)，不需要另装 Python、.NET 或 Windows App SDK。
 
 ## 为什么使用它
 
@@ -43,13 +45,19 @@
 
 ### 下载发布版
 
-从 [`v2.0.0` 发布页](https://github.com/chenhaoxiang05/LightNovelSelector/releases/tag/v2.0.0) 下载：
+从 [`v2.0.1` 发布页](https://github.com/chenhaoxiang05/LightNovelSelector/releases/tag/v2.0.1) 下载：
 
 ```text
-LightNovelSelector-v2.0.0-win-x64-setup.exe
+LightNovelSelector-v2.0.1-win-x64-setup.exe
 ```
 
 安装器按当前 Windows 用户安装，不要求管理员权限，并包含 .NET、Windows App SDK 与 Python Sidecar。发布产物暂未进行商业代码签名，请只从本仓库 Release 下载并核对发布页提供的 SHA-256。
+
+下载后可在 PowerShell 中计算校验值，并与 Release 页面逐字比对：
+
+```powershell
+Get-FileHash .\LightNovelSelector-v2.0.1-win-x64-setup.exe -Algorithm SHA256
+```
 
 ### 从源码运行 WinUI 3 版本
 
@@ -110,9 +118,13 @@ LightNovelSelector 将“能恢复”视为批量整理的基本要求：
 - 设置或目录变化后，旧预览自动失效。
 - 重复检测比较完整文件内容，不依赖容易碰撞的头尾片段。
 - 执行前再次验证源文件、目标路径和报告写入能力。
+- 扫描后源文件发生大小或修改时间变化时拒绝执行，并提示重新扫描。
+- 重复检测期间可随时取消；单次扫描最多处理 10,000 个受支持文件，超出时会提示分目录整理。
+- 主程序只保留一个活动实例，重复启动会唤回已有窗口，避免并发操作同一目录。
 - 目标存在同名文件时不会覆盖，重复项与错误项默认跳过。
 - 部分文件移动成功后即使后续失败，已完成记录仍会保存。
 - 撤销同样执行冲突检查，不用另一次覆盖去修复第一次操作。
+- 分类后的目标文件若已被编辑、替换为目录或符号链接，撤销会停止并保留现状。
 - 撤销前会校验报告版本、应用标识、所在目录和全部文件路径，拒绝执行超出所选目录的记录。
 
 分类报告默认保存在：
@@ -125,7 +137,7 @@ LightNovelSelector 将“能恢复”视为批量整理的基本要求：
 
 ## 识别能力
 
-识别顺序综合自定义规则、文件名与内容提示，以及可选的 Bangumi、AniList、Jikan 在线条目。在线识别仅发送用于检索的标题或系列查询，不上传小说文件；关闭联网后仍可使用全部本地整理能力。
+识别顺序综合自定义规则、文件名与本地内容提示，以及可选的 Bangumi、AniList、Jikan 在线条目。在线识别仅向这些服务发送从文件名、用户规则或手动修正得到的标题/系列查询；从弱文件名小说正文中提取的提示始终留在本机，不会联网发送。应用不上传小说文件、完整哈希或分类报告；远程 JSON 和封面只允许公开 HTTPS 地址，并设有体积上限，同时拒绝解析到本机或内部网络的域名。关闭联网后仍可使用全部本地整理能力。
 
 支持格式：
 
