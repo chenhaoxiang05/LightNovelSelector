@@ -97,9 +97,11 @@ def read_json_bounded(path: Path, *, max_bytes: int) -> object | None:
     if max_bytes < 1:
         raise ValueError("max_bytes 必须大于 0。")
     try:
-        if path.stat().st_size > max_bytes:
+        with path.open("rb") as handle:
+            data = handle.read(max_bytes + 1)
+        if len(data) > max_bytes:
             return None
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(data.decode("utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         return None
 
@@ -228,6 +230,31 @@ class PersistentMetadataCache:
         }
 
     def _save(self) -> None:
+        entries = self._prune_entries(self.data.get("entries", {}))
+        items = list(entries.items())
+
+        def payload_for(count: int) -> dict:
+            return {
+                "version": METADATA_CACHE_VERSION,
+                "entries": dict(items[:count]),
+            }
+
+        def encoded_size(payload: dict) -> int:
+            text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+            return len(text.encode("utf-8"))
+
+        if encoded_size(payload_for(len(items))) > METADATA_CACHE_MAX_BYTES:
+            low = 0
+            high = len(items)
+            while low < high:
+                middle = (low + high + 1) // 2
+                if encoded_size(payload_for(middle)) <= METADATA_CACHE_MAX_BYTES:
+                    low = middle
+                else:
+                    high = middle - 1
+            self.data = payload_for(low)
+        else:
+            self.data = payload_for(len(items))
         try:
             write_json_atomic(self.path, self.data)
         except OSError:

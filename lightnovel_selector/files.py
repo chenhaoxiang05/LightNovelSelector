@@ -98,15 +98,15 @@ def http_json(url: str, *, payload: dict | None = None, timeout: float = 10.0) -
     return result
 
 
-def http_bytes(url: str, *, timeout: float = 10.0, max_bytes: int | None = None) -> bytes:
-    if max_bytes is not None and max_bytes < 1:
+def http_bytes(url: str, *, timeout: float = 10.0, max_bytes: int = COVER_MAX_BYTES) -> bytes:
+    if max_bytes < 1:
         raise ValueError("max_bytes 必须大于 0。")
     url = validate_https_url(url)
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with _open_https(request, timeout=timeout) as response:
         validate_https_url(response.geturl())
-        data = response.read(max_bytes + 1 if max_bytes is not None else -1)
-    if max_bytes is not None and len(data) > max_bytes:
+        data = response.read(max_bytes + 1)
+    if len(data) > max_bytes:
         raise RuntimeError(f"远程文件超过允许大小（{max_bytes} 字节）。")
     return data
 
@@ -356,24 +356,36 @@ def read_local_cover_bytes(path: Path) -> bytes | None:
 
 
 def file_fingerprint(path: Path) -> str:
-    stat = path.stat()
+    initial_stat = path.stat()
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(FILE_FINGERPRINT_CHUNK_SIZE), b""):
             digest.update(chunk)
-    return f"{stat.st_size}:{digest.hexdigest()}"
+    final_stat = path.stat()
+    if (
+        initial_stat.st_size != final_stat.st_size
+        or initial_stat.st_mtime_ns != final_stat.st_mtime_ns
+    ):
+        raise OSError(f"文件在计算指纹时发生变化：{path}")
+    return f"{final_stat.st_size}:{digest.hexdigest()}"
 
 
 def file_quick_signature(path: Path) -> str:
-    stat = path.stat()
+    initial_stat = path.stat()
     digest = hashlib.sha256()
-    digest.update(str(stat.st_size).encode("ascii"))
+    digest.update(str(initial_stat.st_size).encode("ascii"))
     with path.open("rb") as handle:
         digest.update(handle.read(FILE_FINGERPRINT_CHUNK_SIZE))
-        if stat.st_size > FILE_FINGERPRINT_CHUNK_SIZE:
-            handle.seek(max(0, stat.st_size - FILE_FINGERPRINT_CHUNK_SIZE))
+        if initial_stat.st_size > FILE_FINGERPRINT_CHUNK_SIZE:
+            handle.seek(max(0, initial_stat.st_size - FILE_FINGERPRINT_CHUNK_SIZE))
             digest.update(handle.read(FILE_FINGERPRINT_CHUNK_SIZE))
-    return f"{stat.st_size}:{digest.hexdigest()}"
+    final_stat = path.stat()
+    if (
+        initial_stat.st_size != final_stat.st_size
+        or initial_stat.st_mtime_ns != final_stat.st_mtime_ns
+    ):
+        raise OSError(f"文件在计算快速签名时发生变化：{path}")
+    return f"{final_stat.st_size}:{digest.hexdigest()}"
 
 
 def find_duplicate_files(paths: Iterable[Path]) -> dict[Path, Path]:

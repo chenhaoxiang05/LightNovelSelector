@@ -132,7 +132,7 @@ class SidecarServer:
         }
 
     def _write(self, response: dict[str, Any]) -> None:
-        self._output.write(json.dumps(response, ensure_ascii=False, separators=(",", ":")) + "\n")
+        self._output.write(json.dumps(response, ensure_ascii=True, separators=(",", ":")) + "\n")
         self._output.flush()
 
     def serve_forever(self) -> int:

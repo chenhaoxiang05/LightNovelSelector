@@ -14,6 +14,7 @@ from lightnovel_selector import (
     execute_classification_plan,
     http_bytes,
     http_json,
+    load_classification_report,
     read_epub_cover_bytes,
     read_epub_identity_hint,
     undo_classification_report,
@@ -122,6 +123,16 @@ class SettingsSafetyTests(unittest.TestCase):
                     "custom_rules": [],
                 }
             )
+
+
+class ReportSafetyTests(unittest.TestCase):
+    def test_oversized_report_is_rejected_without_unbounded_read(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            report_path = Path(temp_dir) / "classification_report.json"
+            report_path.write_text('{"payload":"too large"}', encoding="utf-8")
+            with patch("lightnovel_selector.classification.REPORT_MAX_BYTES", 8):
+                with self.assertRaisesRegex(ValueError, "超过允许大小"):
+                    load_classification_report(report_path)
 
 
 class SidecarSafetyTests(unittest.TestCase):

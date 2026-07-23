@@ -130,7 +130,16 @@ function Invoke-AppSmokeTest {
     }
 
     try {
-        $process = Start-Process -FilePath $AppPath -PassThru -Wait
+        $process = Start-Process -FilePath $AppPath -PassThru
+        if (-not $process.WaitForExit(30000)) {
+            try {
+                $process.Kill($true)
+                $process.WaitForExit(5000)
+            }
+            catch {
+            }
+            throw "WinUI $Mode smoke test timed out after 30 seconds."
+        }
         if ($process.ExitCode -ne 0) {
             throw "WinUI $Mode smoke test failed with exit code $($process.ExitCode)."
         }

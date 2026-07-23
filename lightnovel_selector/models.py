@@ -51,6 +51,8 @@ class ClassificationPlan:
     resolver_source: str
     confidence: float
     local_guess: str
+    source_size: int | None = None
+    source_mtime_ns: int | None = None
     metadata_title: str | None = None
     metadata_summary: str | None = None
     metadata_cover_url: str | None = None

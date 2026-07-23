@@ -30,9 +30,14 @@ public sealed partial class MainPage
         DetailEmptyState.Visibility = Visibility.Collapsed;
         DetailContent.Visibility = Visibility.Collapsed;
         DetailLoadingState.Visibility = Visibility.Visible;
+        var lockTaken = false;
         try
         {
-            var detail = await _sidecar.GetDetailAsync(plan.Index, cancellation.Token);
+            await Task.Delay(140, cancellation.Token);
+            await _detailRequestLock.WaitAsync(cancellation.Token);
+            lockTaken = true;
+            _isDetailRequestActive = true;
+            var detail = await _sidecar.GetDetailAsync(plan.Index);
             if (cancellation.IsCancellationRequested || (ResultsList.SelectedItem as PlanItem)?.Index != detail.Index)
             {
                 return;
@@ -47,10 +52,18 @@ public sealed partial class MainPage
         {
             DetailLoadingState.Visibility = Visibility.Collapsed;
             DetailEmptyState.Visibility = Visibility.Visible;
-            ShowToast(exc.Message, ToastKind.Error);
+            if (!_disposing)
+            {
+                ShowToast(exc.Message, ToastKind.Error);
+            }
         }
         finally
         {
+            if (lockTaken)
+            {
+                _isDetailRequestActive = false;
+                _detailRequestLock.Release();
+            }
             if (ReferenceEquals(_detailCancellation, cancellation))
             {
                 _detailCancellation = null;

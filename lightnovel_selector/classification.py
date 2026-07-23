@@ -15,7 +15,7 @@ from .constants import (
     REPORT_SCHEMA_VERSION,
     SUPPORTED_EXTENSIONS,
 )
-from .files import find_duplicate_files, match_custom_rule, read_identity_hint, read_local_cover_bytes
+from .files import find_duplicate_files, match_custom_rule, read_identity_hint
 from .metadata import SeriesResolver, suggest_renamed_filename
 from .models import ClassificationPlan, CustomRule, ResolveResult
 from .parsing import (
@@ -130,9 +130,11 @@ def write_classification_report(
 
 def load_classification_report(report_path: Path) -> dict:
     try:
-        if report_path.stat().st_size > REPORT_MAX_BYTES:
+        with report_path.open("rb") as handle:
+            data = handle.read(REPORT_MAX_BYTES + 1)
+        if len(data) > REPORT_MAX_BYTES:
             raise ValueError(f"分类报告超过允许大小（{REPORT_MAX_BYTES} 字节）。")
-        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report = json.loads(data.decode("utf-8"))
     except (UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError("分类报告格式无效：文件不是有效的 UTF-8 JSON。") from exc
     if not isinstance(report, dict):
@@ -184,6 +186,19 @@ def _validate_execution_plan(
             seen_targets.add(target_path)
             if plan.source_path.is_symlink():
                 raise ValueError("分类计划的源文件已变为符号链接，请重新扫描。")
+            try:
+                current_stat = plan.source_path.stat()
+            except OSError as exc:
+                raise ValueError(f"无法重新校验源文件：{plan.source_path}") from exc
+            if (
+                plan.source_size is not None
+                and plan.source_mtime_ns is not None
+                and (
+                    current_stat.st_size != plan.source_size
+                    or current_stat.st_mtime_ns != plan.source_mtime_ns
+                )
+            ):
+                raise ValueError(f"源文件在扫描后发生变化，请重新扫描：{plan.source_path.name}")
 
 
 def _report_root(report: dict, report_path: Path) -> Path:
@@ -290,6 +305,10 @@ def build_classification_plan(
     reserved_targets: set[Path] = set()
 
     for index, path in enumerate(files, start=1):
+        try:
+            source_stat = path.stat()
+        except OSError:
+            source_stat = None
         if progress:
             progress(f"[{index}/{len(files)}] 识别：{path.name}")
         duplicate_of = duplicates.get(path)
@@ -305,6 +324,8 @@ def build_classification_plan(
                     resolver_source="重复文件检测",
                     confidence=1.0,
                     local_guess=local_guess,
+                    source_size=source_stat.st_size if source_stat else None,
+                    source_mtime_ns=source_stat.st_mtime_ns if source_stat else None,
                     identity_query=extract_book_lookup_query(path.name),
                     series_key=folder_name,
                     status="duplicate",
@@ -365,11 +386,12 @@ def build_classification_plan(
                     resolver_source=result.source,
                     confidence=result.confidence,
                     local_guess=result.local_guess,
+                    source_size=source_stat.st_size if source_stat else None,
+                    source_mtime_ns=source_stat.st_mtime_ns if source_stat else None,
                     metadata_title=(metadata.title if metadata else result.metadata_title),
                     metadata_summary=(metadata.summary if metadata else result.metadata_summary),
                     metadata_cover_url=(metadata.cover_url if metadata else result.metadata_cover_url),
                     metadata_url=(metadata.url if metadata else result.metadata_url),
-                    local_cover_bytes=read_local_cover_bytes(path),
                     identity_hint=identity_hint,
                     identity_query=identity_query,
                     rename_to=rename_to,
@@ -390,6 +412,8 @@ def build_classification_plan(
                     resolver_source="文件读取失败",
                     confidence=0.0,
                     local_guess=local_guess,
+                    source_size=source_stat.st_size if source_stat else None,
+                    source_mtime_ns=source_stat.st_mtime_ns if source_stat else None,
                     identity_query=extract_book_lookup_query(path.name),
                     series_key=folder_name,
                     status="error",

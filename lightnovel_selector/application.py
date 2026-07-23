@@ -27,7 +27,7 @@ from .constants import (
     REPORT_FILE_NAME,
     SERIES_NAME_MAX_CHARS,
 )
-from .files import http_bytes
+from .files import http_bytes, read_local_cover_bytes
 from .metadata import SeriesResolver
 from .models import AppSettings, ClassificationPlan, CustomRule
 from .parsing import collapse_spaces
@@ -59,7 +59,7 @@ def plan_to_dict(plan: ClassificationPlan, index: int) -> dict[str, Any]:
         "rename_to": plan.rename_to,
         "metadata_title": plan.metadata_title,
         "metadata_url": plan.metadata_url,
-        "has_local_cover": bool(plan.local_cover_bytes),
+        "has_local_cover": plan.source_path.suffix.casefold() in {".epub", ".cbz", ".zip"},
         "will_move": plan.will_move,
     }
 
@@ -546,7 +546,8 @@ class ApplicationService:
         summary = (metadata.summary if metadata else None) or plan.metadata_summary or "暂无可用简介。"
         subject_url = (metadata.url if metadata else None) or plan.metadata_url
         cover_url = (metadata.cover_url if metadata else None) or plan.metadata_cover_url
-        cover_bytes = plan.local_cover_bytes
+        local_cover_bytes = read_local_cover_bytes(plan.source_path)
+        cover_bytes = local_cover_bytes
         if cover_bytes is None and cover_url:
             try:
                 cover_bytes = http_bytes(cover_url, timeout=8.0, max_bytes=COVER_MAX_BYTES)
@@ -561,7 +562,7 @@ class ApplicationService:
             "summary": summary,
             "subject_url": subject_url,
             "cover_data_url": cover_data_url,
-            "cover_source": "本地封面" if plan.local_cover_bytes and cover_data_url else "在线封面" if cover_data_url else "无封面",
+            "cover_source": "本地封面" if local_cover_bytes and cover_data_url else "在线封面" if cover_data_url else "无封面",
             "file_name": plan.source_path.name,
             "source_path": str(plan.source_path),
             "target_path": str(plan.target_path),

@@ -35,6 +35,7 @@ public readonly record struct WindowMaterialState(
 
 public static class AppearancePreferences
 {
+    private const int MaxFallbackFileBytes = 64 * 1024;
     private const string TestThemeEnvironmentVariable = "LN_SELECTOR_WINUI_TEST_THEME";
     private const string TestMaterialEnvironmentVariable = "LN_SELECTOR_WINUI_TEST_MATERIAL";
     private static readonly object FallbackFileLock = new();
@@ -201,11 +202,26 @@ public static class AppearancePreferences
     {
         try
         {
-            return File.Exists(FallbackFilePath)
-                ? JsonSerializer.Deserialize<Dictionary<string, string>>(
-                    File.ReadAllText(FallbackFilePath, Encoding.UTF8)
-                ) ?? []
-                : [];
+            if (!File.Exists(FallbackFilePath))
+            {
+                return [];
+            }
+            using var stream = new FileStream(
+                FallbackFilePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite
+            );
+            if (stream.Length > MaxFallbackFileBytes)
+            {
+                return [];
+            }
+            using var reader = new StreamReader(
+                stream,
+                Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: true
+            );
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(reader.ReadToEnd()) ?? [];
         }
         catch
         {
