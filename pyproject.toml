@@ -1,9 +1,9 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = ["UI_test", "archive_old_code", "build", "dist", ".venv", ".venv-build"]
+norecursedirs = ["build", "dist", ".venv", ".venv-build"]
 cache_dir = "build/.pytest_cache"
 
 [tool.ruff]
 target-version = "py310"
 line-length = 120
-exclude = ["UI_test", "archive_old_code", "build", "dist", ".venv", ".venv-build"]
+exclude = ["build", "dist", ".venv", ".venv-build"]

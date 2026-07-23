@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Window
+    x:Class="LightNovelSelector.WinUI.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="轻小说整理器">
+    <Grid x:Name="WindowRoot" Background="Transparent">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border
+            x:Name="SolidBackdropLayer"
+            Grid.RowSpan="2"
+            Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+            Visibility="Collapsed" />
+
+        <Border
+            Grid.RowSpan="2"
+            Background="{ThemeResource BackdropToneBrush}"
+            IsHitTestVisible="False" />
+
+        <TitleBar x:Name="AppTitleBar" Title="轻小说整理器">
+            <TitleBar.IconSource>
+                <ImageIconSource ImageSource="Assets/AppIcon.ico" />
+            </TitleBar.IconSource>
+        </TitleBar>
+
+        <Frame x:Name="RootFrame" Grid.Row="1" Background="Transparent" />
+    </Grid>
+</Window>

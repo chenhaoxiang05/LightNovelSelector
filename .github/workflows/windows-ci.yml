@@ -1,0 +1,59 @@
+name: Windows 持续集成
+
+on:
+  push:
+    branches: [main, codex/winui3-native]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Python 与 WinUI 验证
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 配置 Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: 安装 Python 依赖
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: 验证 Python 核心
+        shell: pwsh
+        run: |
+          python -m py_compile lightnovel_classifier.py lightnovel_sidecar.py tools/verify_sidecar.py
+          foreach ($file in Get-ChildItem lightnovel_selector,tests -Recurse -Filter *.py) {
+            python -m py_compile $file.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          python -m pytest -q
+          python -m ruff check .
+          python -m vulture lightnovel_classifier.py lightnovel_selector tests --min-confidence 80
+
+      - name: 配置 .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: 还原 .NET 依赖
+        shell: pwsh
+        run: |
+          dotnet restore native/LightNovelSelector.WinUI.Tests/LightNovelSelector.WinUI.Tests.csproj
+          dotnet restore native/LightNovelSelector.WinUI/LightNovelSelector.WinUI.csproj -p:Platform=x64 -p:WindowsPackageType=None
+
+      - name: 执行 C# 单元测试
+        run: dotnet test native/LightNovelSelector.WinUI.Tests/LightNovelSelector.WinUI.Tests.csproj -c Release --no-restore --logger "console;verbosity=minimal"
+
+      - name: 构建 WinUI 3
+        run: dotnet build native/LightNovelSelector.WinUI/LightNovelSelector.WinUI.csproj -c Release -p:Platform=x64 -p:WindowsPackageType=None --no-restore

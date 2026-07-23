@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "LightNovelSelector.WinUI (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "LightNovelSelector.WinUI (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
