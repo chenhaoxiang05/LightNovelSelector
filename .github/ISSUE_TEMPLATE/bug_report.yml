@@ -14,7 +14,7 @@ body:
     attributes:
       label: 软件版本
       description: 请填写 Release 版本或提交 SHA。
-      placeholder: v1.3.0 或 e055155
+      placeholder: v2.0.0 或提交 SHA
     validations:
       required: true
 

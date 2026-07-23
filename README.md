@@ -9,6 +9,7 @@
     <img alt="Windows 10 和 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows11&logoColor=white">
     <img alt="WinUI 3" src="https://img.shields.io/badge/UI-WinUI%203-005FB8">
     <img alt="Python 3.10 或更高版本" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
+    <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-2EA44F"></a>
   </p>
 
   <p>
@@ -25,8 +26,8 @@
   <img src="docs/interface-winui-light.png" alt="LightNovelSelector WinUI 3 整理工作台">
 </picture>
 
-> [!NOTE]
-> WinUI 3 `v2.0.0` 已在原生开发分支完成代码、安装器与 Windows CI 验证，目前尚未合并到 `main` 或发布为正式 Release。公开稳定版仍为 [`v1.3.0`](https://github.com/chenhaoxiang05/LightNovelSelector/releases/tag/v1.3.0)。这段状态说明会在正式发布时同步更新，避免下载者拿到与文档不一致的版本。
+> [!TIP]
+> 最新稳定版是 **WinUI 3 原生版 `v2.0.0`**。可直接下载 [Windows x64 安装器](https://github.com/chenhaoxiang05/LightNovelSelector/releases/download/v2.0.0/LightNovelSelector-v2.0.0-win-x64-setup.exe)，不需要另装 Python、.NET 或 Windows App SDK。
 
 ## 为什么使用它
 
@@ -41,7 +42,7 @@
 
 ### 下载发布版
 
-前往 [Releases](https://github.com/chenhaoxiang05/LightNovelSelector/releases) 下载当前公开稳定版。WinUI 3 安装器正式发布后，文件名将采用：
+从 [`v2.0.0` 发布页](https://github.com/chenhaoxiang05/LightNovelSelector/releases/tag/v2.0.0) 下载：
 
 ```text
 LightNovelSelector-v2.0.0-win-x64-setup.exe
@@ -51,7 +52,7 @@ LightNovelSelector-v2.0.0-win-x64-setup.exe
 
 ### 从源码运行 WinUI 3 版本
 
-开发环境需要 Windows 10 1809 或更高版本、Python 3.10+ 与 .NET 10 SDK。正式合并前，请从仓库的 [Branches](https://github.com/chenhaoxiang05/LightNovelSelector/branches) 页面进入 WinUI 3 原生开发分支，并通过 **Code → Download ZIP** 下载该分支。WinUI 3 进入默认分支后可直接运行：
+开发环境需要 Windows 10 1809 或更高版本、Python 3.10+ 与 .NET 10 SDK：
 
 ```powershell
 git clone https://github.com/chenhaoxiang05/LightNovelSelector.git
@@ -157,5 +158,6 @@ winget install JRSoftware.InnoSetup
 - 安全问题：不要公开附带真实目录、小说内容或敏感日志，请按 [安全说明](SECURITY.md) 私下报告。
 - 参与开发：阅读 [贡献指南](CONTRIBUTING.md) 和 [行为准则](CODE_OF_CONDUCT.md)。
 
-> [!IMPORTANT]
-> 当前仓库尚未选择开源许可证。源码公开可见不等于自动授予复制、再发布或商用权利；许可证确定后会在仓库首页明确展示。
+## 开源许可证
+
+LightNovelSelector 采用 [MIT License](LICENSE)。你可以使用、修改、分发、再许可或销售本软件，也欢迎提交改进；分发源码或软件副本时需保留原版权声明和许可证文本。

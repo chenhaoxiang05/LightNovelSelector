@@ -35,6 +35,7 @@ LightNovelSelector/
 │  ├─ generate_native_assets.py  生成原生应用图标
 │  └─ verify_sidecar.py          验证打包 Sidecar 协议
 ├─ docs/                          架构、截图与维护说明
+├─ LICENSE                        MIT 开源许可证
 ├─ lightnovel_classifier.py      Python CLI/API 兼容入口
 ├─ lightnovel_sidecar.py         PyInstaller Sidecar 入口
 ├─ run.bat / run_winui.bat       WinUI 启动入口
@@ -56,6 +57,7 @@ LightNovelSelector/
 ## 历史恢复点
 
 - `legacy-webview-final`：最后一个包含 pywebview/WebView 桌面层的完整版本。
+- 远端 `legacy/webview-v2` 分支：可直接检出和维护的旧 WebView 版本。
 - 远端 `ui` 分支：早期隔离 UI 试验分支。
 
 当前源码不保留 `UI_test` worktree、WebView 静态资源或损坏虚拟环境归档。

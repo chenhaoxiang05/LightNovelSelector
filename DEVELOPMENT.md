@@ -119,6 +119,8 @@ git diff --check
 dist\winui\LightNovelSelector-v2.0.0-win-x64-setup.exe
 ```
 
+安装器会在安装前显示根目录中的 MIT `LICENSE`，并把许可证保留在应用安装目录。
+
 可选参数：
 
 ```powershell
@@ -153,5 +155,6 @@ Windows App SDK 自包含发布会携带 WinUI 控件的 `.mui` 本地化资源�
 - 不提交 `build`、`dist`、虚拟环境、安装器或临时截图。
 - 发布版本时从审查通过的分支创建标签和 Release。
 - 稳定分支不用于保存实验构建产物。
+- 正式 Release 从 `main` 创建；旧架构使用 `legacy/*` 分支和不可变标签归档。
 
 GitHub Actions 会在 Windows 上执行 Python 检查、C# 测试和 WinUI 构建。

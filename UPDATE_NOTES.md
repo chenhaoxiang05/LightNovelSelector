@@ -1,5 +1,7 @@
 # LightNovelSelector v2.0.0 更新说明
 
+发布日期：2026-07-24
+
 ## 本轮重点
 
 本轮完成从旧 WebView 桌面层到 WinUI 3 的全面收口，并重做 Windows 交付方式。分类语义和 Sidecar 协议保持兼容，下载者从手动解压 ZIP 改为直接运行单个安装 EXE。
@@ -48,8 +50,9 @@
 - 新增中文贡献指南、安全说明、社区行为准则、Bug/功能 Issue 表单和 Pull Request 模板。
 - 仓库 About 改为正式产品说明，并补充 WinUI 3、Python、Windows 文件整理等 Topics。
 - 开启 GitHub 私密漏洞报告入口，避免高影响问题通过公开 Issue 泄露细节。
-- 明确说明当前尚未选择开源许可证，不在未经确认的情况下替维护者授予复制或商用权利。
-- 默认分支继续保持 `main`；页面改动通过草稿 PR 审阅，不自动合并或发布 Release。
+- 项目正式采用 MIT License，允许使用、修改与分发，并在安装器和安装目录中保留许可证。
+- WinUI 3 原生版本进入 `main`，旧 WebView 版本保存在 `legacy/webview-v2` 分支和 `legacy-webview-final` 标签。
+- 发布 `v2.0.0` 中文 Release，提供单 EXE 安装器和 SHA-256 校验值。
 
 ## 验证结果
 
@@ -60,9 +63,9 @@
 - Sidecar `ping` / `shutdown` 协议通过独立工具验证。
 - 暂存发布版启动和外观冒烟通过。
 - 安装、安装后启动、关闭、卸载与残留进程检查通过。
+- 发布安装器 SHA-256：`2B33896CEC0641A51F7951A8EE0BAB5A3857EAE208E2F15B68A55FCD627D7C0F`。
 
 ## 后续可选工作
 
 - 购买 Windows 代码签名证书，减少下载和安装时的未知发布者提示。
-- 在正式发布流程中自动生成并公布 SHA-256。
 - 根据真实用户样本继续调整分类规则和元数据命中率。
