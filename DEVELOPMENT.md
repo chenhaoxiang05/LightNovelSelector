@@ -82,7 +82,7 @@ dotnet build native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj -c 
 git diff --check
 ```
 
-当前基线为 46 项 Python 测试和 14 项 C# 测试。
+当前基线为 53 项 Python 测试和 14 项 C# 测试。
 
 ## UI 与动效约束
 

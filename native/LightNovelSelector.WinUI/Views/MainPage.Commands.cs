@@ -176,7 +176,7 @@ public sealed partial class MainPage
         {
             XamlRoot = XamlRoot,
             Title = "确认整理这些文件？",
-            Content = $"将移动 {movable} 个文件。执行过程会写入分类报告，完成后可按报告撤销。",
+            Content = $"将移动 {movable} 个文件。分类报告会保存在所选目录中，请保留原位置，以便之后安全撤销。",
             PrimaryButtonText = "开始整理",
             CloseButtonText = "返回检查",
             DefaultButton = ContentDialogButton.Primary,
@@ -204,7 +204,7 @@ public sealed partial class MainPage
         {
             XamlRoot = XamlRoot,
             Title = "撤销上次分类？",
-            Content = "软件会按最近的分类报告将已移动文件恢复到原位置；目标位置已有同名文件时会安全跳过。",
+            Content = "软件会先校验最近报告的目录与路径边界，再恢复已移动文件；原位置已有同名文件时会安全跳过。",
             PrimaryButtonText = "开始撤销",
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Close,

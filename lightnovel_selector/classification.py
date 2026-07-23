@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable
 
-from .constants import APP_NAME, APP_VERSION, SUPPORTED_EXTENSIONS
+from .constants import APP_NAME, APP_VERSION, REPORT_SCHEMA_VERSION, SUPPORTED_EXTENSIONS
 from .files import find_duplicate_files, match_custom_rule, read_identity_hint, read_local_cover_bytes
 from .metadata import SeriesResolver, suggest_renamed_filename
 from .models import ClassificationPlan, CustomRule, ResolveResult
@@ -82,9 +82,12 @@ def write_classification_report(
     actual_targets: dict[Path, Path] | None = None,
 ) -> None:
     actual_targets = actual_targets or {}
+    resolved_report_path = report_path.expanduser().resolve()
     report = {
         "app": APP_NAME,
         "version": APP_VERSION,
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "root_path": str(resolved_report_path.parent),
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "summary": {
             "total": len(plans),
@@ -99,6 +102,90 @@ def write_classification_report(
         ],
     }
     write_json_atomic(report_path, report)
+
+
+def _report_root(report: dict, report_path: Path) -> Path:
+    if report.get("app") != APP_NAME:
+        raise ValueError("撤销报告格式无效：应用标识不匹配。")
+
+    schema_version = report.get("schema_version", 1)
+    if isinstance(schema_version, bool) or not isinstance(schema_version, int):
+        raise ValueError("撤销报告格式无效：schema_version 必须是整数。")
+    if schema_version not in {1, REPORT_SCHEMA_VERSION}:
+        raise ValueError(f"不支持的撤销报告版本：{schema_version}。")
+
+    if schema_version == 1:
+        return report_path.parent
+
+    root_value = report.get("root_path")
+    if not isinstance(root_value, str) or not root_value.strip():
+        raise ValueError("撤销报告格式无效：缺少分类根目录。")
+    root_path = Path(root_value).expanduser()
+    if not root_path.is_absolute():
+        raise ValueError("撤销报告格式无效：分类根目录必须是绝对路径。")
+    try:
+        resolved_root = root_path.resolve()
+    except OSError as exc:
+        raise ValueError(f"无法解析撤销报告的分类根目录：{exc}") from exc
+    if report_path.parent != resolved_root:
+        raise ValueError("撤销报告必须保留在生成它的分类根目录中。")
+    return resolved_root
+
+
+def _undo_item_path(value: object, *, field_name: str, item_number: int, root_path: Path) -> Path:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"撤销报告第 {item_number} 项缺少有效的 {field_name}。")
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        raise ValueError(f"撤销报告第 {item_number} 项的 {field_name} 必须是绝对路径。")
+    try:
+        resolved_path = path.resolve()
+    except OSError as exc:
+        raise ValueError(f"无法解析撤销报告第 {item_number} 项的 {field_name}：{exc}") from exc
+    try:
+        relative_path = resolved_path.relative_to(root_path)
+    except ValueError as exc:
+        raise ValueError(f"撤销报告第 {item_number} 项的 {field_name} 超出分类根目录。") from exc
+    if not relative_path.parts:
+        raise ValueError(f"撤销报告第 {item_number} 项的 {field_name} 不能指向分类根目录本身。")
+    return resolved_path
+
+
+def _validated_undo_items(report: dict, report_path: Path) -> list[tuple[Path, Path]]:
+    root_path = _report_root(report, report_path)
+    items = report.get("items")
+    if not isinstance(items, list):
+        raise ValueError("撤销报告格式无效：items 必须是数组。")
+
+    moved_items: list[tuple[Path, Path]] = []
+    seen_sources: set[Path] = set()
+    seen_targets: set[Path] = set()
+    for item_number, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"撤销报告第 {item_number} 项必须是对象。")
+        if item.get("operation") != "moved":
+            continue
+        source_path = _undo_item_path(
+            item.get("source_path"),
+            field_name="source_path",
+            item_number=item_number,
+            root_path=root_path,
+        )
+        target_value = item.get("actual_target_path") or item.get("target_path")
+        target_path = _undo_item_path(
+            target_value,
+            field_name="target_path",
+            item_number=item_number,
+            root_path=root_path,
+        )
+        if source_path == target_path:
+            raise ValueError(f"撤销报告第 {item_number} 项的源路径与目标路径相同。")
+        if source_path in seen_sources or target_path in seen_targets:
+            raise ValueError(f"撤销报告第 {item_number} 项包含重复的文件路径。")
+        seen_sources.add(source_path)
+        seen_targets.add(target_path)
+        moved_items.append((source_path, target_path))
+    return moved_items
 
 
 def build_classification_plan(
@@ -336,22 +423,14 @@ def undo_classification_report(
     progress: Callable[[str], None] | None = None,
     progress_count: Callable[[int, int], None] | None = None,
 ) -> tuple[int, int]:
+    report_path = report_path.expanduser().resolve()
     report = json.loads(report_path.read_text(encoding="utf-8"))
     if not isinstance(report, dict):
         raise ValueError("撤销报告格式无效：根节点必须是对象。")
-    items = report.get("items") or []
-    if not isinstance(items, list):
-        raise ValueError("撤销报告格式无效：items 必须是数组。")
-    moved_items = [
-        item
-        for item in reversed(items)
-        if isinstance(item, dict) and item.get("operation") == "moved"
-    ]
+    moved_items = list(reversed(_validated_undo_items(report, report_path)))
     restored = 0
     skipped = 0
-    for index, item in enumerate(moved_items, start=1):
-        source_path = Path(str(item.get("source_path") or ""))
-        target_path = Path(str(item.get("actual_target_path") or item.get("target_path") or ""))
+    for index, (source_path, target_path) in enumerate(moved_items, start=1):
         if not target_path.exists() or source_path.exists():
             skipped += 1
             if progress_count:

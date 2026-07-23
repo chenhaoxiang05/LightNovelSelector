@@ -15,6 +15,7 @@
   <p>
     <a href="#快速开始"><strong>快速开始</strong></a> ·
     <a href="https://github.com/chenhaoxiang05/LightNovelSelector/releases">下载发布版</a> ·
+    <a href="CHANGELOG.md">更新记录</a> ·
     <a href="docs/WINUI_ARCHITECTURE.md">架构说明</a> ·
     <a href="CONTRIBUTING.md">参与贡献</a> ·
     <a href="https://github.com/chenhaoxiang05/LightNovelSelector/issues">问题反馈</a>
@@ -112,12 +113,15 @@ LightNovelSelector 将“能恢复”视为批量整理的基本要求：
 - 目标存在同名文件时不会覆盖，重复项与错误项默认跳过。
 - 部分文件移动成功后即使后续失败，已完成记录仍会保存。
 - 撤销同样执行冲突检查，不用另一次覆盖去修复第一次操作。
+- 撤销前会校验报告版本、应用标识、所在目录和全部文件路径，拒绝执行超出所选目录的记录。
 
 分类报告默认保存在：
 
 ```text
 所选目录\classification_report.json
 ```
+
+报告包含撤销所需的绝对路径，请勿公开上传、手动编辑或移出原目录；需要撤销时直接在原目录中使用软件生成的报告。
 
 ## 识别能力
 
