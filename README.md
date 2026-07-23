@@ -1,76 +1,71 @@
-# LightNovelSelector 轻小说自动整理工具
+<div align="center">
+  <img src="native/LightNovelSelector.WinUI/Assets/StoreLogo.png" width="96" height="96" alt="LightNovelSelector 图标">
+  <h1>LightNovelSelector</h1>
+  <p><strong>在移动文件之前，把轻小说分类结果完整地交给你确认。</strong></p>
+  <p>面向 Windows 的本地轻小说识别、预览、整理与安全撤销工具。</p>
 
-LightNovelSelector 是面向 Windows 的本地桌面工具，用来批量识别、预览和整理轻小说文件。程序先生成完整分类计划，只有用户确认后才移动文件；每次整理都会保存报告，并可按报告安全撤销。
+  <p>
+    <a href="https://github.com/chenhaoxiang05/LightNovelSelector/actions/workflows/windows-ci.yml"><img alt="Windows 持续集成" src="https://github.com/chenhaoxiang05/LightNovelSelector/actions/workflows/windows-ci.yml/badge.svg"></a>
+    <img alt="Windows 10 和 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows11&logoColor=white">
+    <img alt="WinUI 3" src="https://img.shields.io/badge/UI-WinUI%203-005FB8">
+    <img alt="Python 3.10 或更高版本" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
+  </p>
 
-![LightNovelSelector 浅色界面](docs/interface-winui-light.png)
+  <p>
+    <a href="#快速开始"><strong>快速开始</strong></a> ·
+    <a href="https://github.com/chenhaoxiang05/LightNovelSelector/releases">下载发布版</a> ·
+    <a href="docs/WINUI_ARCHITECTURE.md">架构说明</a> ·
+    <a href="CONTRIBUTING.md">参与贡献</a> ·
+    <a href="https://github.com/chenhaoxiang05/LightNovelSelector/issues">问题反馈</a>
+  </p>
+</div>
 
-## 主要能力
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/interface-winui-dark.png">
+  <img src="docs/interface-winui-light.png" alt="LightNovelSelector WinUI 3 整理工作台">
+</picture>
 
-- 从文件名、电子书内容提示、自定义规则和可选在线条目中识别作品系列。
-- 批量扫描目录或拖入同一目录中的文件，显示系列、目标位置、来源和置信度。
-- 支持搜索、系列筛选、状态筛选、详情查看和手动修正。
-- 使用完整文件 SHA-256 指纹检测重复内容，避免仅比较文件名或头尾片段造成误判。
-- 执行前再次检查源文件与目标路径；冲突、错误和重复文件会明确标记并安全跳过。
-- 移动成功后持续写入 `classification_report.json`，即使后续文件失败也保留已完成记录。
-- 支持报告查看、历史条目、撤销上次整理和自定义分类规则。
-- 设置保存失败只提示警告，不阻断扫描主流程。
-- 默认跟随 Windows 深浅色，提供 Acrylic、Mica、实色与减少动态效果选项。
+> [!NOTE]
+> WinUI 3 `v2.0.0` 已在原生开发分支完成代码、安装器与 Windows CI 验证，目前尚未合并到 `main` 或发布为正式 Release。公开稳定版仍为 [`v1.3.0`](https://github.com/chenhaoxiang05/LightNovelSelector/releases/tag/v1.3.0)。这段状态说明会在正式发布时同步更新，避免下载者拿到与文档不一致的版本。
 
-## 原生架构
+## 为什么使用它
 
-桌面界面统一采用 **WinUI 3 + Windows App SDK**。分类、文件解析、网络元数据、报告和撤销逻辑继续由 Python 负责，WinUI 通过本机 JSON Lines Sidecar 协议调用 Python 核心。
-
-```text
-WinUI 3 窗口
-    │ JSON Lines / stdin + stdout
-    ▼
-Python Sidecar
-    │
-    ├─ 文件名与内容解析
-    ├─ 系列识别与自定义规则
-    ├─ 完整指纹重复检测
-    └─ 移动、报告与撤销
-```
-
-旧 WebView 界面已经停用并从当前源码移除。最后一个包含旧界面的完整版本保存在 Git 标签 `legacy-webview-final`，不会影响当前 WinUI 代码和安装包。
+- **先预览，再整理**：扫描阶段只读取文件并生成分类计划，确认前不会移动原文件。
+- **识别结果可解释**：显示作品系列、目标位置、识别来源和置信度，并允许手动修正。
+- **批量操作仍可控**：支持搜索、系列筛选、状态筛选、重复标记和错误隔离。
+- **文件安全优先**：完整 SHA-256 指纹确认重复内容，目标冲突不会覆盖现有文件。
+- **失败也能恢复**：每个成功移动项都会及时写入报告，批处理中途失败仍可按报告撤销。
+- **本地优先**：小说文件、哈希和报告保留在本机；联网识别可随时关闭。
 
 ## 快速开始
 
-### 安装版
+### 下载发布版
 
-从仓库 Release 下载：
+前往 [Releases](https://github.com/chenhaoxiang05/LightNovelSelector/releases) 下载当前公开稳定版。WinUI 3 安装器正式发布后，文件名将采用：
 
 ```text
 LightNovelSelector-v2.0.0-win-x64-setup.exe
 ```
 
-双击安装器即可。默认安装到当前 Windows 用户目录，不需要管理员权限；安装器会创建开始菜单入口，并提供可选桌面快捷方式。应用本体自带 .NET、Windows App SDK 和 Python Sidecar，下载者不需要另装编程环境。
+安装器按当前 Windows 用户安装，不要求管理员权限，并包含 .NET、Windows App SDK 与 Python Sidecar。发布产物暂未进行商业代码签名，请只从本仓库 Release 下载并核对发布页提供的 SHA-256。
 
-发布产物目前未进行商业代码签名。请只从本仓库 Release 获取安装器，并核对发布页提供的 SHA-256。
+### 从源码运行 WinUI 3 版本
 
-### 从源码启动
-
-开发机需要：
-
-- Windows 10 1809 或更高版本，推荐 Windows 11
-- Python 3.10 或更高版本
-- .NET 10 SDK
-
-双击 `run_winui.bat`，或在 PowerShell 中运行：
+开发环境需要 Windows 10 1809 或更高版本、Python 3.10+ 与 .NET 10 SDK。正式合并前，请从仓库的 [Branches](https://github.com/chenhaoxiang05/LightNovelSelector/branches) 页面进入 WinUI 3 原生开发分支，并通过 **Code → Download ZIP** 下载该分支。WinUI 3 进入默认分支后可直接运行：
 
 ```powershell
+git clone https://github.com/chenhaoxiang05/LightNovelSelector.git
+cd LightNovelSelector
 .\run_winui.bat
 ```
 
-`run.bat` 现在也是同一 WinUI 入口，不再启动旧界面。
+首次启动会自动准备 Python 环境。`run.bat` 与 `run_winui.bat` 均进入同一个 WinUI 3 界面。
 
-## 使用流程
+## 三步完成整理
 
-1. 点击“选择目录”，或把一个目录/同一目录中的一批小说拖入导入卡片。
-2. 点击“扫描并预览”，等待识别完成。
-3. 使用搜索和筛选检查分类计划，必要时在详情面板手动修正系列。
-4. 点击“确认整理”，再次核对文件数量后执行移动。
-5. 在“活动与报告”中查看移动、跳过、重复和错误条目；需要时按报告撤销。
+1. **选择目录**：选择存放待整理小说的目录，或拖入一个目录及同目录中的一批文件。
+2. **扫描并预览**：检查系列、置信度、目标路径、重复项和异常项，必要时手动修正。
+3. **确认整理**：核对完整执行范围后移动文件；随后可在“活动与报告”中查看或撤销。
 
 常用快捷键：
 
@@ -80,32 +75,65 @@ LightNovelSelector-v2.0.0-win-x64-setup.exe
 | `F5` | 扫描并预览 |
 | `Ctrl+Enter` | 打开整理确认对话框 |
 
+<details>
+<summary><strong>查看深色与浅色界面</strong></summary>
+
+| 跟随 Windows 浅色 | 跟随 Windows 深色 |
+| :---: | :---: |
+| ![浅色界面](docs/interface-winui-light.png) | ![深色界面](docs/interface-winui-dark.png) |
+
+</details>
+
+## 原生桌面架构
+
+桌面界面采用 **WinUI 3 + Windows App SDK**，分类与文件安全逻辑由 Python 负责。两端通过本机标准输入输出上的 JSON Lines 协议通信，不启动本地网页服务器。
+
+```mermaid
+flowchart LR
+    UI["WinUI 3 原生界面"] -->|"JSON Lines"| Sidecar["Python Sidecar"]
+    Sidecar --> Plan["识别与分类计划"]
+    Plan --> Files["文件校验与移动"]
+    Files --> Report["报告与安全撤销"]
+    Plan -. "可选标题查询" .-> Metadata["在线元数据"]
+```
+
+旧 WebView 界面已经停用并从当前源码移除，最后一个完整版本保存在 Git 标签 [`legacy-webview-final`](https://github.com/chenhaoxiang05/LightNovelSelector/tree/legacy-webview-final)。详细职责边界见 [WinUI 架构说明](docs/WINUI_ARCHITECTURE.md) 和 [项目结构说明](docs/PROJECT_STRUCTURE.md)。
+
 ## 文件安全
 
-- 扫描阶段只读取文件，不移动原文件。
-- 筛选只改变当前显示，不会缩小“确认整理”的执行范围。
-- 目录或设置变化后，旧预览自动失效。
-- 重复检测使用完整内容指纹；同大小且头尾相同、中间不同的文件不会被误判为重复。
-- 每个成功移动项立即进入内存报告，部分失败时仍会在 `finally` 阶段落盘。
-- 目标位置已有同名文件时不会覆盖，撤销时同样采用安全跳过策略。
+LightNovelSelector 将“能恢复”视为批量整理的基本要求：
 
-分类报告位于所选目录：
+- 扫描只生成预览，不移动文件。
+- 搜索与筛选只改变当前显示，不会悄悄缩小执行范围。
+- 设置或目录变化后，旧预览自动失效。
+- 重复检测比较完整文件内容，不依赖容易碰撞的头尾片段。
+- 执行前再次验证源文件、目标路径和报告写入能力。
+- 目标存在同名文件时不会覆盖，重复项与错误项默认跳过。
+- 部分文件移动成功后即使后续失败，已完成记录仍会保存。
+- 撤销同样执行冲突检查，不用另一次覆盖去修复第一次操作。
+
+分类报告默认保存在：
 
 ```text
 所选目录\classification_report.json
 ```
 
-用户设置和元数据缓存保存在当前 Windows 账户的本地应用数据目录中，不写入安装目录。
+## 识别能力
 
-## 支持格式
+识别顺序综合自定义规则、文件名与内容提示，以及可选的 Bangumi、AniList、Jikan 在线条目。在线识别仅发送用于检索的标题或系列查询，不上传小说文件；关闭联网后仍可使用全部本地整理能力。
 
-`TXT`、`EPUB`、`PDF`、`MOBI`、`AZW`、`AZW3`、`FB2`、`DOC`、`DOCX`、`RTF`、`MD`、`HTML`、`CBZ`、`CBR`、`ZIP`、`RAR`、`7Z`。
+支持格式：
+
+```text
+TXT  EPUB  PDF  MOBI  AZW  AZW3  FB2  DOC  DOCX  RTF
+MD   HTML  CBZ  CBR   ZIP  RAR   7Z
+```
 
 EPUB、ZIP 和 CBZ 可读取本地封面与部分内容提示；其他格式仍可通过文件名、自定义规则和可选在线元数据识别。
 
-## 命令行模式
+## 命令行与构建
 
-Python CLI 保留给自动化和排错使用，但不再承载桌面界面：
+Python CLI 保留给自动化与排错：
 
 ```powershell
 py .\lightnovel_classifier.py "D:\你的轻小说目录" --dry-run
@@ -113,33 +141,21 @@ py .\lightnovel_classifier.py "D:\你的轻小说目录" --dry-run --no-network 
 py .\lightnovel_classifier.py --undo-report "D:\你的轻小说目录\classification_report.json"
 ```
 
-## 构建安装器
-
-构建机还需要 Inno Setup 6 或更高版本：
+构建单 EXE 安装器还需要 Inno Setup 6 或更高版本：
 
 ```powershell
 winget install JRSoftware.InnoSetup
 .\build_winui.bat
 ```
 
-`build_exe.bat` 是同一构建入口。脚本会在 `build\` 的干净暂存区完成 Python/C# 测试、Sidecar、WinUI 自包含发布、启动/外观冒烟和安装器编译；只有全部成功后才替换最终目录：
+完整开发环境、测试命令和发布流程见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 
-```text
-dist\winui\LightNovelSelector-v2.0.0-win-x64-setup.exe
-```
+## 获取帮助
 
-`dist\winui` 不再生成 ZIP 和时间戳便携目录。WinUI 的语言 `.mui`、原生 DLL 与 Sidecar 会封装在安装器中，下载者不会再面对数百个运行文件。详见 [开发说明](DEVELOPMENT.md)。
+- 使用问题或异常：选择 [Bug 报告](https://github.com/chenhaoxiang05/LightNovelSelector/issues/new?template=bug_report.yml)。
+- 功能想法：选择 [功能建议](https://github.com/chenhaoxiang05/LightNovelSelector/issues/new?template=feature_request.yml)。
+- 安全问题：不要公开附带真实目录、小说内容或敏感日志，请按 [安全说明](SECURITY.md) 私下报告。
+- 参与开发：阅读 [贡献指南](CONTRIBUTING.md) 和 [行为准则](CODE_OF_CONDUCT.md)。
 
-## 项目结构
-
-```text
-lightnovel_selector/             Python 分类核心与 Sidecar 服务
-native/LightNovelSelector.WinUI/ WinUI 3 原生桌面界面
-native/LightNovelSelector.WinUI.Tests/ C# 纯逻辑测试
-scripts/windows/                 Windows 启动、构建与安装器脚本
-tests/                           Python 核心和协议测试
-tools/                           图标与 Sidecar 验证工具
-docs/                            架构、结构和界面资料
-```
-
-更完整的职责边界见 [项目结构说明](docs/PROJECT_STRUCTURE.md) 与 [WinUI 架构说明](docs/WINUI_ARCHITECTURE.md)，本轮变化见 [更新说明](UPDATE_NOTES.md)。
+> [!IMPORTANT]
+> 当前仓库尚未选择开源许可证。源码公开可见不等于自动授予复制、再发布或商用权利；许可证确定后会在仓库首页明确展示。

@@ -1,0 +1,86 @@
+name: Bug 报告
+description: 报告可重复的软件异常、崩溃或文件处理问题
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请先移除真实用户名、绝对目录、小说正文、访问令牌和私人分类报告。
+
+  - type: input
+    id: version
+    attributes:
+      label: 软件版本
+      description: 请填写 Release 版本或提交 SHA。
+      placeholder: v1.3.0 或 e055155
+    validations:
+      required: true
+
+  - type: dropdown
+    id: launch
+    attributes:
+      label: 运行方式
+      options:
+        - Release 安装版
+        - 从源码运行 WinUI 3
+        - Python 命令行
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows 版本
+      placeholder: Windows 11 24H2，x64
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题说明
+      description: 说明发生了什么，以及它如何影响使用。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 选择一个测试目录
+        2. 点击“扫描并预览”
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 已脱敏的日志或截图
+      description: 请勿上传小说文件、正文、真实目录或分类报告；可拖入经过脱敏的截图。
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 文件影响
+      options:
+        - label: 问题造成或可能造成文件被移动、覆盖、丢失或无法撤销
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: 提交确认
+      options:
+        - label: 我已搜索现有 Issue，并移除了报告中的隐私与受版权保护内容
+          required: true

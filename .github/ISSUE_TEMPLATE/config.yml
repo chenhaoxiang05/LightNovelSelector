@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 私下报告安全漏洞
+    url: https://github.com/chenhaoxiang05/LightNovelSelector/security/advisories/new
+    about: 涉及路径穿越、任意文件操作、敏感信息或其他安全影响时，请勿创建公开 Issue。
+  - name: 使用与开发文档
+    url: https://github.com/chenhaoxiang05/LightNovelSelector#readme
+    about: 提交问题前可先查看快速开始、文件安全和开发说明。
