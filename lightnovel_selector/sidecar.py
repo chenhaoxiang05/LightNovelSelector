@@ -136,13 +136,18 @@ class SidecarServer:
         self._output.flush()
 
     def serve_forever(self) -> int:
-        for raw_line in self._input:
+        while True:
+            raw_line = self._input.readline(MAX_REQUEST_CHARS + 2)
+            if not raw_line:
+                break
             if not raw_line.strip():
                 continue
 
             request_id: Any = None
             try:
                 if len(raw_line) > MAX_REQUEST_CHARS:
+                    while raw_line and not raw_line.endswith("\n"):
+                        raw_line = self._input.readline(MAX_REQUEST_CHARS + 2)
                     raise ProtocolError("请求超过允许大小。")
                 request = json.loads(raw_line)
                 if isinstance(request, dict):

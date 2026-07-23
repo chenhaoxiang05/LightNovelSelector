@@ -41,6 +41,16 @@ if not defined PYTHON_EXE (
     set "PYTHON_EXE=%PROJECT_ROOT%\.venv\Scripts\python.exe"
 )
 
+"%PYTHON_EXE%" -c "import defusedxml" >nul 2>nul
+if errorlevel 1 (
+    echo 正在安装 Python 运行依赖...
+    "%PYTHON_EXE%" -m pip install --disable-pip-version-check -r "%PROJECT_ROOT%\requirements-runtime.txt"
+    if errorlevel 1 (
+        echo Python 运行依赖安装失败，请检查网络或代理设置。
+        exit /b 1
+    )
+)
+
 set "LN_SELECTOR_PYTHON=%PYTHON_EXE%"
 echo 正在启动 WinUI 3 原生界面...
 "%DOTNET_EXE%" restore "%PROJECT_ROOT%\native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj" -p:Platform=x64 -p:WindowsPackageType=None

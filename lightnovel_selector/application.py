@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import json
 import threading
 from collections import deque
 from dataclasses import replace
@@ -13,11 +12,21 @@ from .classification import (
     build_classification_plan,
     count_plan_statuses,
     execute_classification_plan,
+    load_classification_report,
     plan_status_label,
     revise_classification_plan,
     undo_classification_report,
+    validate_classification_root,
 )
-from .constants import APP_NAME, APP_VERSION, COVER_MAX_BYTES, REPORT_FILE_NAME
+from .constants import (
+    APP_NAME,
+    APP_VERSION,
+    COVER_MAX_BYTES,
+    CUSTOM_RULE_MAX_COUNT,
+    CUSTOM_RULE_PATTERN_MAX_CHARS,
+    REPORT_FILE_NAME,
+    SERIES_NAME_MAX_CHARS,
+)
 from .files import http_bytes
 from .metadata import SeriesResolver
 from .models import AppSettings, ClassificationPlan, CustomRule
@@ -104,10 +113,9 @@ class ApplicationService:
         if not value:
             return None
         try:
-            path = Path(value).expanduser().resolve()
-        except OSError:
+            return validate_classification_root(Path(value))
+        except (OSError, ValueError):
             return None
-        return path if path.is_dir() else None
 
     @staticmethod
     def _report_for_folder(folder: Path | None) -> Path | None:
@@ -222,11 +230,7 @@ class ApplicationService:
             return self.operation["state"] == "running"
 
     def set_folder(self, value: str) -> dict[str, Any]:
-        path = Path(value).expanduser().resolve()
-        if not path.exists():
-            raise FileNotFoundError(f"目录不存在：{path}")
-        if not path.is_dir():
-            raise NotADirectoryError(f"不是目录：{path}")
+        path = validate_classification_root(Path(value))
 
         with self._lock:
             self._assert_idle_locked()
@@ -252,8 +256,8 @@ class ApplicationService:
         raw_rules = payload.get("custom_rules") or []
         if not isinstance(raw_rules, list):
             raise ValueError("自定义规则必须是数组。")
-        if len(raw_rules) > 200:
-            raise ValueError("自定义规则不能超过 200 条。")
+        if len(raw_rules) > CUSTOM_RULE_MAX_COUNT:
+            raise ValueError(f"自定义规则不能超过 {CUSTOM_RULE_MAX_COUNT} 条。")
         rules: list[CustomRule] = []
         for position, item in enumerate(raw_rules, start=1):
             if not isinstance(item, dict):
@@ -262,8 +266,19 @@ class ApplicationService:
             series = collapse_spaces(str(item.get("series") or ""))
             if not pattern or not series:
                 raise ValueError(f"第 {position} 条规则需要同时填写匹配模式和系列名。")
+            if len(pattern) > CUSTOM_RULE_PATTERN_MAX_CHARS:
+                raise ValueError(f"第 {position} 条规则的匹配模式过长。")
+            if len(series) > SERIES_NAME_MAX_CHARS:
+                raise ValueError(f"第 {position} 条规则的系列名过长。")
             rules.append(CustomRule(pattern=pattern, series=series))
         return tuple(rules)
+
+    @staticmethod
+    def _boolean_from_payload(payload: dict[str, Any], name: str, *, default: bool) -> bool:
+        value = payload.get(name, default)
+        if not isinstance(value, bool):
+            raise ValueError(f"设置 {name} 必须是布尔值。")
+        return value
 
     def save_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict):
@@ -272,9 +287,9 @@ class ApplicationService:
         with self._lock:
             self._assert_idle_locked()
             new_settings = AppSettings(
-                use_network=bool(payload.get("use_network", True)),
-                recursive=bool(payload.get("recursive", False)),
-                auto_rename=bool(payload.get("auto_rename", False)),
+                use_network=self._boolean_from_payload(payload, "use_network", default=True),
+                recursive=self._boolean_from_payload(payload, "recursive", default=False),
+                auto_rename=self._boolean_from_payload(payload, "auto_rename", default=False),
                 custom_rules=rules,
                 last_folder=str(self.folder or ""),
             )
@@ -396,9 +411,13 @@ class ApplicationService:
 
         def work() -> None:
             try:
+                def report_progress(message: str) -> None:
+                    self._append_log(message)
+                    self._update_operation(operation_id, message=message)
+
                 moved, skipped = execute_classification_plan(
                     plans,
-                    progress=lambda message: (self._append_log(message), self._update_operation(operation_id, message=message)),
+                    progress=report_progress,
                     progress_count=lambda done, total: self._update_operation(
                         operation_id,
                         done=done,
@@ -406,7 +425,7 @@ class ApplicationService:
                     ),
                     report_path=report_path,
                 )
-                report = json.loads(report_path.read_text(encoding="utf-8"))
+                report = load_classification_report(report_path)
                 actual_targets = {
                     str(item.get("source_path")): Path(str(item.get("actual_target_path")))
                     for item in report.get("items", [])
@@ -465,9 +484,13 @@ class ApplicationService:
 
         def work() -> None:
             try:
+                def report_progress(message: str) -> None:
+                    self._append_log(message)
+                    self._update_operation(operation_id, message=message)
+
                 restored, skipped = undo_classification_report(
                     report_path,
-                    progress=lambda message: (self._append_log(message), self._update_operation(operation_id, message=message)),
+                    progress=report_progress,
                     progress_count=lambda done, total: self._update_operation(
                         operation_id,
                         done=done,
@@ -491,6 +514,8 @@ class ApplicationService:
         return self.snapshot()
 
     def edit_plan(self, index: int, series_name: str) -> dict[str, Any]:
+        if len(series_name) > SERIES_NAME_MAX_CHARS:
+            raise ValueError(f"系列名称不能超过 {SERIES_NAME_MAX_CHARS} 个字符。")
         with self._lock:
             self._assert_idle_locked()
             revised = revise_classification_plan(self.plans, int(index), series_name)
@@ -554,14 +579,16 @@ class ApplicationService:
             report_path = self._latest_report_locked()
         if report_path is None:
             raise FileNotFoundError("当前目录没有分类报告。")
-        report = json.loads(report_path.read_text(encoding="utf-8"))
-        if not isinstance(report, dict):
-            raise ValueError("分类报告格式无效。")
+        report = load_classification_report(report_path)
+        summary = report.get("summary")
+        items = report.get("items")
+        if not isinstance(summary, dict) or not isinstance(items, list):
+            raise ValueError("分类报告格式无效：summary 或 items 类型错误。")
         return {
             "path": str(report_path),
             "created_at": report.get("created_at"),
-            "summary": report.get("summary") or {},
-            "items": report.get("items") or [],
+            "summary": summary,
+            "items": items,
         }
 
     def current_folder(self) -> Path | None:

@@ -6,7 +6,17 @@ import threading
 import time
 from pathlib import Path
 
-from .constants import METADATA_CACHE_TTL_SECONDS, METADATA_CACHE_VERSION, SETTINGS_FILE_NAME
+from .constants import (
+    CUSTOM_RULE_MAX_COUNT,
+    CUSTOM_RULE_PATTERN_MAX_CHARS,
+    METADATA_CACHE_MAX_BYTES,
+    METADATA_CACHE_MAX_ENTRIES,
+    METADATA_CACHE_TTL_SECONDS,
+    METADATA_CACHE_VERSION,
+    SERIES_NAME_MAX_CHARS,
+    SETTINGS_FILE_NAME,
+    SETTINGS_MAX_BYTES,
+)
 from .models import AppSettings, BookMetadata, CustomRule, ResolveResult
 from .parsing import collapse_spaces
 
@@ -83,6 +93,17 @@ def app_data_dir() -> Path:
     return Path.home() / ".lightnovel_selector"
 
 
+def read_json_bounded(path: Path, *, max_bytes: int) -> object | None:
+    if max_bytes < 1:
+        raise ValueError("max_bytes 必须大于 0。")
+    try:
+        if path.stat().st_size > max_bytes:
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+
+
 def settings_path() -> Path:
     return app_data_dir() / SETTINGS_FILE_NAME
 
@@ -106,19 +127,31 @@ def write_json_atomic(path: Path, payload: object) -> None:
 
 def app_settings_from_dict(data: dict) -> AppSettings:
     rules = []
-    for item in data.get("custom_rules") or []:
+    raw_rules = data.get("custom_rules")
+    if not isinstance(raw_rules, list):
+        raw_rules = []
+    for item in raw_rules[:CUSTOM_RULE_MAX_COUNT]:
         if not isinstance(item, dict):
             continue
         pattern = collapse_spaces(str(item.get("pattern") or ""))
         series = collapse_spaces(str(item.get("series") or ""))
-        if pattern and series:
+        if (
+            pattern
+            and series
+            and len(pattern) <= CUSTOM_RULE_PATTERN_MAX_CHARS
+            and len(series) <= SERIES_NAME_MAX_CHARS
+        ):
             rules.append(CustomRule(pattern=pattern, series=series))
+    last_folder = data.get("last_folder")
+    use_network = data.get("use_network")
+    recursive = data.get("recursive")
+    auto_rename = data.get("auto_rename")
     return AppSettings(
-        use_network=bool(data.get("use_network", True)),
-        recursive=bool(data.get("recursive", False)),
-        auto_rename=bool(data.get("auto_rename", False)),
+        use_network=use_network if isinstance(use_network, bool) else True,
+        recursive=recursive if isinstance(recursive, bool) else False,
+        auto_rename=auto_rename if isinstance(auto_rename, bool) else False,
         custom_rules=tuple(rules),
-        last_folder=str(data.get("last_folder") or ""),
+        last_folder=last_folder if isinstance(last_folder, str) else "",
     )
 
 
@@ -137,10 +170,7 @@ def app_settings_to_dict(settings: AppSettings) -> dict:
 
 def load_app_settings(path: Path | None = None) -> AppSettings:
     path = path or settings_path()
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return AppSettings()
+    raw = read_json_bounded(path, max_bytes=SETTINGS_MAX_BYTES)
     if not isinstance(raw, dict):
         return AppSettings()
     return app_settings_from_dict(raw)
@@ -166,10 +196,7 @@ class PersistentMetadataCache:
         self.data = self._load()
 
     def _load(self) -> dict:
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            raw = {}
+        raw = read_json_bounded(self.path, max_bytes=METADATA_CACHE_MAX_BYTES)
         if not isinstance(raw, dict):
             raw = {}
         if raw.get("version") != METADATA_CACHE_VERSION:
@@ -177,7 +204,28 @@ class PersistentMetadataCache:
         entries = raw.get("entries")
         if not isinstance(entries, dict):
             entries = {}
-        return {"version": METADATA_CACHE_VERSION, "entries": entries}
+        return {"version": METADATA_CACHE_VERSION, "entries": self._prune_entries(entries)}
+
+    @staticmethod
+    def _prune_entries(entries: dict) -> dict:
+        now = time.time()
+        valid_entries: list[tuple[str, dict, float]] = []
+        for key, entry in entries.items():
+            if not isinstance(key, str) or not isinstance(entry, dict):
+                continue
+            payload = entry.get("payload")
+            try:
+                cached_at = float(entry.get("cached_at") or 0)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(payload, dict) or cached_at <= 0 or now - cached_at > METADATA_CACHE_TTL_SECONDS:
+                continue
+            valid_entries.append((key, entry, cached_at))
+        valid_entries.sort(key=lambda item: item[2], reverse=True)
+        return {
+            key: entry
+            for key, entry, _ in valid_entries[:METADATA_CACHE_MAX_ENTRIES]
+        }
 
     def _save(self) -> None:
         try:
@@ -209,6 +257,7 @@ class PersistentMetadataCache:
                 "cached_at": time.time(),
                 "payload": payload,
             }
+            self.data["entries"] = self._prune_entries(self.data["entries"])
             self._save()
 
 

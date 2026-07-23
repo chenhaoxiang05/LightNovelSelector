@@ -8,7 +8,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable
 
-from .constants import APP_NAME, APP_VERSION, REPORT_SCHEMA_VERSION, SUPPORTED_EXTENSIONS
+from .constants import (
+    APP_NAME,
+    APP_VERSION,
+    REPORT_MAX_BYTES,
+    REPORT_SCHEMA_VERSION,
+    SUPPORTED_EXTENSIONS,
+)
 from .files import find_duplicate_files, match_custom_rule, read_identity_hint, read_local_cover_bytes
 from .metadata import SeriesResolver, suggest_renamed_filename
 from .models import ClassificationPlan, CustomRule, ResolveResult
@@ -22,13 +28,31 @@ from .parsing import (
 from .storage import write_json_atomic
 
 
+def validate_classification_root(root: Path) -> Path:
+    root = root.expanduser().resolve()
+    if not root.exists():
+        raise FileNotFoundError(f"大文件夹不存在：{root}")
+    if not root.is_dir():
+        raise NotADirectoryError(f"不是文件夹：{root}")
+    if root.parent == root:
+        raise ValueError("为保护系统文件，请选择驱动器或共享根目录下的专用文件夹。")
+    return root
+
+
+def _is_supported_regular_file(path: Path) -> bool:
+    try:
+        return (
+            not path.is_symlink()
+            and path.is_file()
+            and path.suffix.casefold() in SUPPORTED_EXTENSIONS
+        )
+    except OSError:
+        return False
+
+
 def find_novel_files(root: Path, recursive: bool = False) -> list[Path]:
     iterator = root.rglob("*") if recursive else root.iterdir()
-    files = [
-        path
-        for path in iterator
-        if path.is_file() and path.suffix.casefold() in SUPPORTED_EXTENSIONS
-    ]
+    files = [path for path in iterator if _is_supported_regular_file(path)]
     return sorted(files, key=lambda item: item.name.casefold())
 
 
@@ -102,6 +126,64 @@ def write_classification_report(
         ],
     }
     write_json_atomic(report_path, report)
+
+
+def load_classification_report(report_path: Path) -> dict:
+    try:
+        if report_path.stat().st_size > REPORT_MAX_BYTES:
+            raise ValueError(f"分类报告超过允许大小（{REPORT_MAX_BYTES} 字节）。")
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("分类报告格式无效：文件不是有效的 UTF-8 JSON。") from exc
+    if not isinstance(report, dict):
+        raise ValueError("分类报告格式无效：根节点必须是对象。")
+    return report
+
+
+def _resolved_child_path(path: Path, *, root_path: Path, field_name: str) -> Path:
+    try:
+        resolved_path = path.expanduser().resolve()
+        relative_path = resolved_path.relative_to(root_path)
+    except OSError as exc:
+        raise ValueError(f"无法解析分类计划的 {field_name}：{exc}") from exc
+    except ValueError as exc:
+        raise ValueError(f"分类计划的 {field_name} 超出分类根目录。") from exc
+    if not relative_path.parts:
+        raise ValueError(f"分类计划的 {field_name} 不能指向分类根目录本身。")
+    return resolved_path
+
+
+def _validate_execution_plan(
+    plans: list[ClassificationPlan],
+    report_path: Path | None,
+) -> None:
+    if not plans:
+        return
+    roots = {plan.target_dir.parent.expanduser().resolve() for plan in plans}
+    if len(roots) != 1:
+        raise ValueError("分类计划包含多个根目录，已拒绝执行。")
+    root_path = roots.pop()
+    if root_path.parent == root_path:
+        raise ValueError("分类计划不能直接整理驱动器或共享根目录。")
+    if report_path is not None and report_path.expanduser().resolve().parent != root_path:
+        raise ValueError("分类报告必须保存在分类根目录中。")
+    seen_sources: set[Path] = set()
+    seen_targets: set[Path] = set()
+    for plan in plans:
+        source_path = _resolved_child_path(plan.source_path, root_path=root_path, field_name="source_path")
+        target_dir = _resolved_child_path(plan.target_dir, root_path=root_path, field_name="target_dir")
+        target_path = _resolved_child_path(plan.target_path, root_path=root_path, field_name="target_path")
+        if plan.will_move and target_path.parent != target_dir:
+            raise ValueError("分类计划的 target_path 不在对应的 target_dir 中。")
+        if source_path in seen_sources:
+            raise ValueError("分类计划包含重复的源路径。")
+        seen_sources.add(source_path)
+        if plan.will_move:
+            if target_path in seen_targets:
+                raise ValueError("分类计划包含重复的目标路径。")
+            seen_targets.add(target_path)
+            if plan.source_path.is_symlink():
+                raise ValueError("分类计划的源文件已变为符号链接，请重新扫描。")
 
 
 def _report_root(report: dict, report_path: Path) -> Path:
@@ -198,11 +280,7 @@ def build_classification_plan(
     progress: Callable[[str], None] | None = None,
     progress_count: Callable[[int, int], None] | None = None,
 ) -> list[ClassificationPlan]:
-    root = root.expanduser().resolve()
-    if not root.exists():
-        raise FileNotFoundError(f"大文件夹不存在：{root}")
-    if not root.is_dir():
-        raise NotADirectoryError(f"不是文件夹：{root}")
+    root = validate_classification_root(root)
 
     files = find_novel_files(root, recursive=recursive)
     duplicates = find_duplicate_files(files)
@@ -387,6 +465,7 @@ def execute_classification_plan(
     progress_count: Callable[[int, int], None] | None = None,
     report_path: Path | None = None,
 ) -> tuple[int, int]:
+    _validate_execution_plan(plans, report_path)
     moved = 0
     skipped = 0
     actual_targets: dict[Path, Path] = {}
@@ -406,11 +485,30 @@ def execute_classification_plan(
             shutil.move(str(plan.source_path), str(final_target))
             actual_targets[plan.source_path] = final_target
             moved += 1
+            if report_path is not None:
+                write_classification_report(
+                    plans,
+                    report_path,
+                    moved=moved,
+                    skipped=skipped,
+                    actual_targets=actual_targets,
+                )
             if progress_count:
                 progress_count(index, len(plans))
-    except Exception:
+    except Exception as exc:
         if report_path is not None:
-            write_classification_report(plans, report_path, moved=moved, skipped=skipped, actual_targets=actual_targets)
+            try:
+                write_classification_report(
+                    plans,
+                    report_path,
+                    moved=moved,
+                    skipped=skipped,
+                    actual_targets=actual_targets,
+                )
+            except OSError as report_exc:
+                raise RuntimeError(
+                    f"分类中断，且部分撤销报告无法更新：{report_exc}"
+                ) from exc
         raise
     if report_path is not None:
         write_classification_report(plans, report_path, moved=moved, skipped=skipped, actual_targets=actual_targets)
@@ -424,9 +522,7 @@ def undo_classification_report(
     progress_count: Callable[[int, int], None] | None = None,
 ) -> tuple[int, int]:
     report_path = report_path.expanduser().resolve()
-    report = json.loads(report_path.read_text(encoding="utf-8"))
-    if not isinstance(report, dict):
-        raise ValueError("撤销报告格式无效：根节点必须是对象。")
+    report = load_classification_report(report_path)
     moved_items = list(reversed(_validated_undo_items(report, report_path)))
     restored = 0
     skipped = 0

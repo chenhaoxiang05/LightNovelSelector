@@ -11,6 +11,7 @@ from .constants import (
     BANGUMI_SEARCH_LIMIT,
     BANGUMI_SEARCH_URL,
     BANGUMI_SUBJECT_WEB_URL,
+    METADATA_SUMMARY_MAX_CHARS,
 )
 from .files import http_json
 from .models import BookMetadata, ResolveResult
@@ -87,7 +88,8 @@ def clean_summary(value: str | None) -> str | None:
     if not value:
         return None
     lines = [line.strip() for line in value.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
-    return "\n".join(line for line in lines if line).strip() or None
+    summary = "\n".join(line for line in lines if line).strip()
+    return summary[:METADATA_SUMMARY_MAX_CHARS] or None
 
 
 def bangumi_subject_url(item: dict) -> str | None:

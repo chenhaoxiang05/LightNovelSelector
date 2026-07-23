@@ -6,7 +6,7 @@ from difflib import SequenceMatcher
 from html.parser import HTMLParser
 from pathlib import Path
 
-from .constants import GLOBAL_RELEASE_WORDS, NOISE_TAG_WORDS, VOLUME_TOKEN
+from .constants import GLOBAL_RELEASE_WORDS, NOISE_TAG_WORDS, SERIES_NAME_MAX_CHARS, VOLUME_TOKEN
 
 
 def collapse_spaces(value: str) -> str:
@@ -206,7 +206,18 @@ def safe_folder_name(value: str) -> str:
     text = re.sub(r"_+", "_", text)
     if not text:
         text = "未命名系列"
-    return text[:120].rstrip(" .")
+    reserved_stem = text.partition(".")[0].casefold()
+    if reserved_stem in {
+        "con",
+        "prn",
+        "aux",
+        "nul",
+        "clock$",
+        *(f"com{number}" for number in range(1, 10)),
+        *(f"lpt{number}" for number in range(1, 10)),
+    }:
+        text = f"_{text}"
+    return text[:SERIES_NAME_MAX_CHARS].rstrip(" .")
 
 
 def score_title(query: str, candidate: str) -> float:

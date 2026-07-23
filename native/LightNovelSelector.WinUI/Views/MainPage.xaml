@@ -609,7 +609,7 @@
 
                                             <StackPanel Spacing="6">
                                                 <TextBlock FontSize="12" FontWeight="SemiBold" Text="手动修正系列" />
-                                                <TextBox x:Name="SeriesEditBox" PlaceholderText="系列文件夹名称" />
+                                                <TextBox x:Name="SeriesEditBox" MaxLength="120" PlaceholderText="系列文件夹名称" />
                                                 <Button
                                                     x:Name="SaveCorrectionButton"
                                                     HorizontalAlignment="Stretch"
@@ -978,8 +978,8 @@
                                                         <ColumnDefinition Width="*" />
                                                         <ColumnDefinition Width="36" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBox PlaceholderText="匹配文本，例如：刀剑神域" Text="{x:Bind Pattern, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnSettingsTextChanged" />
-                                                    <TextBox Grid.Column="1" PlaceholderText="目标系列，例如：刀剑神域" Text="{x:Bind Series, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnSettingsTextChanged" />
+                                                    <TextBox MaxLength="240" PlaceholderText="匹配文本，例如：刀剑神域" Text="{x:Bind Pattern, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnSettingsTextChanged" />
+                                                    <TextBox Grid.Column="1" MaxLength="120" PlaceholderText="目标系列，例如：刀剑神域" Text="{x:Bind Series, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnSettingsTextChanged" />
                                                     <Button Grid.Column="2" AutomationProperties.Name="删除规则" Click="OnDeleteRuleClick" Style="{StaticResource IconButtonStyle}" ToolTipService.ToolTip="删除规则">
                                                         <FontIcon FontSize="14" Glyph="&#xE74D;" />
                                                     </Button>

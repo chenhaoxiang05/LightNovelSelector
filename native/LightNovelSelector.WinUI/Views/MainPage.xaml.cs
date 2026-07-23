@@ -125,7 +125,11 @@ public sealed partial class MainPage : Page
         UnsubscribeFromMaterialState();
         _pollTimer.Stop();
         _detailCancellation?.Cancel();
+        _detailCancellation?.Dispose();
+        _detailCancellation = null;
         _toastCancellation?.Cancel();
+        _toastCancellation?.Dispose();
+        _toastCancellation = null;
         try
         {
             if (_sidecar.IsRunning && _snapshot.Operation.State == "running" && _snapshot.Operation.CanCancel)

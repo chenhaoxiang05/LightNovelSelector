@@ -1,5 +1,6 @@
 using LightNovelSelector.WinUI.Helpers;
 using LightNovelSelector.WinUI.Models;
+using LightNovelSelector.WinUI.Security;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -10,13 +11,18 @@ namespace LightNovelSelector.WinUI;
 
 public sealed partial class MainPage
 {
+    private const int MaxCoverDataUriChars = 12 * 1024 * 1024;
+
     private async void OnResultSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         _detailCancellation?.Cancel();
         _detailCancellation?.Dispose();
-        _detailCancellation = new CancellationTokenSource();
+        var cancellation = new CancellationTokenSource();
+        _detailCancellation = cancellation;
         if (ResultsList.SelectedItem is not PlanItem plan)
         {
+            _detailCancellation = null;
+            cancellation.Dispose();
             ShowDetailEmpty();
             return;
         }
@@ -26,8 +32,8 @@ public sealed partial class MainPage
         DetailLoadingState.Visibility = Visibility.Visible;
         try
         {
-            var detail = await _sidecar.GetDetailAsync(plan.Index, _detailCancellation.Token);
-            if (_detailCancellation.IsCancellationRequested || (ResultsList.SelectedItem as PlanItem)?.Index != detail.Index)
+            var detail = await _sidecar.GetDetailAsync(plan.Index, cancellation.Token);
+            if (cancellation.IsCancellationRequested || (ResultsList.SelectedItem as PlanItem)?.Index != detail.Index)
             {
                 return;
             }
@@ -42,6 +48,14 @@ public sealed partial class MainPage
             DetailLoadingState.Visibility = Visibility.Collapsed;
             DetailEmptyState.Visibility = Visibility.Visible;
             ShowToast(exc.Message, ToastKind.Error);
+        }
+        finally
+        {
+            if (ReferenceEquals(_detailCancellation, cancellation))
+            {
+                _detailCancellation = null;
+            }
+            cancellation.Dispose();
         }
     }
 
@@ -60,7 +74,7 @@ public sealed partial class MainPage
         SeriesEditBox.Text = detail.SeriesName;
         DetailWarningBar.IsOpen = !string.IsNullOrWhiteSpace(detail.Warning);
         DetailWarningBar.Message = detail.Warning ?? string.Empty;
-        OpenSubjectButton.IsEnabled = Uri.TryCreate(detail.SubjectUrl, UriKind.Absolute, out _);
+        OpenSubjectButton.IsEnabled = UriSafety.TryCreatePublicHttpsUri(detail.SubjectUrl, out _);
         await SetCoverAsync(detail.CoverDataUrl);
         DetailLoadingState.Visibility = Visibility.Collapsed;
         DetailEmptyState.Visibility = Visibility.Collapsed;
@@ -78,6 +92,7 @@ public sealed partial class MainPage
         {
             Header = "系列文件夹名称",
             Text = detail.SeriesName,
+            MaxLength = 120,
         };
         var panel = new StackPanel { Spacing = 12, MaxWidth = 460 };
         panel.Children.Add(new TextBlock
@@ -120,7 +135,7 @@ public sealed partial class MainPage
     {
         CoverImage.Source = null;
         CoverPlaceholder.Visibility = Visibility.Visible;
-        if (string.IsNullOrWhiteSpace(dataUri))
+        if (string.IsNullOrWhiteSpace(dataUri) || dataUri.Length > MaxCoverDataUriChars)
         {
             return;
         }
@@ -142,14 +157,19 @@ public sealed partial class MainPage
                 writer.DetachStream();
             }
             stream.Seek(0);
-            var image = new BitmapImage();
+            var image = new BitmapImage
+            {
+                DecodePixelWidth = 480,
+                CreateOptions = BitmapCreateOptions.IgnoreImageCache,
+            };
             await image.SetSourceAsync(stream);
             CoverImage.Source = image;
             CoverPlaceholder.Visibility = Visibility.Collapsed;
         }
-        catch (Exception exc) when (exc is FormatException or ArgumentException)
+        catch (Exception)
         {
             CoverImage.Source = null;
+            CoverPlaceholder.Visibility = Visibility.Visible;
         }
     }
 
@@ -193,19 +213,31 @@ public sealed partial class MainPage
         }
     }
 
-    private void OnRevealFileClick(object sender, RoutedEventArgs e)
+    private async void OnRevealFileClick(object sender, RoutedEventArgs e)
     {
         if (_detail is not null)
         {
-            OpenInExplorer(_detail.SourcePath, selectFile: true);
+            await OpenInExplorerAsync(_detail.SourcePath, selectFile: true);
         }
     }
 
     private async void OnOpenSubjectClick(object sender, RoutedEventArgs e)
     {
-        if (_detail?.SubjectUrl is not null && Uri.TryCreate(_detail.SubjectUrl, UriKind.Absolute, out var uri))
+        if (!UriSafety.TryCreatePublicHttpsUri(_detail?.SubjectUrl, out var uri) || uri is null)
         {
-            await Launcher.LaunchUriAsync(uri);
+            ShowToast("条目链接无效或不是安全的 HTTPS 地址。", ToastKind.Warning);
+            return;
+        }
+        try
+        {
+            if (!await Launcher.LaunchUriAsync(uri))
+            {
+                ShowToast("Windows 未能打开该条目链接。", ToastKind.Warning);
+            }
+        }
+        catch (Exception exc)
+        {
+            ShowToast(exc.Message, ToastKind.Error);
         }
     }
 }

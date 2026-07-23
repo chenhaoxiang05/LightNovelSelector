@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import ipaddress
 import json
 import posixpath
 import urllib.error
@@ -10,7 +11,9 @@ import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Iterable
-from xml.etree import ElementTree
+
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 
 from .constants import (
     ARCHIVE_TEXT_MAX_BYTES,
@@ -21,20 +24,67 @@ from .constants import (
     FILE_FINGERPRINT_CHUNK_SIZE,
     LOCAL_COVER_EXTENSIONS,
     REMOTE_JSON_MAX_BYTES,
+    REMOTE_URL_MAX_CHARS,
     USER_AGENT,
 )
 from .models import CustomRule
 from .parsing import collapse_spaces, html_to_text, normalize_for_match
 
 
+def validate_https_url(url: str) -> str:
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("远程地址不能为空。")
+    url = url.strip()
+    if len(url) > REMOTE_URL_MAX_CHARS:
+        raise ValueError("远程地址过长。")
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError("远程地址格式无效。") from exc
+    if (
+        parsed.scheme.casefold() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError("仅允许访问不含登录信息的 HTTPS 地址。")
+    hostname = parsed.hostname.rstrip(".").casefold()
+    if hostname == "localhost" or hostname.endswith((".localhost", ".local", ".internal", ".home.arpa")):
+        raise ValueError("不允许访问本机或内部网络地址。")
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        pass
+    else:
+        if not address.is_global:
+            raise ValueError("不允许访问本机或内部网络地址。")
+    return url
+
+
+class _HttpsOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        validate_https_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_HTTPS_OPENER = urllib.request.build_opener(_HttpsOnlyRedirectHandler)
+
+
+def _open_https(request: urllib.request.Request, *, timeout: float):
+    return _HTTPS_OPENER.open(request, timeout=timeout)
+
+
 def http_json(url: str, *, payload: dict | None = None, timeout: float = 10.0) -> dict:
+    url = validate_https_url(url)
     headers = {"User-Agent": USER_AGENT}
     data = None
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=data, headers=headers)
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with _open_https(request, timeout=timeout) as response:
+        validate_https_url(response.geturl())
         charset = response.headers.get_content_charset() or "utf-8"
         response_data = response.read(REMOTE_JSON_MAX_BYTES + 1)
     if len(response_data) > REMOTE_JSON_MAX_BYTES:
@@ -51,8 +101,10 @@ def http_json(url: str, *, payload: dict | None = None, timeout: float = 10.0) -
 def http_bytes(url: str, *, timeout: float = 10.0, max_bytes: int | None = None) -> bytes:
     if max_bytes is not None and max_bytes < 1:
         raise ValueError("max_bytes 必须大于 0。")
+    url = validate_https_url(url)
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with _open_https(request, timeout=timeout) as response:
+        validate_https_url(response.geturl())
         data = response.read(max_bytes + 1 if max_bytes is not None else -1)
     if max_bytes is not None and len(data) > max_bytes:
         raise RuntimeError(f"远程文件超过允许大小（{max_bytes} 字节）。")
@@ -173,7 +225,14 @@ def read_epub_cover_bytes(path: Path) -> bytes | None:
             fallback_name = pick_archive_cover_name(resolve_zip_member(rootfile_path, href) for href in image_hrefs)
             if fallback_name:
                 return read_zip_member(epub, fallback_name, max_bytes=COVER_MAX_BYTES)
-    except (OSError, KeyError, RuntimeError, zipfile.BadZipFile, ElementTree.ParseError):
+    except (
+        OSError,
+        KeyError,
+        RuntimeError,
+        zipfile.BadZipFile,
+        ElementTree.ParseError,
+        DefusedXmlException,
+    ):
         return None
     return None
 
@@ -243,7 +302,14 @@ def read_epub_identity_hint(path: Path) -> str | None:
                     break
             hint = collapse_spaces(" ".join(text_parts))
             return hint[:CONTENT_HINT_MAX_CHARS] or None
-    except (OSError, KeyError, RuntimeError, zipfile.BadZipFile, ElementTree.ParseError):
+    except (
+        OSError,
+        KeyError,
+        RuntimeError,
+        zipfile.BadZipFile,
+        ElementTree.ParseError,
+        DefusedXmlException,
+    ):
         return None
 
 

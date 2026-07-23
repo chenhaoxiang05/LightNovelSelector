@@ -102,6 +102,8 @@ class FilenameParsingTests(unittest.TestCase):
 
     def test_safe_folder_name(self) -> None:
         self.assertEqual(safe_folder_name('A:B/C*D?'), "A_B_C_D_")
+        self.assertEqual(safe_folder_name("CON"), "_CON")
+        self.assertEqual(safe_folder_name("LPT1.txt"), "_LPT1.txt")
 
     def test_uses_content_hint_for_weak_file_name(self) -> None:
         self.assertEqual(
@@ -213,18 +215,21 @@ class MovePlanTests(unittest.TestCase):
 
     def test_http_bytes_rejects_oversized_response(self) -> None:
         response = unittest.mock.MagicMock()
-        response.__enter__.return_value.read.return_value = b"12345"
-        with patch("lightnovel_selector.files.urllib.request.urlopen", return_value=response):
+        opened_response = response.__enter__.return_value
+        opened_response.geturl.return_value = "https://example.test/cover.jpg"
+        opened_response.read.return_value = b"12345"
+        with patch("lightnovel_selector.files._open_https", return_value=response):
             with self.assertRaisesRegex(RuntimeError, "超过允许大小"):
                 http_bytes("https://example.test/cover.jpg", max_bytes=4)
 
     def test_http_json_rejects_non_object_root(self) -> None:
         response = unittest.mock.MagicMock()
         opened_response = response.__enter__.return_value
+        opened_response.geturl.return_value = "https://example.test/search"
         opened_response.headers.get_content_charset.return_value = "utf-8"
         opened_response.read.return_value = b"[]"
 
-        with patch("lightnovel_selector.files.urllib.request.urlopen", return_value=response):
+        with patch("lightnovel_selector.files._open_https", return_value=response):
             with self.assertRaisesRegex(RuntimeError, "JSON 根节点不是对象"):
                 http_json("https://example.test/search")
 
@@ -401,12 +406,14 @@ class MovePlanTests(unittest.TestCase):
             root = Path(temp_dir)
             book = root / "Sword.Art.Online.Vol.01.txt"
             book.write_text("one", encoding="utf-8")
-            blocked_parent = root / "not-a-directory"
-            blocked_parent.write_text("blocked", encoding="utf-8")
             plans = build_classification_plan(root, use_network=False)
 
-            with self.assertRaises(OSError):
-                execute_classification_plan(plans, report_path=blocked_parent / "report.json")
+            with patch(
+                "lightnovel_selector.classification.write_json_atomic",
+                side_effect=PermissionError("blocked"),
+            ):
+                with self.assertRaises(OSError):
+                    execute_classification_plan(plans, report_path=root / "report.json")
 
             self.assertTrue(book.exists())
             self.assertFalse((root / "Sword Art Online" / book.name).exists())
