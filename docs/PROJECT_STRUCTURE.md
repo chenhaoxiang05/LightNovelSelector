@@ -37,6 +37,7 @@ LightNovelSelector/
 │  └─ verify_sidecar.py          验证打包 Sidecar 协议
 ├─ docs/                          架构、截图与维护说明
 ├─ LICENSE                        MIT 开源许可证
+├─ THIRD_PARTY_NOTICES.md         第三方运行时与许可索引
 ├─ Directory.Build.props          NuGet 锁定、审计与确定性构建
 ├─ requirements-runtime.txt       Python 运行依赖
 ├─ lightnovel_classifier.py      Python CLI/API 兼容入口

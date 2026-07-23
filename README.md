@@ -176,4 +176,4 @@ winget install JRSoftware.InnoSetup
 
 ## 开源许可证
 
-LightNovelSelector 采用 [MIT License](LICENSE)。你可以使用、修改、分发、再许可或销售本软件，也欢迎提交改进；分发源码或软件副本时需保留原版权声明和许可证文本。
+LightNovelSelector 采用 [MIT License](LICENSE)。你可以使用、修改、分发、再许可或销售本软件，也欢迎提交改进；分发源码或软件副本时需保留原版权声明和许可证文本。正式安装器同时附带 [第三方组件说明](THIRD_PARTY_NOTICES.md) 及各运行时的原始许可证全文。

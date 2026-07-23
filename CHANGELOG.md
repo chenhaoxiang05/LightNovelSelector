@@ -19,6 +19,7 @@
 - 本地正文提示与联网查询分离；弱文件名提取出的内容只在本机参与识别。
 - GitHub Actions 固定完整提交 SHA，加入 CodeQL、Dependabot、依赖锁定和 Python/.NET 漏洞审计。
 - 正式安装器剔除 PDB 与开发期 runtime 配置，避免分发调试符号和本机构建路径。
+- 安装器补齐 Python、PyInstaller、defusedxml、.NET、Windows App SDK、WebView2 与 Inno Setup 的原始许可和第三方 Notice。
 
 ### 交互与文档
 

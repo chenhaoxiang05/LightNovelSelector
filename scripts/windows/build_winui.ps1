@@ -24,6 +24,19 @@ function Invoke-External {
     }
 }
 
+function Invoke-ExternalOutput {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+
+    $output = & $FilePath @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command failed with exit code ${LASTEXITCODE}: $FilePath"
+    }
+    return (($output | Out-String).Trim())
+}
+
 function Assert-ChildPath {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -37,6 +50,24 @@ function Assert-ChildPath {
         throw "Refusing to modify path outside the expected root: $fullPath"
     }
     return $fullPath
+}
+
+function Copy-ReleaseFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [Parameter(Mandatory = $true)][string]$DestinationRoot
+    )
+
+    if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
+        throw "Required release file was not found: $Source"
+    }
+    $safeDestination = Assert-ChildPath -Path $Destination -Parent $DestinationRoot
+    Copy-Item -LiteralPath $Source -Destination $safeDestination -Force
+    if (-not (Test-Path -LiteralPath $safeDestination -PathType Leaf) -or
+        (Get-Item -LiteralPath $safeDestination).Length -eq 0) {
+        throw "Required release file was not copied correctly: $safeDestination"
+    }
 }
 
 function Reset-SafeDirectory {
@@ -265,6 +296,132 @@ $unexpectedReleaseArtifacts = @(
 if ($unexpectedReleaseArtifacts.Count -gt 0) {
     $artifactNames = ($unexpectedReleaseArtifacts | ForEach-Object { $_.FullName }) -join ", "
     throw "Release staging still contains development-only artifacts: $artifactNames"
+}
+
+$licenseOutput = Reset-SafeDirectory -Path (Join-Path $publishRoot "licenses") -Parent $publishRoot
+$pythonBase = Invoke-ExternalOutput -FilePath $python -Arguments @(
+    "-c", "import sys; print(sys.base_prefix)"
+)
+$sitePackages = Invoke-ExternalOutput -FilePath $python -Arguments @(
+    "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"
+)
+$pythonVersion = Invoke-ExternalOutput -FilePath $python -Arguments @(
+    "-c", "import platform; print(platform.python_version())"
+)
+$pyInstallerVersion = Invoke-ExternalOutput -FilePath $python -Arguments @(
+    "-c", "import importlib.metadata as metadata; print(metadata.version('pyinstaller'))"
+)
+$defusedXmlVersion = Invoke-ExternalOutput -FilePath $python -Arguments @(
+    "-c", "import importlib.metadata as metadata; print(metadata.version('defusedxml'))"
+)
+$dotnetSdkVersion = Invoke-ExternalOutput -FilePath $dotnet -Arguments @("--version")
+
+$defusedXmlLicenses = @(
+    Get-ChildItem -LiteralPath $sitePackages -Directory -Filter "defusedxml-*.dist-info" |
+        ForEach-Object { Join-Path $_.FullName "LICENSE" } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
+)
+if ($defusedXmlLicenses.Count -ne 1) {
+    throw "Expected exactly one defusedxml license, found $($defusedXmlLicenses.Count)."
+}
+
+$pyInstallerLicenses = @(
+    Get-ChildItem -LiteralPath $sitePackages -Directory -Filter "pyinstaller-*.dist-info" |
+        ForEach-Object { Join-Path $_.FullName "licenses\COPYING.txt" } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
+)
+if ($pyInstallerLicenses.Count -ne 1) {
+    throw "Expected exactly one PyInstaller license, found $($pyInstallerLicenses.Count)."
+}
+
+$packageLockPath = Join-Path $ProjectRoot "native\LightNovelSelector.WinUI\packages.lock.json"
+$packageLock = Get-Content -LiteralPath $packageLockPath -Raw | ConvertFrom-Json
+$frameworkEntries = @($packageLock.dependencies.PSObject.Properties)
+$windowsAppSdkVersions = @(
+    $frameworkEntries |
+        ForEach-Object {
+            $packageEntry = $_.Value.PSObject.Properties["Microsoft.WindowsAppSDK"]
+            if ($null -ne $packageEntry) {
+                $packageEntry.Value.resolved
+            }
+        } |
+        Where-Object { $_ } |
+        Select-Object -Unique
+)
+$webView2Versions = @(
+    $frameworkEntries |
+        ForEach-Object {
+            $packageEntry = $_.Value.PSObject.Properties["Microsoft.Web.WebView2"]
+            if ($null -ne $packageEntry) {
+                $packageEntry.Value.resolved
+            }
+        } |
+        Where-Object { $_ } |
+        Select-Object -Unique
+)
+if ($windowsAppSdkVersions.Count -ne 1 -or $webView2Versions.Count -ne 1) {
+    throw "Unable to resolve a single Windows App SDK and WebView2 version from packages.lock.json."
+}
+
+$nugetPackages = if ($env:NUGET_PACKAGES) {
+    [IO.Path]::GetFullPath($env:NUGET_PACKAGES)
+}
+else {
+    [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE ".nuget\packages"))
+}
+$windowsAppSdkPackage = Join-Path (
+    Join-Path $nugetPackages "microsoft.windowsappsdk"
+) $windowsAppSdkVersions[0]
+$webView2Package = Join-Path (
+    Join-Path $nugetPackages "microsoft.web.webview2"
+) $webView2Versions[0]
+$dotnetRoot = Split-Path -Parent $dotnet
+$innoSetupRoot = Split-Path -Parent $iscc
+
+Copy-ReleaseFile -Source (Join-Path $ProjectRoot "LICENSE") `
+    -Destination (Join-Path $publishRoot "LICENSE") -DestinationRoot $publishRoot
+Copy-ReleaseFile -Source (Join-Path $ProjectRoot "THIRD_PARTY_NOTICES.md") `
+    -Destination (Join-Path $publishRoot "THIRD_PARTY_NOTICES.md") -DestinationRoot $publishRoot
+Copy-ReleaseFile -Source (Join-Path $pythonBase "LICENSE.txt") `
+    -Destination (Join-Path $licenseOutput "Python-LICENSE.txt") -DestinationRoot $licenseOutput
+Copy-ReleaseFile -Source $defusedXmlLicenses[0] `
+    -Destination (Join-Path $licenseOutput "defusedxml-LICENSE.txt") -DestinationRoot $licenseOutput
+Copy-ReleaseFile -Source $pyInstallerLicenses[0] `
+    -Destination (Join-Path $licenseOutput "PyInstaller-COPYING.txt") -DestinationRoot $licenseOutput
+Copy-ReleaseFile -Source (Join-Path $dotnetRoot "LICENSE.txt") `
+    -Destination (Join-Path $licenseOutput "dotnet-LICENSE.txt") -DestinationRoot $licenseOutput
+Copy-ReleaseFile -Source (Join-Path $dotnetRoot "ThirdPartyNotices.txt") `
+    -Destination (Join-Path $licenseOutput "dotnet-ThirdPartyNotices.txt") -DestinationRoot $licenseOutput
+Copy-ReleaseFile -Source (Join-Path $windowsAppSdkPackage "license.txt") `
+    -Destination (Join-Path $licenseOutput "WindowsAppSDK-LICENSE.txt") -DestinationRoot $licenseOutput
+Copy-ReleaseFile -Source (Join-Path $windowsAppSdkPackage "NOTICE.txt") `
+    -Destination (Join-Path $licenseOutput "WindowsAppSDK-NOTICE.txt") -DestinationRoot $licenseOutput
+Copy-ReleaseFile -Source (Join-Path $webView2Package "LICENSE.txt") `
+    -Destination (Join-Path $licenseOutput "WebView2-LICENSE.txt") -DestinationRoot $licenseOutput
+Copy-ReleaseFile -Source (Join-Path $webView2Package "NOTICE.txt") `
+    -Destination (Join-Path $licenseOutput "WebView2-NOTICE.txt") -DestinationRoot $licenseOutput
+Copy-ReleaseFile -Source (Join-Path $innoSetupRoot "license.txt") `
+    -Destination (Join-Path $licenseOutput "InnoSetup-LICENSE.txt") -DestinationRoot $licenseOutput
+
+$componentVersionsPath = Assert-ChildPath `
+    -Path (Join-Path $licenseOutput "COMPONENT_VERSIONS.txt") -Parent $licenseOutput
+$componentVersions = @(
+    "LightNovelSelector=$appVersion",
+    "Python=$pythonVersion",
+    "PyInstaller=$pyInstallerVersion",
+    "defusedxml=$defusedXmlVersion",
+    "DotNetSdk=$dotnetSdkVersion",
+    "WindowsAppSDK=$($windowsAppSdkVersions[0])",
+    "WebView2=$($webView2Versions[0])",
+    "InnoSetup=6"
+)
+[IO.File]::WriteAllLines(
+    $componentVersionsPath,
+    $componentVersions,
+    [Text.UTF8Encoding]::new($false)
+)
+if ((Get-Item -LiteralPath $componentVersionsPath).Length -eq 0) {
+    throw "Third-party component version manifest is empty."
 }
 
 $appExe = Join-Path $publishRoot "LightNovelSelector.exe"
