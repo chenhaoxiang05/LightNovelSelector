@@ -6,10 +6,21 @@
     xmlns:models="using:LightNovelSelector.WinUI.Models"
     NavigationCacheMode="Required">
 
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Key="Number1" Modifiers="Control" Invoked="OnSectionShortcutInvoked" />
+        <KeyboardAccelerator Key="Number2" Modifiers="Control" Invoked="OnSectionShortcutInvoked" />
+        <KeyboardAccelerator Key="Number3" Modifiers="Control" Invoked="OnSectionShortcutInvoked" />
+        <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="OnSearchShortcutInvoked" />
+        <KeyboardAccelerator Key="F6" Modifiers="Shift" Invoked="OnCycleRegionBackwardInvoked" />
+        <KeyboardAccelerator Key="F6" Invoked="OnCycleRegionForwardInvoked" />
+    </Page.KeyboardAccelerators>
+
     <Grid x:Name="RootLayout" Background="Transparent" SizeChanged="OnRootLayoutSizeChanged">
         <NavigationView
             x:Name="ShellNavigation"
             AlwaysShowHeader="False"
+            AutomationProperties.LandmarkType="Navigation"
+            AutomationProperties.Name="主导航"
             CompactPaneLength="64"
             IsBackButtonVisible="Collapsed"
             IsPaneOpen="True"
@@ -20,6 +31,7 @@
             PaneClosed="OnNavigationPaneClosed"
             PaneDisplayMode="Left"
             PaneOpened="OnNavigationPaneOpened"
+            PreviewKeyDown="OnShellNavigationPreviewKeyDown"
             SelectionChanged="OnNavigationSelectionChanged">
             <NavigationView.Resources>
                 <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="{ThemeResource NavigationSelectionColor}" />
@@ -42,12 +54,25 @@
                 </Grid>
             </NavigationView.PaneHeader>
             <NavigationView.MenuItems>
-                <NavigationViewItem x:Name="WorkspaceNavigationItem" Content="整理工作台" IsSelected="True" Tag="workspace">
+                <NavigationViewItem
+                    x:Name="WorkspaceNavigationItem"
+                    AutomationProperties.AcceleratorKey="Control+1"
+                    AutomationProperties.Name="整理工作台"
+                    Content="整理工作台"
+                    IsSelected="True"
+                    Tag="workspace"
+                    ToolTipService.ToolTip="整理工作台 (Ctrl+1)">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE80F;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem x:Name="ActivityNavigationItem" Content="活动与报告" Tag="activity">
+                <NavigationViewItem
+                    x:Name="ActivityNavigationItem"
+                    AutomationProperties.AcceleratorKey="Control+2"
+                    AutomationProperties.Name="活动与报告"
+                    Content="活动与报告"
+                    Tag="activity"
+                    ToolTipService.ToolTip="活动与报告 (Ctrl+2)">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE9D5;" />
                     </NavigationViewItem.Icon>
@@ -112,6 +137,8 @@
                     </Border>
                     <Border
                         x:Name="SafetyStatusBadge"
+                        AutomationProperties.AccessibilityView="Content"
+                        AutomationProperties.Name="本地安全处理"
                         Padding="9,6"
                         Background="{ThemeResource SuccessSubtleBrush}"
                         CornerRadius="8"
@@ -148,8 +175,9 @@
                         <InfoBar.ActionButton>
                             <Button
                                 x:Name="ReconnectButton"
-                                MinWidth="118"
+                                AutomationProperties.Name="重新连接分类核心"
                                 Click="OnReconnectClick"
+                                MinWidth="118"
                                 Style="{StaticResource ToolbarButtonStyle}">
                                 <StackPanel Orientation="Horizontal" Spacing="7">
                                     <ProgressRing
@@ -165,7 +193,12 @@
                         </InfoBar.ActionButton>
                     </InfoBar>
 
-                    <Grid x:Name="WorkspaceView" Grid.Row="1" RowSpacing="12">
+                    <Grid
+                        x:Name="WorkspaceView"
+                        Grid.Row="1"
+                        AutomationProperties.LandmarkType="Main"
+                        AutomationProperties.Name="整理工作台主区域"
+                        RowSpacing="12">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -187,6 +220,8 @@
                             <Border
                                 x:Name="ConnectionBadge"
                                 Grid.Column="1"
+                                AutomationProperties.AccessibilityView="Content"
+                                AutomationProperties.Name="分类核心连接状态"
                                 Padding="11,5"
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
@@ -203,6 +238,8 @@
                             x:Name="FolderCard"
                             Grid.Row="1"
                             AllowDrop="True"
+                            AutomationProperties.HelpText="可选择一个目录，或把目录及同目录中的文件拖放到这里。"
+                            AutomationProperties.Name="轻小说目录导入区域"
                             DragEnter="OnFolderDragEnter"
                             DragLeave="OnFolderDragLeave"
                             DragOver="OnFolderDragOver"
@@ -251,6 +288,8 @@
                                     </Button>
                                     <Button
                                         x:Name="ChooseFolderButton"
+                                        AutomationProperties.AcceleratorKey="Control+O"
+                                        AutomationProperties.Name="选择轻小说目录"
                                         Click="OnChooseFolderClick"
                                         Style="{StaticResource ToolbarButtonStyle}"
                                         ToolTipService.ToolTip="选择目录 (Ctrl+O)">
@@ -265,6 +304,8 @@
                                     <Button
                                         x:Name="ScanButton"
                                         MinWidth="132"
+                                        AutomationProperties.AcceleratorKey="F5"
+                                        AutomationProperties.HelpText="扫描只生成预览，不会移动文件。"
                                         AutomationProperties.Name="扫描并预览"
                                         Click="OnScanClick"
                                         IsEnabled="False"
@@ -426,7 +467,14 @@
                                         </StackPanel>
                                     </Grid>
 
-                                    <Grid x:Name="FilterGrid" Grid.Row="1" Margin="0,0,0,10" ColumnSpacing="8" RowSpacing="8">
+                                    <Grid
+                                        x:Name="FilterGrid"
+                                        Grid.Row="1"
+                                        Margin="0,0,0,10"
+                                        AutomationProperties.LandmarkType="Search"
+                                        AutomationProperties.Name="分类结果筛选"
+                                        ColumnSpacing="8"
+                                        RowSpacing="8">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="180" />
@@ -440,9 +488,12 @@
                                         </Grid.RowDefinitions>
                                         <AutoSuggestBox
                                             x:Name="ResultSearchBox"
+                                            AutomationProperties.AcceleratorKey="Control+F"
+                                            AutomationProperties.HelpText="搜索只改变当前显示，不会缩小确认整理的执行范围。"
                                             AutomationProperties.Name="搜索分类结果"
                                             PlaceholderText="搜索文件、系列或来源"
-                                            TextChanged="OnResultSearchTextChanged">
+                                            TextChanged="OnResultSearchTextChanged"
+                                            ToolTipService.ToolTip="搜索分类结果 (Ctrl+F)">
                                             <AutoSuggestBox.QueryIcon>
                                                 <FontIcon Glyph="&#xE721;" />
                                             </AutoSuggestBox.QueryIcon>
@@ -508,6 +559,8 @@
                                     <Grid Grid.Row="3">
                                         <ListView
                                             x:Name="ResultsList"
+                                            AutomationProperties.HelpText="筛选只改变当前显示。确认整理始终处理完整分类计划。"
+                                            AutomationProperties.Name="分类预览结果"
                                             ItemContainerStyle="{StaticResource ResultItemContainerStyle}"
                                             SelectionChanged="OnResultSelectionChanged"
                                             Style="{StaticResource ResultListViewStyle}">
@@ -520,7 +573,11 @@
                                             </ListView.Resources>
                                             <ListView.ItemTemplate>
                                                 <DataTemplate x:DataType="models:PlanItem">
-                                                    <Grid Padding="12,5" ColumnSpacing="12">
+                                                    <Grid
+                                                        AutomationProperties.AccessibilityView="Content"
+                                                        AutomationProperties.Name="{x:Bind AccessibilityLabel}"
+                                                        Padding="12,5"
+                                                        ColumnSpacing="12">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="118" />
                                                             <ColumnDefinition Width="2*" />
@@ -682,6 +739,7 @@
                                                         x:Name="LoadCandidatesButton"
                                                         Grid.Column="2"
                                                         MinWidth="104"
+                                                        AutomationProperties.Name="联网查找更多候选系列"
                                                         Click="OnLoadCandidatesClick"
                                                         Content="联网查找更多"
                                                         Style="{StaticResource ToolbarButtonStyle}" />
@@ -689,12 +747,17 @@
                                                 <ListView
                                                     x:Name="CandidateList"
                                                     MaxHeight="184"
+                                                    AutomationProperties.Name="候选系列列表"
                                                     ItemContainerStyle="{StaticResource ResultItemContainerStyle}"
                                                     SelectionChanged="OnCandidateSelectionChanged"
                                                     Style="{StaticResource ResultListViewStyle}">
                                                     <ListView.ItemTemplate>
                                                         <DataTemplate x:DataType="models:SeriesCandidate">
-                                                            <Grid Padding="9,6" ColumnSpacing="8">
+                                                            <Grid
+                                                                AutomationProperties.AccessibilityView="Content"
+                                                                AutomationProperties.Name="{x:Bind AccessibilityLabel}"
+                                                                Padding="9,6"
+                                                                ColumnSpacing="8">
                                                                 <Grid.ColumnDefinitions>
                                                                     <ColumnDefinition Width="*" />
                                                                     <ColumnDefinition Width="Auto" />
@@ -718,9 +781,14 @@
 
                                             <StackPanel Spacing="6">
                                                 <TextBlock FontSize="12" FontWeight="SemiBold" Text="手动修正系列" />
-                                                <TextBox x:Name="SeriesEditBox" MaxLength="120" PlaceholderText="系列文件夹名称" />
+                                                <TextBox
+                                                    x:Name="SeriesEditBox"
+                                                    AutomationProperties.Name="手动修正系列名称"
+                                                    MaxLength="120"
+                                                    PlaceholderText="系列文件夹名称" />
                                                 <CheckBox
                                                     x:Name="ApplySeriesGroupCheckBox"
+                                                    AutomationProperties.Name="同时修正当前系列"
                                                     Checked="OnBatchScopeChanged"
                                                     Content="同时修正当前系列"
                                                     Unchecked="OnBatchScopeChanged"
@@ -728,6 +796,7 @@
                                                 <Button
                                                     x:Name="SaveCorrectionButton"
                                                     HorizontalAlignment="Stretch"
+                                                    AutomationProperties.Name="保存系列修正"
                                                     Click="OnSaveCorrectionClick"
                                                     Style="{StaticResource ToolbarButtonStyle}">
                                                     <StackPanel HorizontalAlignment="Center" Orientation="Horizontal" Spacing="7">
@@ -749,10 +818,21 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
-                                                <Button x:Name="RevealFileButton" Click="OnRevealFileClick" HorizontalAlignment="Stretch" Style="{StaticResource ToolbarButtonStyle}">
+                                                <Button
+                                                    x:Name="RevealFileButton"
+                                                    AutomationProperties.Name="在文件资源管理器中定位文件"
+                                                    Click="OnRevealFileClick"
+                                                    HorizontalAlignment="Stretch"
+                                                    Style="{StaticResource ToolbarButtonStyle}">
                                                     <TextBlock HorizontalAlignment="Center" Text="定位文件" />
                                                 </Button>
-                                                <Button x:Name="OpenSubjectButton" Grid.Column="1" Click="OnOpenSubjectClick" HorizontalAlignment="Stretch" Style="{StaticResource ToolbarButtonStyle}">
+                                                <Button
+                                                    x:Name="OpenSubjectButton"
+                                                    Grid.Column="1"
+                                                    AutomationProperties.Name="打开作品资料网页"
+                                                    Click="OnOpenSubjectClick"
+                                                    HorizontalAlignment="Stretch"
+                                                    Style="{StaticResource ToolbarButtonStyle}">
                                                     <TextBlock HorizontalAlignment="Center" Text="作品资料" />
                                                 </Button>
                                             </Grid>
@@ -782,8 +862,19 @@
                                         <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="当前操作" />
                                         <TextBlock x:Name="OperationProgressText" HorizontalAlignment="Right" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
                                     </Grid>
-                                    <TextBlock x:Name="OperationMessageText" AutomationProperties.LiveSetting="Polite" FontWeight="SemiBold" Text="等待选择目录" TextTrimming="CharacterEllipsis" />
-                                    <ProgressBar x:Name="OperationProgressBar" Height="4" Maximum="100" Value="0" />
+                                    <TextBlock
+                                        x:Name="OperationMessageText"
+                                        AutomationProperties.LiveSetting="Polite"
+                                        AutomationProperties.Name="当前操作状态"
+                                        FontWeight="SemiBold"
+                                        Text="等待选择目录"
+                                        TextTrimming="CharacterEllipsis" />
+                                    <ProgressBar
+                                        x:Name="OperationProgressBar"
+                                        AutomationProperties.Name="当前操作进度"
+                                        Height="4"
+                                        Maximum="100"
+                                        Value="0" />
                                 </StackPanel>
                                 <StackPanel
                                     x:Name="OperationActions"
@@ -792,16 +883,36 @@
                                     VerticalAlignment="Center"
                                     Orientation="Horizontal"
                                     Spacing="8">
-                                    <Button x:Name="CancelButton" Click="OnCancelClick" Style="{StaticResource ToolbarButtonStyle}" Visibility="Collapsed">
+                                    <Button
+                                        x:Name="CancelButton"
+                                        AutomationProperties.Name="停止当前操作"
+                                        Click="OnCancelClick"
+                                        Style="{StaticResource ToolbarButtonStyle}"
+                                        Visibility="Collapsed">
                                         <TextBlock Text="停止" />
                                     </Button>
-                                    <Button x:Name="UndoButton" Click="OnUndoClick" IsEnabled="False" Style="{StaticResource ToolbarButtonStyle}">
+                                    <Button
+                                        x:Name="UndoButton"
+                                        AutomationProperties.HelpText="根据最近一次分类报告恢复已移动的文件。"
+                                        AutomationProperties.Name="撤销上次分类"
+                                        Click="OnUndoClick"
+                                        IsEnabled="False"
+                                        Style="{StaticResource ToolbarButtonStyle}">
                                         <StackPanel Orientation="Horizontal" Spacing="7">
                                             <FontIcon FontSize="14" Glyph="&#xE7A7;" />
                                             <TextBlock Text="撤销上次" />
                                         </StackPanel>
                                     </Button>
-                                    <Button x:Name="ApplyButton" MinWidth="118" Click="OnApplyClick" IsEnabled="False" Style="{StaticResource PrimaryActionButtonStyle}" ToolTipService.ToolTip="确认整理 (Ctrl+Enter)">
+                                    <Button
+                                        x:Name="ApplyButton"
+                                        MinWidth="118"
+                                        AutomationProperties.AcceleratorKey="Control+Enter"
+                                        AutomationProperties.HelpText="打开确认对话框。即使当前有筛选，也会处理完整分类计划。"
+                                        AutomationProperties.Name="确认整理全部分类计划"
+                                        Click="OnApplyClick"
+                                        IsEnabled="False"
+                                        Style="{StaticResource PrimaryActionButtonStyle}"
+                                        ToolTipService.ToolTip="确认整理 (Ctrl+Enter)">
                                         <Button.KeyboardAccelerators>
                                             <KeyboardAccelerator Key="Enter" Modifiers="Control" />
                                         </Button.KeyboardAccelerators>
@@ -816,7 +927,13 @@
                         </Border>
                     </Grid>
 
-                    <Grid x:Name="ActivityView" Grid.Row="1" Visibility="Collapsed" RowSpacing="12">
+                    <Grid
+                        x:Name="ActivityView"
+                        Grid.Row="1"
+                        AutomationProperties.LandmarkType="Main"
+                        AutomationProperties.Name="活动与报告主区域"
+                        RowSpacing="12"
+                        Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -836,10 +953,14 @@
                                 x:Name="RefreshReportButton"
                                 Grid.Column="1"
                                 VerticalAlignment="Center"
+                                AutomationProperties.AcceleratorKey="F5"
                                 AutomationProperties.Name="刷新分类历史"
                                 Click="OnRefreshReportClick"
                                 IsEnabled="False"
                                 Style="{StaticResource ToolbarButtonStyle}">
+                                <Button.KeyboardAccelerators>
+                                    <KeyboardAccelerator Key="F5" />
+                                </Button.KeyboardAccelerators>
                                 <StackPanel Orientation="Horizontal" Spacing="7">
                                     <ProgressRing
                                         x:Name="ReportHistoryProgressRing"
@@ -876,13 +997,29 @@
                                     </StackPanel>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
-                                    <Button x:Name="OpenReportButton" Click="OnOpenReportClick" IsEnabled="False" Style="{StaticResource ToolbarButtonStyle}">
+                                    <Button
+                                        x:Name="OpenReportButton"
+                                        AutomationProperties.Name="打开所选分类报告"
+                                        Click="OnOpenReportClick"
+                                        IsEnabled="False"
+                                        Style="{StaticResource ToolbarButtonStyle}">
                                         <TextBlock Text="打开" />
                                     </Button>
-                                    <Button x:Name="ExportReportButton" Click="OnExportReportClick" IsEnabled="False" Style="{StaticResource ToolbarButtonStyle}">
+                                    <Button
+                                        x:Name="ExportReportButton"
+                                        AutomationProperties.Name="导出所选分类报告"
+                                        Click="OnExportReportClick"
+                                        IsEnabled="False"
+                                        Style="{StaticResource ToolbarButtonStyle}">
                                         <TextBlock Text="导出" />
                                     </Button>
-                                    <Button x:Name="ActivityUndoButton" Click="OnActivityUndoClick" IsEnabled="False" Style="{StaticResource ToolbarButtonStyle}">
+                                    <Button
+                                        x:Name="ActivityUndoButton"
+                                        AutomationProperties.HelpText="恢复所选批次中仍可安全撤销的文件移动。"
+                                        AutomationProperties.Name="撤销所选分类批次"
+                                        Click="OnActivityUndoClick"
+                                        IsEnabled="False"
+                                        Style="{StaticResource ToolbarButtonStyle}">
                                         <TextBlock Text="撤销此批次" />
                                     </Button>
                                 </StackPanel>
@@ -936,6 +1073,8 @@
                                             <ListView.ItemTemplate>
                                                 <DataTemplate x:DataType="models:ReportHistoryEntry">
                                                     <Grid
+                                                        AutomationProperties.AccessibilityView="Content"
+                                                        AutomationProperties.Name="{x:Bind AccessibilityLabel}"
                                                         Padding="10,8"
                                                         RowSpacing="4"
                                                         ToolTipService.ToolTip="{x:Bind Path}">
@@ -993,7 +1132,11 @@
                                         </Grid.RowDefinitions>
                                         <TextBlock Margin="0,0,0,10" Style="{StaticResource SectionTitleTextStyle}" Text="报告条目" />
                                         <Grid Grid.Row="1">
-                                            <ListView ItemsSource="{x:Bind ReportItems}" SelectionMode="None">
+                                            <ListView
+                                                x:Name="ReportItemsList"
+                                                AutomationProperties.Name="所选分类报告条目"
+                                                ItemsSource="{x:Bind ReportItems}"
+                                                SelectionMode="None">
                                                 <ListView.ItemContainerStyle>
                                                     <Style TargetType="ListViewItem">
                                                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -1004,7 +1147,11 @@
                                                 </ListView.ItemContainerStyle>
                                                 <ListView.ItemTemplate>
                                                     <DataTemplate x:DataType="models:ReportItem">
-                                                        <Grid Padding="9,7" ColumnSpacing="10">
+                                                        <Grid
+                                                            AutomationProperties.AccessibilityView="Content"
+                                                            AutomationProperties.Name="{x:Bind AccessibilityLabel}"
+                                                            Padding="9,7"
+                                                            ColumnSpacing="10">
                                                             <Grid.ColumnDefinitions>
                                                                 <ColumnDefinition Width="74" />
                                                                 <ColumnDefinition Width="*" />
@@ -1053,7 +1200,12 @@
                                                 <FontIcon FontSize="15" Glyph="&#xE74D;" />
                                             </Button>
                                         </Grid>
-                                        <ListView Grid.Row="1" ItemsSource="{x:Bind Logs}" SelectionMode="None">
+                                        <ListView
+                                            x:Name="LogsList"
+                                            Grid.Row="1"
+                                            AutomationProperties.Name="当前会话活动日志"
+                                            ItemsSource="{x:Bind Logs}"
+                                            SelectionMode="None">
                                             <ListView.ItemContainerStyle>
                                                 <Style TargetType="ListViewItem">
                                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -1063,7 +1215,11 @@
                                             </ListView.ItemContainerStyle>
                                             <ListView.ItemTemplate>
                                                 <DataTemplate x:DataType="models:LogEntry">
-                                                    <Grid Padding="8,7" ColumnSpacing="12">
+                                                    <Grid
+                                                        AutomationProperties.AccessibilityView="Content"
+                                                        AutomationProperties.Name="{x:Bind AccessibilityLabel}"
+                                                        Padding="8,7"
+                                                        ColumnSpacing="12">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="66" />
                                                             <ColumnDefinition Width="82" />
@@ -1089,6 +1245,8 @@
                     <Grid
                         x:Name="SettingsView"
                         Grid.Row="1"
+                        AutomationProperties.LandmarkType="Main"
+                        AutomationProperties.Name="设置主区域"
                         Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*" />
@@ -1202,14 +1360,24 @@
                                             <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="自定义分类规则" />
                                             <TextBlock Style="{StaticResource MutedTextStyle}" Text="文件名命中匹配文本时，优先归入指定系列。" />
                                         </StackPanel>
-                                        <Button HorizontalAlignment="Right" Click="OnAddRuleClick" Style="{StaticResource ToolbarButtonStyle}">
+                                        <Button
+                                            x:Name="AddRuleButton"
+                                            HorizontalAlignment="Right"
+                                            AutomationProperties.Name="添加自定义分类规则"
+                                            Click="OnAddRuleClick"
+                                            Style="{StaticResource ToolbarButtonStyle}">
                                             <StackPanel Orientation="Horizontal" Spacing="7">
                                                 <FontIcon FontSize="14" Glyph="&#xE710;" />
                                                 <TextBlock Text="添加规则" />
                                             </StackPanel>
                                         </Button>
                                     </Grid>
-                                    <ListView MaxHeight="310" ItemsSource="{x:Bind Rules}" SelectionMode="None">
+                                    <ListView
+                                        x:Name="RulesList"
+                                        MaxHeight="310"
+                                        AutomationProperties.Name="自定义分类规则列表"
+                                        ItemsSource="{x:Bind Rules}"
+                                        SelectionMode="None">
                                         <ListView.ItemContainerStyle>
                                             <Style TargetType="ListViewItem">
                                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -1225,8 +1393,19 @@
                                                         <ColumnDefinition Width="*" />
                                                         <ColumnDefinition Width="36" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBox MaxLength="240" PlaceholderText="匹配文本，例如：刀剑神域" Text="{x:Bind Pattern, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnSettingsTextChanged" />
-                                                    <TextBox Grid.Column="1" MaxLength="120" PlaceholderText="目标系列，例如：刀剑神域" Text="{x:Bind Series, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="OnSettingsTextChanged" />
+                                                    <TextBox
+                                                        AutomationProperties.Name="规则匹配文本"
+                                                        MaxLength="240"
+                                                        PlaceholderText="匹配文本，例如：刀剑神域"
+                                                        Text="{x:Bind Pattern, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                        TextChanged="OnSettingsTextChanged" />
+                                                    <TextBox
+                                                        Grid.Column="1"
+                                                        AutomationProperties.Name="规则目标系列"
+                                                        MaxLength="120"
+                                                        PlaceholderText="目标系列，例如：刀剑神域"
+                                                        Text="{x:Bind Series, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                        TextChanged="OnSettingsTextChanged" />
                                                     <Button Grid.Column="2" AutomationProperties.Name="删除规则" Click="OnDeleteRuleClick" Style="{StaticResource IconButtonStyle}" ToolTipService.ToolTip="删除规则">
                                                         <FontIcon FontSize="14" Glyph="&#xE74D;" />
                                                     </Button>
@@ -1241,6 +1420,7 @@
                             </StackPanel>
                         </ScrollViewer>
                         <Border
+                            x:Name="SettingsSaveBar"
                             Grid.Row="1"
                             MaxWidth="900"
                             HorizontalAlignment="Stretch"
@@ -1255,10 +1435,24 @@
                                     <TextBlock x:Name="SettingsDirtyText" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="识别设置已保存" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                    <Button Click="OnResetSettingsClick" Style="{StaticResource ToolbarButtonStyle}">
+                                    <Button
+                                        x:Name="ResetSettingsButton"
+                                        AutomationProperties.Name="恢复当前已保存的设置"
+                                        Click="OnResetSettingsClick"
+                                        Style="{StaticResource ToolbarButtonStyle}">
                                         <TextBlock Text="恢复当前已保存值" />
                                     </Button>
-                                    <Button x:Name="SaveSettingsButton" Click="OnSaveSettingsClick" IsEnabled="False" Style="{StaticResource AccentButtonStyle}">
+                                    <Button
+                                        x:Name="SaveSettingsButton"
+                                        AutomationProperties.AcceleratorKey="Control+S"
+                                        AutomationProperties.Name="保存设置"
+                                        Click="OnSaveSettingsClick"
+                                        IsEnabled="False"
+                                        Style="{StaticResource AccentButtonStyle}"
+                                        ToolTipService.ToolTip="保存设置 (Ctrl+S)">
+                                        <Button.KeyboardAccelerators>
+                                            <KeyboardAccelerator Key="S" Modifiers="Control" />
+                                        </Button.KeyboardAccelerators>
                                         <TextBlock Text="保存设置" />
                                     </Button>
                                 </StackPanel>
