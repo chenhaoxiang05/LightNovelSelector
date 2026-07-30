@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import shutil
+import threading
+import uuid
 import zipfile
 from collections.abc import Callable, Iterable
 from dataclasses import replace
@@ -11,6 +13,8 @@ from pathlib import Path
 from .constants import (
     APP_NAME,
     APP_VERSION,
+    REPORT_JOURNAL_MAX_BYTES,
+    REPORT_JOURNAL_SCHEMA_VERSION,
     REPORT_MAX_BYTES,
     REPORT_SCHEMA_VERSION,
     SCAN_MAX_ENTRIES,
@@ -34,7 +38,10 @@ from .parsing import (
     safe_folder_name,
     weak_file_name_query,
 )
-from .storage import write_json_atomic
+from .storage import append_json_line_durable, write_json_atomic, write_json_lines_exclusive
+
+_ACTIVE_REPORT_PATHS: set[Path] = set()
+_ACTIVE_REPORT_PATHS_LOCK = threading.Lock()
 
 
 def validate_classification_root(root: Path) -> Path:
@@ -147,6 +154,7 @@ def write_classification_report(
     moved: int,
     skipped: int,
     actual_targets: dict[Path, Path] | None = None,
+    execution_id: str | None = None,
 ) -> None:
     actual_targets = actual_targets or {}
     resolved_report_path = report_path.expanduser().resolve()
@@ -155,6 +163,7 @@ def write_classification_report(
         "version": APP_VERSION,
         "schema_version": REPORT_SCHEMA_VERSION,
         "root_path": str(resolved_report_path.parent),
+        "execution_id": execution_id,
         "created_at": datetime.now(tz=timezone.utc).astimezone().isoformat(timespec="seconds"),
         "summary": {
             "total": len(plans),
@@ -171,7 +180,34 @@ def write_classification_report(
     write_json_atomic(report_path, report)
 
 
-def load_classification_report(report_path: Path) -> dict:
+def _report_journal_path(report_path: Path) -> Path:
+    resolved = report_path.expanduser().resolve()
+    return resolved.with_name(f"{resolved.stem}.recovery.jsonl")
+
+
+def _set_report_execution_active(report_path: Path, active: bool) -> None:
+    with _ACTIVE_REPORT_PATHS_LOCK:
+        if active:
+            _ACTIVE_REPORT_PATHS.add(report_path)
+        else:
+            _ACTIVE_REPORT_PATHS.discard(report_path)
+
+
+def _report_execution_is_active(report_path: Path) -> bool:
+    with _ACTIVE_REPORT_PATHS_LOCK:
+        return report_path in _ACTIVE_REPORT_PATHS
+
+
+def _valid_execution_id(value: object) -> bool:
+    if not isinstance(value, str) or len(value) != 32:
+        return False
+    try:
+        return uuid.UUID(hex=value).hex == value
+    except ValueError:
+        return False
+
+
+def _read_classification_report(report_path: Path) -> dict:
     with report_path.open("rb") as handle:
         data = handle.read(REPORT_MAX_BYTES + 1)
     if len(data) > REPORT_MAX_BYTES:
@@ -183,6 +219,25 @@ def load_classification_report(report_path: Path) -> dict:
     if not isinstance(report, dict):
         raise ValueError("分类报告格式无效：根节点必须是对象。")
     return report
+
+
+def load_classification_report(
+    report_path: Path,
+    *,
+    recover_pending: bool = True,
+) -> dict:
+    report_path = report_path.expanduser().resolve()
+    report = _read_classification_report(report_path)
+    journal_path = _report_journal_path(report_path)
+    if not recover_pending or (
+        not journal_path.exists()
+        and not journal_path.is_symlink()
+    ):
+        return report
+
+    if _report_execution_is_active(report_path):
+        return report
+    return _recover_classification_report(report, report_path, journal_path)
 
 
 def _resolved_child_path(path: Path, *, root_path: Path, field_name: str) -> Path:
@@ -250,6 +305,8 @@ def _validate_execution_plan(
 ) -> None:
     if not plans:
         return
+    if len(plans) > SCAN_MAX_FILES:
+        raise ValueError(f"单次执行最多支持 {SCAN_MAX_FILES} 个分类计划。")
     roots = {plan.target_dir.parent.expanduser().resolve() for plan in plans}
     if len(roots) != 1:
         raise ValueError("分类计划包含多个根目录，已拒绝执行。")
@@ -316,9 +373,14 @@ def _undo_item_path(value: object, *, field_name: str, item_number: int, root_pa
     if not path.is_absolute():
         raise ValueError(f"{item_label}的 {field_name} 必须是绝对路径。")
     try:
+        absolute_path = path.absolute()
         resolved_path = path.resolve()
     except OSError as exc:
         raise ValueError(f"无法解析{item_label}的 {field_name}：{exc}") from exc
+    if absolute_path != resolved_path:
+        raise ValueError(
+            f"{item_label}的 {field_name} 路径不规范或包含符号链接。"
+        )
     try:
         relative_path = resolved_path.relative_to(root_path)
     except ValueError as exc:
@@ -435,6 +497,251 @@ def _validate_undo_move_state(
         )
     ):
         raise ValueError(f"分类后的文件已发生变化，为避免移动错误内容，已拒绝撤销：{target_path.name}")
+
+
+def _start_report_journal(report_path: Path, execution_id: str) -> Path:
+    resolved_report_path = report_path.expanduser().resolve()
+    journal_path = _report_journal_path(resolved_report_path)
+    try:
+        write_json_lines_exclusive(
+            journal_path,
+            [
+                {
+                    "type": "header",
+                    "schema_version": REPORT_JOURNAL_SCHEMA_VERSION,
+                    "execution_id": execution_id,
+                    "report_path": str(resolved_report_path),
+                    "root_path": str(resolved_report_path.parent),
+                }
+            ],
+        )
+    except FileExistsError as exc:
+        raise ValueError(
+            "检测到尚未恢复的分类操作。请先打开或撤销上次分类报告，再重新整理。"
+        ) from exc
+    return journal_path
+
+
+def _append_move_intent(
+    journal_path: Path,
+    execution_id: str,
+    source_path: Path,
+    target_path: Path,
+) -> None:
+    append_json_line_durable(
+        journal_path,
+        {
+            "type": "move_intent",
+            "execution_id": execution_id,
+            "source_path": str(source_path),
+            "actual_target_path": str(target_path),
+        },
+        max_bytes=REPORT_JOURNAL_MAX_BYTES,
+    )
+
+
+def _remove_report_journal(journal_path: Path) -> None:
+    try:
+        journal_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _read_report_journal(journal_path: Path) -> list[dict]:
+    if journal_path.is_symlink() or not journal_path.is_file():
+        raise ValueError("分类恢复日志不是可信的普通文件。")
+    with journal_path.open("rb") as handle:
+        data = handle.read(REPORT_JOURNAL_MAX_BYTES + 1)
+    if len(data) > REPORT_JOURNAL_MAX_BYTES:
+        raise ValueError(
+            f"分类恢复日志超过允许大小（{REPORT_JOURNAL_MAX_BYTES} 字节）。"
+        )
+
+    lines = data.splitlines()
+    if not lines:
+        raise ValueError("分类恢复日志为空。")
+    if len(lines) > SCAN_MAX_FILES + 1:
+        raise ValueError("分类恢复日志包含过多记录。")
+
+    records: list[dict] = []
+    for line_number, line in enumerate(lines, start=1):
+        try:
+            record = json.loads(line.decode("utf-8"))
+        except (
+            UnicodeError,
+            json.JSONDecodeError,
+            RecursionError,
+            ValueError,
+        ) as exc:
+            raise ValueError(f"分类恢复日志第 {line_number} 行格式无效。") from exc
+        if not isinstance(record, dict):
+            raise ValueError(f"分类恢复日志第 {line_number} 行必须是对象。")
+        records.append(record)
+    return records
+
+
+def _recover_classification_report(
+    report: dict,
+    report_path: Path,
+    journal_path: Path,
+) -> dict:
+    records = _read_report_journal(journal_path)
+    header = records[0]
+    execution_id = report.get("execution_id")
+    if not _valid_execution_id(execution_id):
+        raise ValueError("分类恢复日志无法匹配缺少或无效执行编号的报告。")
+    journal_schema_version = header.get("schema_version")
+    if (
+        header.get("type") != "header"
+        or isinstance(journal_schema_version, bool)
+        or not isinstance(journal_schema_version, int)
+        or journal_schema_version != REPORT_JOURNAL_SCHEMA_VERSION
+        or header.get("execution_id") != execution_id
+        or header.get("report_path") != str(report_path)
+    ):
+        raise ValueError("分类恢复日志与当前报告不匹配。")
+
+    root_path = _report_root(report, report_path)
+    if header.get("root_path") != str(root_path):
+        raise ValueError("分类恢复日志的根目录与当前报告不匹配。")
+    items = report.get("items")
+    summary = report.get("summary")
+    if not isinstance(items, list) or not isinstance(summary, dict):
+        raise ValueError("分类报告格式无效：无法应用恢复日志。")
+
+    items_by_source: dict[Path, dict] = {}
+    for item_number, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"分类报告第 {item_number} 项必须是对象。")
+        source_path = _undo_item_path(
+            item.get("source_path"),
+            field_name="source_path",
+            item_number=item_number,
+            root_path=root_path,
+        )
+        if source_path in items_by_source:
+            raise ValueError("分类报告包含重复的源路径。")
+        items_by_source[source_path] = item
+
+    seen_sources: set[Path] = set()
+    seen_targets: set[Path] = set()
+    for event_number, event in enumerate(records[1:], start=1):
+        if (
+            event.get("type") != "move_intent"
+            or event.get("execution_id") != execution_id
+        ):
+            raise ValueError(f"分类恢复日志第 {event_number} 项类型或执行编号无效。")
+        source_path = _undo_item_path(
+            event.get("source_path"),
+            field_name="source_path",
+            item_number=event_number,
+            root_path=root_path,
+        )
+        target_path = _undo_item_path(
+            event.get("actual_target_path"),
+            field_name="actual_target_path",
+            item_number=event_number,
+            root_path=root_path,
+        )
+        item = items_by_source.get(source_path)
+        if item is None:
+            raise ValueError(f"分类恢复日志第 {event_number} 项不属于当前报告。")
+        planned_target = _undo_item_path(
+            item.get("target_path"),
+            field_name="target_path",
+            item_number=event_number,
+            root_path=root_path,
+        )
+        if target_path.parent != planned_target.parent:
+            raise ValueError(f"分类恢复日志第 {event_number} 项超出原目标目录。")
+        if source_path in seen_sources or target_path in seen_targets:
+            raise ValueError("分类恢复日志包含重复的源路径或目标路径。")
+        seen_sources.add(source_path)
+        seen_targets.add(target_path)
+
+        expected_size = _optional_undo_integer(
+            item,
+            field_name="source_size",
+            item_number=event_number,
+        )
+        expected_mtime_ns = _optional_undo_integer(
+            item,
+            field_name="source_mtime_ns",
+            item_number=event_number,
+        )
+        if (expected_size is None) != (expected_mtime_ns is None):
+            raise ValueError(
+                f"分类恢复日志第 {event_number} 项的文件状态字段不完整。"
+            )
+        source_present = source_path.exists() or source_path.is_symlink()
+        target_present = target_path.exists() or target_path.is_symlink()
+        if (
+            not source_path.is_symlink()
+            and source_path.is_file()
+            and not target_present
+        ):
+            try:
+                source_stat = source_path.stat()
+            except OSError as exc:
+                raise ValueError(
+                    f"分类恢复日志第 {event_number} 项的源文件无法复核。"
+                ) from exc
+            if (
+                expected_size is not None
+                and expected_mtime_ns is not None
+                and (
+                    source_stat.st_size != expected_size
+                    or source_stat.st_mtime_ns != expected_mtime_ns
+                )
+            ):
+                raise ValueError(
+                    f"分类恢复日志第 {event_number} 项的源文件已发生变化。"
+                )
+            item["actual_target_path"] = None
+            item["operation"] = "skipped"
+            continue
+        if not source_present and not target_path.is_symlink() and target_path.is_file():
+            _validate_undo_move_state(
+                source_path,
+                target_path,
+                root_path=root_path,
+                expected_size=expected_size,
+                expected_mtime_ns=expected_mtime_ns,
+            )
+            item["actual_target_path"] = str(target_path)
+            item["operation"] = "moved"
+            continue
+        raise ValueError(
+            f"分类恢复日志第 {event_number} 项的源和目标状态存在歧义，请人工检查后再操作。"
+        )
+
+    moved = sum(
+        isinstance(item, dict)
+        and item.get("operation") == "moved"
+        and bool(item.get("actual_target_path"))
+        for item in items
+    )
+    known_skipped = sum(
+        isinstance(item, dict)
+        and item.get("operation") != "moved"
+        and item.get("status") != "ready"
+        for item in items
+    )
+    existing_skipped = summary.get("skipped")
+    if (
+        isinstance(existing_skipped, bool)
+        or not isinstance(existing_skipped, int)
+        or existing_skipped < 0
+    ):
+        existing_skipped = 0
+    summary["moved"] = moved
+    summary["skipped"] = max(existing_skipped, known_skipped)
+    report["recovered_at"] = (
+        datetime.now(tz=timezone.utc).astimezone().isoformat(timespec="seconds")
+    )
+    write_json_atomic(report_path, report)
+    _remove_report_journal(journal_path)
+    return report
 
 
 def build_classification_plan(
@@ -689,13 +996,33 @@ def execute_classification_plan(
     progress_count: Callable[[int, int], None] | None = None,
     report_path: Path | None = None,
 ) -> tuple[int, int]:
+    if report_path is not None:
+        report_path = report_path.expanduser().resolve()
     _validate_execution_plan(plans, report_path)
     moved = 0
     skipped = 0
     actual_targets: dict[Path, Path] = {}
+    execution_id: str | None = None
+    journal_path: Path | None = None
     if report_path is not None:
-        write_classification_report(plans, report_path, moved=0, skipped=0, actual_targets=actual_targets)
+        execution_id = uuid.uuid4().hex
+        _set_report_execution_active(report_path, active=True)
     try:
+        if report_path is not None and execution_id is not None:
+            journal_path = _start_report_journal(report_path, execution_id)
+            try:
+                write_classification_report(
+                    plans,
+                    report_path,
+                    moved=0,
+                    skipped=0,
+                    actual_targets=actual_targets,
+                    execution_id=execution_id,
+                )
+            except BaseException:
+                _remove_report_journal(journal_path)
+                journal_path = None
+                raise
         for index, plan in enumerate(plans, start=1):
             if not plan.will_move:
                 skipped += 1
@@ -716,21 +1043,20 @@ def execute_classification_plan(
             )
             if resolved_final_target.parent != target_dir:
                 raise ValueError("分类计划的最终目标文件超出目标目录。")
-            shutil.move(str(plan.source_path), str(final_target))
-            actual_targets[plan.source_path] = final_target
-            moved += 1
-            if report_path is not None:
-                write_classification_report(
-                    plans,
-                    report_path,
-                    moved=moved,
-                    skipped=skipped,
-                    actual_targets=actual_targets,
+            if journal_path is not None and execution_id is not None:
+                _append_move_intent(
+                    journal_path,
+                    execution_id,
+                    plan.source_path,
+                    resolved_final_target,
                 )
+            shutil.move(str(plan.source_path), str(resolved_final_target))
+            actual_targets[plan.source_path] = resolved_final_target
+            moved += 1
             if progress_count:
                 progress_count(index, len(plans))
     except Exception as exc:
-        if report_path is not None:
+        if report_path is not None and journal_path is not None:
             try:
                 write_classification_report(
                     plans,
@@ -738,15 +1064,29 @@ def execute_classification_plan(
                     moved=moved,
                     skipped=skipped,
                     actual_targets=actual_targets,
+                    execution_id=execution_id,
                 )
             except OSError as report_exc:
                 raise RuntimeError(
                     f"分类中断，且部分撤销报告无法更新：{report_exc}"
                 ) from exc
         raise
-    if report_path is not None:
-        write_classification_report(plans, report_path, moved=moved, skipped=skipped, actual_targets=actual_targets)
-    return moved, skipped
+    else:
+        if report_path is not None:
+            write_classification_report(
+                plans,
+                report_path,
+                moved=moved,
+                skipped=skipped,
+                actual_targets=actual_targets,
+                execution_id=execution_id,
+            )
+            if journal_path is not None:
+                _remove_report_journal(journal_path)
+        return moved, skipped
+    finally:
+        if execution_id is not None and report_path is not None:
+            _set_report_execution_active(report_path, active=False)
 
 
 def undo_classification_report(

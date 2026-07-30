@@ -625,9 +625,16 @@ class ApplicationService:
     def report_summary(self) -> dict[str, Any]:
         with self._lock:
             report_path = self._latest_report_locked()
+            apply_running = (
+                self.operation["state"] == "running"
+                and self.operation["kind"] == "apply"
+            )
         if report_path is None:
             raise FileNotFoundError("当前目录没有分类报告。")
-        report = load_classification_report(report_path)
+        report = load_classification_report(
+            report_path,
+            recover_pending=not apply_running,
+        )
         summary = report.get("summary")
         items = report.get("items")
         if not isinstance(summary, dict) or not isinstance(items, list):

@@ -11,6 +11,7 @@ import lightnovel_classifier
 from lightnovel_classifier import (
     COVER_MAX_BYTES,
     FILE_FINGERPRINT_CHUNK_SIZE,
+    SCAN_MAX_FILES,
     AppSettings,
     BookMetadata,
     CustomRule,
@@ -32,6 +33,7 @@ from lightnovel_classifier import (
     identity_query_for_path,
     item_matches_volume,
     load_app_settings,
+    load_classification_report,
     normalize_for_match,
     parse_volume_number,
     plan_status_label,
@@ -568,11 +570,179 @@ class MovePlanTests(unittest.TestCase):
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(report["summary"]["moved"], 1)
             self.assertEqual(report["items"][0]["operation"], "moved")
+            self.assertTrue((root / "classification_report.recovery.jsonl").exists())
 
             restored, skipped = undo_classification_report(report_path)
 
             self.assertEqual((restored, skipped), (1, 0))
             self.assertTrue(first.exists())
+            self.assertFalse((root / "classification_report.recovery.jsonl").exists())
+
+    def test_batch_report_is_only_rewritten_at_operation_boundaries(self) -> None:
+        from lightnovel_selector.classification import (
+            write_classification_report as real_write_report,
+        )
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for volume in range(1, 6):
+                (root / f"Sword.Art.Online.Vol.{volume:02d}.txt").write_text(
+                    f"volume {volume}",
+                    encoding="utf-8",
+                )
+            report_path = root / "classification_report.json"
+            journal_path = root / "classification_report.recovery.jsonl"
+            plans = build_classification_plan(root, use_network=False)
+
+            with patch(
+                "lightnovel_selector.classification.write_classification_report",
+                wraps=real_write_report,
+            ) as writer:
+                moved, skipped = execute_classification_plan(
+                    plans,
+                    report_path=report_path,
+                )
+
+            self.assertEqual((moved, skipped), (5, 0))
+            self.assertEqual(writer.call_count, 2)
+            self.assertFalse(journal_path.exists())
+
+    def test_interrupted_batch_recovers_moved_files_from_journal(self) -> None:
+        from shutil import move as real_move
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A Sword.Art.Online.Vol.01.txt"
+            second = root / "B Sword.Art.Online.Vol.02.txt"
+            first.write_text("one", encoding="utf-8")
+            second.write_text("two", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            journal_path = root / "classification_report.recovery.jsonl"
+            plans = build_classification_plan(root, use_network=False)
+            move_count = 0
+
+            def interrupt_second_move(source, target):
+                nonlocal move_count
+                move_count += 1
+                if move_count == 2:
+                    raise KeyboardInterrupt
+                return real_move(source, target)
+
+            with (
+                patch(
+                    "lightnovel_selector.classification.shutil.move",
+                    side_effect=interrupt_second_move,
+                ),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                execute_classification_plan(plans, report_path=report_path)
+
+            self.assertTrue(journal_path.exists())
+            report = load_classification_report(report_path)
+
+            self.assertEqual(report["summary"]["moved"], 1)
+            self.assertEqual(report["items"][0]["operation"], "moved")
+            self.assertIn("recovered_at", report)
+            self.assertFalse(journal_path.exists())
+            self.assertEqual(undo_classification_report(report_path), (1, 0))
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+
+    def test_active_batch_report_read_does_not_consume_recovery_journal(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for volume in range(1, 3):
+                (root / f"Sword.Art.Online.Vol.{volume:02d}.txt").write_text(
+                    f"volume {volume}",
+                    encoding="utf-8",
+                )
+            report_path = root / "classification_report.json"
+            journal_path = root / "classification_report.recovery.jsonl"
+            plans = build_classification_plan(root, use_network=False)
+            observed_moved: list[int] = []
+
+            def inspect_during_batch(done: int, _total: int) -> None:
+                if done == 1:
+                    report = load_classification_report(report_path)
+                    observed_moved.append(report["summary"]["moved"])
+                    self.assertTrue(journal_path.exists())
+
+            execute_classification_plan(
+                plans,
+                report_path=report_path,
+                progress_count=inspect_during_batch,
+            )
+
+            self.assertEqual(observed_moved, [0])
+            self.assertEqual(load_classification_report(report_path)["summary"]["moved"], 2)
+            self.assertFalse(journal_path.exists())
+
+    def test_pending_recovery_journal_blocks_new_execution_without_overwrite(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("original", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            journal_path = root / "classification_report.recovery.jsonl"
+            original_report = '{"sentinel":true}\n'
+            original_journal = '{"type":"header","execution_id":"pending"}\n'
+            report_path.write_text(original_report, encoding="utf-8")
+            journal_path.write_text(original_journal, encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+
+            with self.assertRaisesRegex(ValueError, "尚未恢复"):
+                execute_classification_plan(plans, report_path=report_path)
+
+            self.assertEqual(report_path.read_text(encoding="utf-8"), original_report)
+            self.assertEqual(journal_path.read_text(encoding="utf-8"), original_journal)
+            self.assertTrue(source.exists())
+
+    def test_initial_report_failure_releases_new_recovery_journal(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("original", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            journal_path = root / "classification_report.recovery.jsonl"
+            plans = build_classification_plan(root, use_network=False)
+
+            with (
+                patch(
+                    "lightnovel_selector.classification.write_classification_report",
+                    side_effect=OSError("simulated report failure"),
+                ),
+                self.assertRaisesRegex(OSError, "simulated report failure"),
+            ):
+                execute_classification_plan(plans, report_path=report_path)
+
+            self.assertFalse(journal_path.exists())
+            self.assertTrue(source.exists())
+
+    def test_recovery_journal_rejects_ambiguous_file_state(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("original", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            journal_path = root / "classification_report.recovery.jsonl"
+            plans = build_classification_plan(root, use_network=False)
+
+            with (
+                patch(
+                    "lightnovel_selector.classification.shutil.move",
+                    side_effect=KeyboardInterrupt,
+                ),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                execute_classification_plan(plans, report_path=report_path)
+
+            plans[0].target_path.write_text("unexpected", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "状态存在歧义"):
+                load_classification_report(report_path)
+
+            self.assertTrue(source.exists())
+            self.assertTrue(plans[0].target_path.exists())
+            self.assertTrue(journal_path.exists())
 
     def test_execute_rejects_file_changed_after_scan(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -587,6 +757,18 @@ class MovePlanTests(unittest.TestCase):
 
             self.assertTrue(book.exists())
             self.assertFalse((root / "Sword Art Online" / book.name).exists())
+
+    def test_execute_rejects_plan_count_above_scan_limit(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("one", encoding="utf-8")
+            plan = build_classification_plan(root, use_network=False)[0]
+
+            with self.assertRaisesRegex(ValueError, "单次执行最多支持"):
+                execute_classification_plan([plan] * (SCAN_MAX_FILES + 1))
+
+            self.assertTrue(source.exists())
 
     def test_execute_rechecks_each_source_during_long_batch(self) -> None:
         from shutil import move as real_move

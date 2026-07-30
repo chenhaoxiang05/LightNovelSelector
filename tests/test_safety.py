@@ -351,6 +351,99 @@ class UndoReportSafetyTests(unittest.TestCase):
             self.assertIsInstance(report["items"][0]["source_mtime_ns"], int)
             self.assertEqual(undo_classification_report(report_path), (1, 0))
 
+    def test_recovery_journal_rejects_target_outside_classification_root(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            root = workspace / "library"
+            root.mkdir()
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("original", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            journal_path = root / "classification_report.recovery.jsonl"
+            plans = build_classification_plan(root, use_network=False)
+
+            with (
+                patch(
+                    "lightnovel_selector.classification.shutil.move",
+                    side_effect=KeyboardInterrupt,
+                ),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                execute_classification_plan(plans, report_path=report_path)
+
+            records = [
+                json.loads(line)
+                for line in journal_path.read_text(encoding="utf-8").splitlines()
+            ]
+            records[1]["actual_target_path"] = str(workspace / "outside.txt")
+            journal_path.write_text(
+                "".join(
+                    json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
+                    for record in records
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "超出分类根目录"):
+                load_classification_report(report_path)
+
+            self.assertTrue(source.exists())
+            self.assertTrue(journal_path.exists())
+
+    def test_recovery_journal_rejects_invalid_identity_metadata(self) -> None:
+        for mutation, expected_message in (
+            ("boolean schema", "不匹配"),
+            ("floating schema", "不匹配"),
+            ("invalid execution id", "无效执行编号"),
+        ):
+            with self.subTest(mutation=mutation), TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                source = root / "Sword.Art.Online.Vol.01.txt"
+                source.write_text("original", encoding="utf-8")
+                report_path = root / "classification_report.json"
+                journal_path = root / "classification_report.recovery.jsonl"
+                plans = build_classification_plan(root, use_network=False)
+
+                with (
+                    patch(
+                        "lightnovel_selector.classification.shutil.move",
+                        side_effect=KeyboardInterrupt,
+                    ),
+                    self.assertRaises(KeyboardInterrupt),
+                ):
+                    execute_classification_plan(plans, report_path=report_path)
+
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+                records = [
+                    json.loads(line)
+                    for line in journal_path.read_text(encoding="utf-8").splitlines()
+                ]
+                if mutation == "boolean schema":
+                    records[0]["schema_version"] = True
+                elif mutation == "floating schema":
+                    records[0]["schema_version"] = 1.0
+                else:
+                    report["execution_id"] = "not-a-valid-execution-id"
+                    records[0]["execution_id"] = report["execution_id"]
+                report_path.write_text(
+                    json.dumps(report, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                journal_path.write_text(
+                    "".join(
+                        json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+                        + "\n"
+                        for record in records
+                    ),
+                    encoding="utf-8",
+                )
+
+                with self.assertRaisesRegex(ValueError, expected_message):
+                    load_classification_report(report_path)
+
+                self.assertTrue(source.exists())
+                self.assertTrue(journal_path.exists())
+
     def test_undo_rejects_file_modified_after_classification(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -387,6 +480,30 @@ class UndoReportSafetyTests(unittest.TestCase):
 
             self.assertFalse(source.exists())
             self.assertTrue(target.is_dir())
+
+    def test_undo_rejects_target_replaced_by_symbolic_link(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("original", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            plans = build_classification_plan(root, use_network=False)
+            execute_classification_plan(plans, report_path=report_path)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            target = Path(report["items"][0]["actual_target_path"])
+            replacement = target.with_name("replacement.txt")
+            target.replace(replacement)
+            try:
+                target.symlink_to(replacement)
+            except (NotImplementedError, OSError) as exc:
+                self.skipTest(f"当前测试环境无法创建符号链接：{exc}")
+
+            with self.assertRaisesRegex(ValueError, "符号链接"):
+                undo_classification_report(report_path)
+
+            self.assertFalse(source.exists())
+            self.assertTrue(target.is_symlink())
+            self.assertTrue(replacement.exists())
 
     def test_undo_rejects_incomplete_file_state_fields(self) -> None:
         with TemporaryDirectory() as temp_dir:
