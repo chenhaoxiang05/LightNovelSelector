@@ -372,16 +372,10 @@ class UndoReportSafetyTests(unittest.TestCase):
             ):
                 execute_classification_plan(plans, report_path=report_path)
 
-            records = [
-                json.loads(line)
-                for line in journal_path.read_text(encoding="utf-8").splitlines()
-            ]
+            records = [json.loads(line) for line in journal_path.read_text(encoding="utf-8").splitlines()]
             records[1]["actual_target_path"] = str(workspace / "outside.txt")
             journal_path.write_text(
-                "".join(
-                    json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
-                    for record in records
-                ),
+                "".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n" for record in records),
                 encoding="utf-8",
             )
 
@@ -415,10 +409,7 @@ class UndoReportSafetyTests(unittest.TestCase):
                     execute_classification_plan(plans, report_path=report_path)
 
                 report = json.loads(report_path.read_text(encoding="utf-8"))
-                records = [
-                    json.loads(line)
-                    for line in journal_path.read_text(encoding="utf-8").splitlines()
-                ]
+                records = [json.loads(line) for line in journal_path.read_text(encoding="utf-8").splitlines()]
                 if mutation == "boolean schema":
                     records[0]["schema_version"] = True
                 elif mutation == "floating schema":
@@ -431,11 +422,7 @@ class UndoReportSafetyTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 journal_path.write_text(
-                    "".join(
-                        json.dumps(record, ensure_ascii=False, separators=(",", ":"))
-                        + "\n"
-                        for record in records
-                    ),
+                    "".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n" for record in records),
                     encoding="utf-8",
                 )
 
@@ -697,10 +684,13 @@ class UndoReportSafetyTests(unittest.TestCase):
                     )
                 return result
 
-            with patch(
-                "lightnovel_selector.classification.shutil.move",
-                side_effect=change_next_target_after_first_restore,
-            ), self.assertRaisesRegex(ValueError, "已发生变化"):
+            with (
+                patch(
+                    "lightnovel_selector.classification.shutil.move",
+                    side_effect=change_next_target_after_first_restore,
+                ),
+                self.assertRaisesRegex(ValueError, "已发生变化"),
+            ):
                 undo_classification_report(report_path)
 
             self.assertFalse(first.exists())

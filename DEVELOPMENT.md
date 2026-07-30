@@ -74,6 +74,7 @@ Sidecar 协议见 [WinUI 架构说明](docs/WINUI_ARCHITECTURE.md)。WinUI 不�
 .\.venv-build\Scripts\python.exe -m py_compile lightnovel_classifier.py lightnovel_sidecar.py tools\verify_sidecar.py
 .\.venv-build\Scripts\python.exe -m pytest -q
 .\.venv-build\Scripts\python.exe -m ruff check .
+.\.venv-build\Scripts\python.exe -m ruff format --check .
 .\.venv-build\Scripts\python.exe -m mypy lightnovel_classifier.py lightnovel_sidecar.py lightnovel_selector tests
 .\.venv-build\Scripts\python.exe -m bandit -q -r lightnovel_selector lightnovel_classifier.py lightnovel_sidecar.py
 .\.venv-build\Scripts\python.exe -m vulture lightnovel_classifier.py lightnovel_selector tests --min-confidence 80

@@ -49,6 +49,7 @@ jobs:
           }
           python -m pytest -q
           python -m ruff check .
+          python -m ruff format --check .
           python -m mypy lightnovel_classifier.py lightnovel_sidecar.py lightnovel_selector tests
           python -m bandit -q -r lightnovel_selector lightnovel_classifier.py lightnovel_sidecar.py
           python -m vulture lightnovel_classifier.py lightnovel_selector tests --min-confidence 80

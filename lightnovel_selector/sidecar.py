@@ -185,7 +185,15 @@ class SidecarServer:
                     ):
                         request_id = candidate_id
                 response, should_stop = self._dispatch(request)
-            except (json.JSONDecodeError, ProtocolError, OSError, RuntimeError, ValueError, TypeError, IndexError) as exc:
+            except (
+                json.JSONDecodeError,
+                ProtocolError,
+                OSError,
+                RuntimeError,
+                ValueError,
+                TypeError,
+                IndexError,
+            ) as exc:
                 response = self._error_response(request_id, exc)
                 should_stop = False
             except Exception as exc:  # noqa: BLE001 - 协议边界必须返回结构化错误并继续服务。

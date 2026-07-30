@@ -6,7 +6,7 @@
 
 - 工作树干净，版本号在 Python、WinUI 项目和清单中一致。
 - 当前提交已经通过 Pull Request，不直接从未审查的本地状态打标签。
-- `git diff --check`、Ruff、Mypy、Bandit、Vulture、pytest 和 MSTest 全部通过。
+- `git diff --check`、Ruff lint/format、Mypy、Bandit、Vulture、pytest 和 MSTest 全部通过。
 - pip-audit、NuGet audit、CodeQL、Secret scanning 没有未处理的高影响结果。
 - GitHub Actions 只使用固定的完整提交 SHA；NuGet 锁文件与项目引用一致。
 - 当前源码不包含令牌、真实用户名、绝对本机路径、小说正文、私人报告或临时截图。

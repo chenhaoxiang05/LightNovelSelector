@@ -149,9 +149,7 @@ def bangumi_search_items(query: str, *, timeout: float, pages: int = 1) -> list[
     for page in range(max(1, pages)):
         url = BANGUMI_SEARCH_URL
         if pages > 1:
-            url += "?" + urllib.parse.urlencode(
-                {"limit": BANGUMI_SEARCH_LIMIT, "offset": page * BANGUMI_SEARCH_LIMIT}
-            )
+            url += "?" + urllib.parse.urlencode({"limit": BANGUMI_SEARCH_LIMIT, "offset": page * BANGUMI_SEARCH_LIMIT})
         data = http_json(url, payload=payload, timeout=timeout)
         page_items = data.get("data", [])
         if not isinstance(page_items, list):
@@ -494,9 +492,7 @@ class SeriesResolver:
         )
 
     def _search_jikan(self, query: str) -> ResolveResult | None:
-        url = "https://api.jikan.moe/v4/manga?" + urllib.parse.urlencode(
-            {"q": query, "limit": 8, "type": "lightnovel"}
-        )
+        url = "https://api.jikan.moe/v4/manga?" + urllib.parse.urlencode({"q": query, "limit": 8, "type": "lightnovel"})
         data = http_json(url, timeout=self.timeout)
         media_items = data.get("data")
         if not isinstance(media_items, list):

@@ -113,9 +113,7 @@ def _report_item_for_ui(item: object) -> dict[str, Any] | None:
         "source_path": _report_text(item.get("source_path"), max_chars=4_096),
         "target_path": _report_text(item.get("target_path"), max_chars=4_096),
         "actual_target_path": (
-            _report_text(actual_target, max_chars=4_096)
-            if isinstance(actual_target, str)
-            else None
+            _report_text(actual_target, max_chars=4_096) if isinstance(actual_target, str) else None
         ),
         "series_name": _report_text(item.get("series_name"), max_chars=120),
         "resolver_source": _report_text(item.get("resolver_source"), max_chars=120),
@@ -388,6 +386,7 @@ class ApplicationService:
 
         def work() -> None:
             try:
+
                 def log(message: str) -> None:
                     if cancel_event.is_set():
                         raise OperationCancelled("扫描已取消。")
@@ -458,6 +457,7 @@ class ApplicationService:
 
         def work() -> None:
             try:
+
                 def report_progress(message: str) -> None:
                     self._append_log(message)
                     self._update_operation(operation_id, message=message)
@@ -531,6 +531,7 @@ class ApplicationService:
 
         def work() -> None:
             try:
+
                 def report_progress(message: str) -> None:
                     self._append_log(message)
                     self._update_operation(operation_id, message=message)
@@ -609,7 +610,11 @@ class ApplicationService:
             "summary": summary,
             "subject_url": subject_url,
             "cover_data_url": cover_data_url,
-            "cover_source": "本地封面" if local_cover_bytes and cover_data_url else "在线封面" if cover_data_url else "无封面",
+            "cover_source": "本地封面"
+            if local_cover_bytes and cover_data_url
+            else "在线封面"
+            if cover_data_url
+            else "无封面",
             "file_name": plan.source_path.name,
             "source_path": str(plan.source_path),
             "target_path": str(plan.target_path),
@@ -625,10 +630,7 @@ class ApplicationService:
     def report_summary(self) -> dict[str, Any]:
         with self._lock:
             report_path = self._latest_report_locked()
-            apply_running = (
-                self.operation["state"] == "running"
-                and self.operation["kind"] == "apply"
-            )
+            apply_running = self.operation["state"] == "running" and self.operation["kind"] == "apply"
         if report_path is None:
             raise FileNotFoundError("当前目录没有分类报告。")
         report = load_classification_report(
@@ -640,9 +642,7 @@ class ApplicationService:
         if not isinstance(summary, dict) or not isinstance(items, list):
             raise ValueError("分类报告格式无效：summary 或 items 类型错误。")
         safe_items = [
-            safe_item
-            for item in items[:REPORT_UI_MAX_ITEMS]
-            if (safe_item := _report_item_for_ui(item)) is not None
+            safe_item for item in items[:REPORT_UI_MAX_ITEMS] if (safe_item := _report_item_for_ui(item)) is not None
         ]
         return {
             "path": str(report_path),
