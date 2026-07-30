@@ -234,11 +234,13 @@
     </Style>
 
     <Style x:Key="SectionTitleTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SubtitleTextBlockStyle}">
+        <Setter Property="AutomationProperties.HeadingLevel" Value="Level2" />
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
 
     <Style x:Key="PageTitleTextStyle" TargetType="TextBlock" BasedOn="{StaticResource TitleTextBlockStyle}">
+        <Setter Property="AutomationProperties.HeadingLevel" Value="Level1" />
         <Setter Property="FontFamily" Value="{StaticResource AppDisplayFontFamily}" />
         <Setter Property="FontSize" Value="26" />
         <Setter Property="FontWeight" Value="SemiBold" />

@@ -122,6 +122,10 @@ public sealed class PlanItem
     public string? MetadataUrl { get; set; }
     public bool HasLocalCover { get; set; }
     public bool WillMove { get; set; }
+
+    public string AccessibilityLabel =>
+        $"{StatusLabel}，{SeriesName}，文件 {FileName}，目标 {TargetName}，"
+        + $"置信度 {ConfidenceLabel}，来源 {ResolverSource}";
 }
 
 public sealed class LogEntry
@@ -130,6 +134,15 @@ public sealed class LogEntry
     public string Time { get; set; } = string.Empty;
     public string Kind { get; set; } = "info";
     public string Message { get; set; } = string.Empty;
+
+    public string AccessibilityLabel =>
+        $"{Time}，{Kind switch
+        {
+            "success" => "成功",
+            "warning" => "警告",
+            "error" => "错误",
+            _ => "信息",
+        }}，{Message}";
 }
 
 public sealed class SeriesCandidate
@@ -148,6 +161,9 @@ public sealed class SeriesCandidate
     public string CurrentLabel { get; init; } = string.Empty;
     public string DisplayLabel => $"{SeriesName} · {Source} {ConfidenceLabel}";
     public string SourceLabel => $"{Source} · 置信度 {ConfidenceLabel}";
+    public string AccessibilityLabel =>
+        $"{SeriesName}，来源 {Source}，置信度 {ConfidenceLabel}"
+        + (IsCurrent ? "，当前结果" : string.Empty);
 }
 
 public sealed class BookDetail
@@ -288,6 +304,8 @@ public sealed class ReportItem
     public string FileName => System.IO.Path.GetFileName(SourcePath);
     public string DestinationPath => ActualTargetPath ?? TargetPath;
     public string OperationLabel => Operation == "moved" ? "已移动" : "已跳过";
+    public string AccessibilityLabel =>
+        $"{OperationLabel}，文件 {FileName}，目标 {DestinationPath}";
 }
 
 public sealed class SidecarPing

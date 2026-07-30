@@ -124,6 +124,8 @@ public sealed partial class MainPage : Page
         }
         settingsItem.Content = "设置";
         AutomationProperties.SetName(settingsItem, "设置");
+        AutomationProperties.SetAcceleratorKey(settingsItem, "Control+3");
+        ToolTipService.SetToolTip(settingsItem, "设置 (Ctrl+3)");
     }
 
     private async void OnUnloaded(object sender, RoutedEventArgs e)
@@ -227,6 +229,8 @@ public sealed partial class MainPage : Page
 
     private async void OnNavigationSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
+        var suppressMotion = _suppressNextNavigationMotion;
+        _suppressNextNavigationMotion = false;
         var target = args.IsSettingsSelected
             ? "settings"
             : (args.SelectedItemContainer as NavigationViewItem)?.Tag as string ?? "workspace";
@@ -238,13 +242,21 @@ public sealed partial class MainPage : Page
         {
             await Task.Yield();
             WorkspaceView.UpdateLayout();
-            Motion.RevealPage(WorkspaceView);
+            if (!suppressMotion)
+            {
+                Motion.RevealPage(WorkspaceView);
+            }
+            await FocusPendingShortcutTargetAsync();
         }
         else if (target == "activity")
         {
             await Task.Yield();
             ActivityView.UpdateLayout();
-            Motion.RevealPage(ActivityView);
+            if (!suppressMotion)
+            {
+                Motion.RevealPage(ActivityView);
+            }
+            await FocusPendingShortcutTargetAsync();
             if (App.IsAppearanceSmokeTest)
             {
                 LoadAppearanceSmokeReport();
@@ -258,7 +270,11 @@ public sealed partial class MainPage : Page
         {
             await Task.Yield();
             SettingsView.UpdateLayout();
-            Motion.RevealPage(SettingsContent);
+            if (!suppressMotion)
+            {
+                Motion.RevealPage(SettingsContent);
+            }
+            await FocusPendingShortcutTargetAsync();
         }
     }
 
