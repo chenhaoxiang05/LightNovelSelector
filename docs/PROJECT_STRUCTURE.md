@@ -6,10 +6,10 @@ LightNovelSelector 采用“WinUI 3 原生界面 + Python 分类核心”的双�
 LightNovelSelector/
 ├─ lightnovel_selector/
 │  ├─ application.py             应用状态、后台任务与快照
-│  ├─ classification.py          分类计划、完整哈希、执行、报告与撤销
+│  ├─ classification.py          分类计划、执行、恢复日志、报告与撤销
 │  ├─ cli.py                     命令行入口
 │  ├─ constants.py               版本与公共常量
-│  ├─ files.py                   文件扫描、内容提示与封面读取
+│  ├─ files.py                   文件扫描、完整哈希、内容提示与封面读取
 │  ├─ metadata.py                系列解析、联网元数据与缓存
 │  ├─ models.py                  Python 数据模型
 │  ├─ parsing.py                 文件名与卷号解析

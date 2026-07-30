@@ -1,6 +1,6 @@
 # LightNovelSelector 开发说明
 
-本文档面向维护者。普通用户只需要下载 `LightNovelSelector-v2.0.1-win-x64-setup.exe`。
+本文档面向维护者。普通用户只需要下载 `LightNovelSelector-v2.0.2-win-x64-setup.exe`。
 
 ## 技术栈
 
