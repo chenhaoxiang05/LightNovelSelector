@@ -4,6 +4,7 @@ import base64
 import math
 import threading
 from collections import deque
+from collections.abc import Iterable
 from contextlib import nullcontext
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -42,6 +43,11 @@ from .identity import (
 from .metadata import SeriesResolver
 from .models import AppSettings, ClassificationCandidate, ClassificationPlan, CustomRule
 from .parsing import collapse_spaces, normalize_for_match
+from .providers import (
+    MetadataProvider,
+    MetadataProviderRegistry,
+    builtin_metadata_providers,
+)
 from .report_history import (
     archive_classification_report,
     list_classification_reports,
@@ -211,8 +217,18 @@ def _report_item_for_ui(item: object) -> dict[str, Any] | None:
 
 
 class ApplicationService:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        metadata_providers: Iterable[MetadataProvider] | MetadataProviderRegistry | None = None,
+    ) -> None:
         self._lock = threading.RLock()
+        self.metadata_provider_registry = (
+            metadata_providers
+            if isinstance(metadata_providers, MetadataProviderRegistry)
+            else MetadataProviderRegistry(
+                builtin_metadata_providers() if metadata_providers is None else metadata_providers
+            )
+        )
         self.settings = load_app_settings()
         self.folder = self._existing_folder(self.settings.last_folder)
         self.plans: list[ClassificationPlan] = []
@@ -447,6 +463,14 @@ class ApplicationService:
             )
             return {
                 "app": {"name": APP_NAME, "version": APP_VERSION},
+                "metadata_providers": [
+                    {
+                        "id": provider.provider_id,
+                        "name": provider.display_name,
+                        "priority": provider.priority,
+                    }
+                    for provider in self.metadata_provider_registry
+                ],
                 "folder": str(self.folder) if self.folder else "",
                 "settings": app_settings_to_dict(self.settings),
                 "operation": dict(self.operation),
@@ -508,6 +532,7 @@ class ApplicationService:
                         progress_count=progress,
                         checkpoint=checkpoint,
                         scan_cache=scan_cache,
+                        metadata_providers=self.metadata_provider_registry,
                     )
                 if cancel_event.is_set():
                     raise OperationCancelled("扫描已取消。")
@@ -778,7 +803,10 @@ class ApplicationService:
                 "warning": "当前文件没有可安全联网的文件名查询，只显示本地候选。",
             }
 
-        resolver = SeriesResolver(use_network=True)
+        resolver = SeriesResolver(
+            use_network=True,
+            providers=self.metadata_provider_registry,
+        )
         results = resolver.resolve_candidates(plan.network_query)
         remote_candidates = tuple(
             ClassificationCandidate(
@@ -842,7 +870,10 @@ class ApplicationService:
         warning = None
         if use_network and plan.network_query:
             try:
-                metadata = SeriesResolver(use_network=True).resolve_book_metadata_for_query(
+                metadata = SeriesResolver(
+                    use_network=True,
+                    providers=self.metadata_provider_registry,
+                ).resolve_book_metadata_for_query(
                     plan.network_query,
                     series_name=plan.series_name,
                 )

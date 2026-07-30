@@ -36,6 +36,14 @@
 - 动画服务于状态变化，避免在筛选、表格浏览等高频操作中增加等待。
 - 公共文档和用户可见文案使用清晰中文，技术标识保留原名。
 
+## 新增元数据来源
+
+新增在线书库时，请实现公开 `MetadataProvider` 接口并只在
+`lightnovel_selector/providers/` 中处理服务字段。不要在 `classification.py`、
+`application.py` 或 `SeriesResolver` 中增加服务名称判断。提供器必须复用受限网络
+读取函数、声明稳定 ID 与缓存版本，并覆盖异常、畸形响应、URL 安全、部分失败和缓存
+分区测试。完整约束与示例见 [元数据提供器开发指南](docs/METADATA_PROVIDERS.md)。
+
 ## 验证修改
 
 提交前至少执行：

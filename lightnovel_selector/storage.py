@@ -26,6 +26,7 @@ from .constants import (
     SERIES_NAME_MAX_CHARS,
     SETTINGS_FILE_NAME,
     SETTINGS_MAX_BYTES,
+    VOLUME_NUMBER_MAX,
 )
 from .models import AppSettings, BookIdentity, BookMetadata, CustomRule, ResolveResult
 from .parsing import (
@@ -85,7 +86,7 @@ def _volume_number(value: object) -> int | None:
         return None
     if isinstance(value, bool) or not isinstance(value, int):
         raise TypeError("卷号必须是整数。")
-    if value < 0 or value > 999:
+    if value < 0 or value > VOLUME_NUMBER_MAX:
         raise ValueError("卷号超出允许范围。")
     return value
 

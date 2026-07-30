@@ -37,7 +37,8 @@ py -3 -m venv .venv-build
 - `report_history.py`：报告归档、受限历史列表、执行编号解析和撤销状态。
 - `parsing.py`：文件名清洗、卷号与系列名解析。
 - `files.py`：文件扫描、内容提示、封面和网络字节读取。
-- `metadata.py`：本地/在线系列解析与缓存。
+- `metadata.py`：提供器协调、错误隔离和按注册表分区的元数据缓存。
+- `providers/`：公开提供器接口、注册表和 Bangumi、AniList、Jikan 独立实现。
 - `scan_cache.py`：可靠文件快照、增量扫描和完整哈希缓存。
 - `storage.py`：设置、缓存、原子 JSON 和持久化 JSON Lines。
 - `application.py`：线程安全应用状态、异步任务和快照。
@@ -55,6 +56,7 @@ py -3 -m venv .venv-build
 - `Helpers/Motion.cs`：按压、页面 reveal、Toast 与减少动态效果。
 
 Sidecar 协议见 [WinUI 架构说明](docs/WINUI_ARCHITECTURE.md)。WinUI 不复制分类规则；Python 不操作窗口控件。
+新增在线书库必须遵守 [元数据提供器开发指南](docs/METADATA_PROVIDERS.md)，不得在分类核心中加入特定服务分支。
 
 ## 本地运行
 

@@ -26,6 +26,7 @@ from lightnovel_classifier import (
     ClassificationCandidate,
     CustomRule,
     FileSnapshot,
+    MetadataProvider,
     PersistentMetadataCache,
     PersistentScanCache,
     ResolveResult,
@@ -219,7 +220,6 @@ class CandidateTests(unittest.TestCase):
         self.assertEqual(merged[0], preferred_duplicate)
 
     def test_resolver_collects_available_providers_and_keeps_partial_error(self) -> None:
-        resolver = lightnovel_classifier.SeriesResolver(use_network=True)
         bangumi = ResolveResult(
             identity=BookIdentity(title="Demo", series_name="Demo"),
             source="Bangumi",
@@ -232,12 +232,39 @@ class CandidateTests(unittest.TestCase):
             confidence=0.82,
             local_guess="Demo",
         )
-        with (
-            patch.object(resolver, "_search_bangumi", return_value=bangumi),
-            patch.object(resolver, "_search_anilist", side_effect=OSError("offline")),
-            patch.object(resolver, "_search_jikan", return_value=jikan),
-        ):
-            results = resolver.resolve_candidates("Demo")
+
+        class CandidateProvider(MetadataProvider):
+            def __init__(
+                self,
+                provider_id: str,
+                display_name: str,
+                result: ResolveResult | None = None,
+                error: Exception | None = None,
+            ) -> None:
+                self.provider_id = provider_id
+                self.display_name = display_name
+                self.result = result
+                self.error = error
+
+            def resolve_series(
+                self,
+                query: str,
+                *,
+                timeout: float,
+            ) -> ResolveResult | None:
+                if self.error is not None:
+                    raise self.error
+                return self.result
+
+        resolver = lightnovel_classifier.SeriesResolver(
+            use_network=True,
+            providers=(
+                CandidateProvider("bangumi-test", "Bangumi", bangumi),
+                CandidateProvider("anilist-test", "AniList", error=OSError("offline")),
+                CandidateProvider("jikan-test", "Jikan", jikan),
+            ),
+        )
+        results = resolver.resolve_candidates("Demo")
 
         self.assertEqual(results, (bangumi, jikan))
         self.assertIn("offline", resolver.last_network_error or "")
@@ -772,7 +799,10 @@ class MovePlanTests(unittest.TestCase):
 
     def test_bangumi_search_rejects_invalid_data_shape(self) -> None:
         with (
-            patch("lightnovel_selector.metadata.http_json", return_value={"data": {}}),
+            patch(
+                "lightnovel_selector.providers.bangumi.http_json",
+                return_value={"data": {}},
+            ),
             self.assertRaisesRegex(RuntimeError, "data 不是数组"),
         ):
             lightnovel_classifier.bangumi_search_items("Sword Art Online", timeout=1.0)

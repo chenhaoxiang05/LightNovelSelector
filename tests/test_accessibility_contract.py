@@ -66,6 +66,7 @@ class AccessibilityContractTests(unittest.TestCase):
             "LogsList": "当前会话活动日志",
             "RulesList": "自定义分类规则列表",
             "SaveSettingsButton": "保存设置",
+            "NetworkProviderDescriptionText": "当前元数据来源",
         }
 
         for element_name, accessible_name in required_names.items():
