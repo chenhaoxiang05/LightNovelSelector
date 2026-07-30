@@ -26,7 +26,7 @@ LightNovelSelector/
 │  │  ├─ Security/               外部 URI 等系统边界校验
 │  │  ├─ Services/               Sidecar 客户端
 │  │  ├─ Styles/                 语义设计令牌
-│  │  ├─ ViewModels/             筛选与连接状态逻辑
+│  │  ├─ ViewModels/             筛选、连接状态与自适应布局策略
 │  │  └─ Views/                  主窗口和分职责页面 partial
 │  └─ LightNovelSelector.WinUI.Tests/
 ├─ scripts/windows/

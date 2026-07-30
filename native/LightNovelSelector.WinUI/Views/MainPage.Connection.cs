@@ -96,6 +96,7 @@ public sealed partial class MainPage
         ReconnectButtonIcon.Visibility = recovering ? Visibility.Collapsed : Visibility.Visible;
         ReconnectButtonText.Text = recovering ? "连接中" : "重新连接";
         UpdateOperation(_snapshot.Operation);
+        UpdateCompactDetailButtonState();
         if (state == ConnectionState.Ready && ActivityView.Visibility == Visibility.Visible)
         {
             _ = RefreshReportAsync();
