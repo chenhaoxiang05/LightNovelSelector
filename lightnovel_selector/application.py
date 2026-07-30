@@ -30,10 +30,21 @@ from .constants import (
     SERIES_NAME_MAX_CHARS,
 )
 from .files import http_bytes, read_local_cover_bytes
+from .identity import (
+    language_display_name,
+    merge_book_identities,
+    volume_display_name,
+)
 from .metadata import SeriesResolver
 from .models import AppSettings, ClassificationPlan, CustomRule
 from .parsing import collapse_spaces
-from .storage import app_settings_to_dict, load_app_settings, try_save_app_settings
+from .storage import (
+    app_settings_to_dict,
+    book_identity_from_dict,
+    book_identity_to_dict,
+    load_app_settings,
+    try_save_app_settings,
+)
 
 
 class OperationCancelled(RuntimeError):
@@ -41,12 +52,23 @@ class OperationCancelled(RuntimeError):
 
 
 def plan_to_dict(plan: ClassificationPlan, index: int) -> dict[str, Any]:
+    identity = plan.identity
     return {
         "index": index,
         "file_name": plan.source_path.name,
         "extension": plan.source_path.suffix.casefold(),
         "source_path": str(plan.source_path),
+        "identity": book_identity_to_dict(identity),
+        "book_title": identity.title,
         "series_name": plan.series_name,
+        "authors": list(identity.authors),
+        "authors_label": "、".join(identity.authors) or "未识别",
+        "volume_number": identity.volume_number,
+        "volume_label": volume_display_name(identity.volume_number),
+        "language": identity.language,
+        "language_label": language_display_name(identity.language),
+        "tags": list(identity.tags),
+        "tags_label": " · ".join(identity.tags),
         "series_key": plan.series_key or plan.series_name,
         "target_dir": str(plan.target_dir),
         "target_path": str(plan.target_path),
@@ -59,7 +81,7 @@ def plan_to_dict(plan: ClassificationPlan, index: int) -> dict[str, Any]:
         "note": plan.note,
         "duplicate_of": str(plan.duplicate_of) if plan.duplicate_of else None,
         "rename_to": plan.rename_to,
-        "metadata_title": plan.metadata_title,
+        "metadata_title": identity.title,
         "metadata_url": plan.metadata_url,
         "has_local_cover": plan.source_path.suffix.casefold() in {".epub", ".cbz", ".zip"},
         "will_move": plan.will_move,
@@ -109,13 +131,25 @@ def _report_item_for_ui(item: object) -> dict[str, Any] | None:
     if not isinstance(item, dict):
         return None
     actual_target = item.get("actual_target_path")
+    series_name = _report_text(item.get("series_name"), max_chars=120)
+    metadata_title = _report_text(item.get("metadata_title"), max_chars=512)
+    identity = (
+        book_identity_from_dict(
+            item.get("identity") if isinstance(item.get("identity"), dict) else {},
+            fallback_title=metadata_title or series_name,
+            fallback_series=series_name,
+        )
+        if metadata_title or series_name
+        else None
+    )
     return {
         "source_path": _report_text(item.get("source_path"), max_chars=4_096),
         "target_path": _report_text(item.get("target_path"), max_chars=4_096),
         "actual_target_path": (
             _report_text(actual_target, max_chars=4_096) if isinstance(actual_target, str) else None
         ),
-        "series_name": _report_text(item.get("series_name"), max_chars=120),
+        "identity": book_identity_to_dict(identity) if identity else None,
+        "series_name": series_name,
         "resolver_source": _report_text(item.get("resolver_source"), max_chars=120),
         "confidence": _report_confidence(item.get("confidence")),
         "status": _report_text(item.get("status"), max_chars=32),
@@ -590,7 +624,12 @@ class ApplicationService:
             except (OSError, RuntimeError) as exc:
                 warning = f"详情暂时无法联网更新：{exc}"
 
-        title = (metadata.title if metadata else None) or plan.metadata_title or plan.series_name
+        identity = merge_book_identities(
+            plan.identity,
+            metadata.identity if metadata else None,
+            series_name=plan.series_name,
+        )
+        title = identity.title or plan.series_name
         summary = (metadata.summary if metadata else None) or plan.metadata_summary or "暂无可用简介。"
         subject_url = (metadata.url if metadata else None) or plan.metadata_url
         cover_url = (metadata.cover_url if metadata else None) or plan.metadata_cover_url
@@ -606,6 +645,7 @@ class ApplicationService:
 
         return {
             "index": index,
+            "identity": book_identity_to_dict(identity),
             "title": title,
             "summary": summary,
             "subject_url": subject_url,
@@ -619,6 +659,14 @@ class ApplicationService:
             "source_path": str(plan.source_path),
             "target_path": str(plan.target_path),
             "series_name": plan.series_name,
+            "authors": list(identity.authors),
+            "authors_label": "、".join(identity.authors) or "未识别",
+            "volume_number": identity.volume_number,
+            "volume_label": volume_display_name(identity.volume_number),
+            "language": identity.language,
+            "language_label": language_display_name(identity.language),
+            "tags": list(identity.tags),
+            "tags_label": " · ".join(identity.tags) or "未识别",
             "resolver_source": plan.resolver_source,
             "confidence_label": f"{plan.confidence:.0%}",
             "status": plan.status,

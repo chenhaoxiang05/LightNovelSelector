@@ -65,13 +65,33 @@ public sealed class PlanCounts
     public int Series { get; init; }
 }
 
+public sealed class BookIdentity
+{
+    public string Title { get; init; } = string.Empty;
+    public string SeriesName { get; init; } = string.Empty;
+    public IReadOnlyList<string> Authors { get; init; } = [];
+    public int? VolumeNumber { get; init; }
+    public string? Language { get; init; }
+    public IReadOnlyList<string> Tags { get; init; } = [];
+}
+
 public sealed class PlanItem
 {
     public int Index { get; set; }
     public string FileName { get; set; } = string.Empty;
     public string Extension { get; set; } = string.Empty;
     public string SourcePath { get; set; } = string.Empty;
+    public BookIdentity Identity { get; set; } = new();
+    public string BookTitle { get; set; } = string.Empty;
     public string SeriesName { get; set; } = string.Empty;
+    public IReadOnlyList<string> Authors { get; set; } = [];
+    public string AuthorsLabel { get; set; } = string.Empty;
+    public int? VolumeNumber { get; set; }
+    public string VolumeLabel { get; set; } = string.Empty;
+    public string? Language { get; set; }
+    public string LanguageLabel { get; set; } = string.Empty;
+    public IReadOnlyList<string> Tags { get; set; } = [];
+    public string TagsLabel { get; set; } = string.Empty;
     public string SeriesKey { get; set; } = string.Empty;
     public string TargetDir { get; set; } = string.Empty;
     public string TargetPath { get; set; } = string.Empty;
@@ -101,6 +121,7 @@ public sealed class LogEntry
 public sealed class BookDetail
 {
     public int Index { get; init; }
+    public BookIdentity Identity { get; init; } = new();
     public string Title { get; init; } = string.Empty;
     public string Summary { get; init; } = string.Empty;
     public string? SubjectUrl { get; init; }
@@ -110,6 +131,14 @@ public sealed class BookDetail
     public string SourcePath { get; init; } = string.Empty;
     public string TargetPath { get; init; } = string.Empty;
     public string SeriesName { get; init; } = string.Empty;
+    public IReadOnlyList<string> Authors { get; init; } = [];
+    public string AuthorsLabel { get; init; } = string.Empty;
+    public int? VolumeNumber { get; init; }
+    public string VolumeLabel { get; init; } = string.Empty;
+    public string? Language { get; init; }
+    public string LanguageLabel { get; init; } = string.Empty;
+    public IReadOnlyList<string> Tags { get; init; } = [];
+    public string TagsLabel { get; init; } = string.Empty;
     public string ResolverSource { get; init; } = string.Empty;
     public string ConfidenceLabel { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
@@ -155,6 +184,7 @@ public sealed class ReportItem
     public string SourcePath { get; set; } = string.Empty;
     public string TargetPath { get; set; } = string.Empty;
     public string? ActualTargetPath { get; set; }
+    public BookIdentity? Identity { get; set; }
     public string SeriesName { get; set; } = string.Empty;
     public string ResolverSource { get; set; } = string.Empty;
     public double Confidence { get; set; }

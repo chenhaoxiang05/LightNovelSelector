@@ -6,7 +6,13 @@ from difflib import SequenceMatcher
 from html.parser import HTMLParser
 from pathlib import Path
 
-from .constants import GLOBAL_RELEASE_WORDS, NOISE_TAG_WORDS, SERIES_NAME_MAX_CHARS, VOLUME_TOKEN
+from .constants import (
+    GLOBAL_RELEASE_WORDS,
+    NOISE_TAG_WORDS,
+    SERIES_NAME_MAX_CHARS,
+    SUPPORTED_EXTENSIONS,
+    VOLUME_TOKEN,
+)
 
 
 def collapse_spaces(value: str) -> str:
@@ -141,9 +147,98 @@ def identity_query_for_path(path: Path, hint: str | None) -> str:
     return hint[:120] or file_query
 
 
+def normalize_language_code(value: str) -> str | None:
+    text = collapse_spaces(unicodedata.normalize("NFKC", value)).casefold().replace("_", "-")
+    aliases = {
+        "chs": "zh-Hans",
+        "cn": "zh-Hans",
+        "简中": "zh-Hans",
+        "简体": "zh-Hans",
+        "简体中文": "zh-Hans",
+        "zh-cn": "zh-Hans",
+        "zh-hans": "zh-Hans",
+        "cht": "zh-Hant",
+        "繁中": "zh-Hant",
+        "繁体": "zh-Hant",
+        "繁體": "zh-Hant",
+        "繁体中文": "zh-Hant",
+        "繁體中文": "zh-Hant",
+        "zh-hk": "zh-Hant",
+        "zh-mo": "zh-Hant",
+        "zh-tw": "zh-Hant",
+        "zh-hant": "zh-Hant",
+        "日文": "ja",
+        "日语": "ja",
+        "日語": "ja",
+        "日本語": "ja",
+        "jp": "ja",
+        "jpn": "ja",
+        "ja-jp": "ja",
+        "英文": "en",
+        "英语": "en",
+        "英語": "en",
+        "english": "en",
+        "eng": "en",
+        "en-us": "en",
+        "en-gb": "en",
+        "韩文": "ko",
+        "韓文": "ko",
+        "韩语": "ko",
+        "韓語": "ko",
+        "kr": "ko",
+        "kor": "ko",
+        "ko-kr": "ko",
+    }
+    if text in aliases:
+        return aliases[text]
+    if re.fullmatch(r"[a-z]{2,3}(?:-[a-z0-9]{2,8})*", text):
+        return text
+    return None
+
+
+def infer_language(*values: str | None) -> str | None:
+    text = " ".join(value for value in values if value)
+    normalized = unicodedata.normalize("NFKC", text)
+    explicit_patterns = (
+        r"(?<![a-z])(?:zh[-_](?:cn|hans)|chs)(?![a-z])",
+        r"简体中文|简体|简中",
+        r"(?<![a-z])(?:zh[-_](?:tw|hk|mo|hant)|cht)(?![a-z])",
+        r"繁體中文|繁体中文|繁體|繁体|繁中",
+        r"(?<![a-z])(?:ja[-_]jp|jpn|jp)(?![a-z])|日本語|日语|日語|日文",
+        r"(?<![a-z])(?:en[-_](?:us|gb)|eng)(?![a-z])|英语|英語|英文",
+        r"(?<![a-z])(?:ko[-_]kr|kor|kr)(?![a-z])|韩语|韓語|韩文|韓文",
+    )
+    for pattern in explicit_patterns:
+        match = re.search(pattern, normalized, flags=re.IGNORECASE)
+        if match:
+            return normalize_language_code(match.group(0))
+
+    kana_count = sum("\u3040" <= char <= "\u30ff" for char in normalized)
+    hangul_count = sum("\uac00" <= char <= "\ud7af" for char in normalized)
+    han_chars = [char for char in normalized if "\u3400" <= char <= "\u9fff"]
+    latin_count = sum(char.isascii() and char.isalpha() for char in normalized)
+    if kana_count >= 2:
+        return "ja"
+    if hangul_count >= 2:
+        return "ko"
+    if len(han_chars) >= 20:
+        traditional_markers = set("體臺灣與為這個來說裡後時點書學國會發現開關")
+        simplified_markers = set("体台湾与为这个来说里后时点书学国会发现开关")
+        traditional_score = sum(char in traditional_markers for char in han_chars)
+        simplified_score = sum(char in simplified_markers for char in han_chars)
+        if traditional_score > simplified_score:
+            return "zh-Hant"
+        if simplified_score > traditional_score:
+            return "zh-Hans"
+        return "zh"
+    if latin_count >= 80 and not han_chars:
+        return "en"
+    return None
+
+
 def parse_volume_number(value: str) -> int | None:
     path_value = Path(value)
-    raw_text = path_value.stem if path_value.suffix else value
+    raw_text = path_value.stem if path_value.suffix.casefold() in SUPPORTED_EXTENSIONS else value
     text = unicodedata.normalize("NFKC", raw_text)
     patterns = [
         r"(?:第\s*)?([0-9]{1,3})\s*[卷册集部]",
@@ -184,6 +279,7 @@ def extract_series_guess(file_name: str) -> str:
         rf"^(?P<title>.+?)[\s._\-–—~～]*(?:第\s*{VOLUME_TOKEN}\s*[卷册集部].*)$",
         rf"^(?P<title>.+?)[\s._\-–—~～]*(?:[卷册集部]\s*{VOLUME_TOKEN}.*)$",
         r"^(?P<title>.+?)[\s._\-–—~～]*(?:(?:vol(?:ume)?|book|v)\.?\s*[0-9０-９]{1,3}.*)$",
+        r"^(?P<title>.+?)[\s._\-–—~～]*[\(（]\s*[0-9０-９]{1,3}\s*[\)）].*$",
         r"^(?P<title>.+?)[\s._\-–—~～]+(?:[0-9０-９]{1,3})(?:\s+.+)?$",
     ]
 

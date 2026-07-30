@@ -12,6 +12,9 @@ from pathlib import Path
 from .constants import (
     CUSTOM_RULE_MAX_COUNT,
     CUSTOM_RULE_PATTERN_MAX_CHARS,
+    IDENTITY_MAX_AUTHORS,
+    IDENTITY_MAX_TAGS,
+    IDENTITY_VALUE_MAX_CHARS,
     LOCAL_PATH_MAX_CHARS,
     METADATA_CACHE_MAX_BYTES,
     METADATA_CACHE_MAX_ENTRIES,
@@ -24,8 +27,13 @@ from .constants import (
     SETTINGS_FILE_NAME,
     SETTINGS_MAX_BYTES,
 )
-from .models import AppSettings, BookMetadata, CustomRule, ResolveResult
-from .parsing import collapse_spaces
+from .models import AppSettings, BookIdentity, BookMetadata, CustomRule, ResolveResult
+from .parsing import (
+    collapse_spaces,
+    extract_series_guess,
+    normalize_language_code,
+    parse_volume_number,
+)
 
 
 def _required_text(value: object, *, max_chars: int) -> str:
@@ -55,9 +63,81 @@ def _confidence(value: object) -> float:
     return max(0.0, min(result, 1.0))
 
 
+def _identity_values(value: object, *, max_count: int) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, (list, tuple)):
+        raise TypeError("身份列表字段必须是数组。")
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in value[:max_count]:
+        text = _required_text(item, max_chars=IDENTITY_VALUE_MAX_CHARS)
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(text)
+    return tuple(result)
+
+
+def _volume_number(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError("卷号必须是整数。")
+    if value < 0 or value > 999:
+        raise ValueError("卷号超出允许范围。")
+    return value
+
+
+def book_identity_to_dict(identity: BookIdentity) -> dict:
+    return {
+        "title": identity.title,
+        "series_name": identity.series_name,
+        "authors": list(identity.authors),
+        "volume_number": identity.volume_number,
+        "language": identity.language,
+        "tags": list(identity.tags),
+    }
+
+
+def book_identity_from_dict(
+    data: object,
+    *,
+    fallback_title: str | None = None,
+    fallback_series: str | None = None,
+) -> BookIdentity | None:
+    if not isinstance(data, dict):
+        return None
+    try:
+        title_value = data.get("title") or fallback_title
+        title = _required_text(title_value, max_chars=METADATA_TEXT_MAX_CHARS)
+        series_value = data.get("series_name") or fallback_series or extract_series_guess(title)
+        language_value = _optional_text(data.get("language"), max_chars=35)
+        language = normalize_language_code(language_value) if language_value else None
+        return BookIdentity(
+            title=title,
+            series_name=_required_text(series_value, max_chars=SERIES_NAME_MAX_CHARS),
+            authors=_identity_values(data.get("authors"), max_count=IDENTITY_MAX_AUTHORS),
+            volume_number=_volume_number(data.get("volume_number"))
+            if "volume_number" in data
+            else parse_volume_number(title),
+            language=language,
+            tags=_identity_values(data.get("tags"), max_count=IDENTITY_MAX_TAGS),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def book_metadata_to_dict(metadata: BookMetadata) -> dict:
     return {
         "title": metadata.title,
+        "series_name": metadata.identity.series_name,
+        "authors": list(metadata.identity.authors),
+        "volume_number": metadata.identity.volume_number,
+        "language": metadata.identity.language,
+        "tags": list(metadata.identity.tags),
+        "identity": book_identity_to_dict(metadata.identity),
         "source": metadata.source,
         "confidence": metadata.confidence,
         "query": metadata.query,
@@ -69,8 +149,19 @@ def book_metadata_to_dict(metadata: BookMetadata) -> dict:
 
 def book_metadata_from_dict(data: dict) -> BookMetadata | None:
     try:
+        title = _required_text(data["title"], max_chars=METADATA_TEXT_MAX_CHARS)
+        identity_payload = data.get("identity")
+        if not isinstance(identity_payload, dict):
+            identity_payload = data
+        identity = book_identity_from_dict(
+            identity_payload,
+            fallback_title=title,
+            fallback_series=_optional_text(data.get("series_name"), max_chars=SERIES_NAME_MAX_CHARS),
+        )
+        if identity is None:
+            return None
         return BookMetadata(
-            title=_required_text(data["title"], max_chars=METADATA_TEXT_MAX_CHARS),
+            identity=identity,
             source=_required_text(data.get("source") or "Bangumi", max_chars=80),
             confidence=_confidence(data.get("confidence") or 0.0),
             query=_required_text(data.get("query") or data["title"], max_chars=METADATA_TEXT_MAX_CHARS),
@@ -89,6 +180,7 @@ def book_metadata_from_dict(data: dict) -> BookMetadata | None:
 def resolve_result_to_dict(result: ResolveResult) -> dict:
     return {
         "series_name": result.series_name,
+        "identity": book_identity_to_dict(result.identity),
         "source": result.source,
         "confidence": result.confidence,
         "local_guess": result.local_guess,
@@ -101,15 +193,28 @@ def resolve_result_to_dict(result: ResolveResult) -> dict:
 
 def resolve_result_from_dict(data: dict) -> ResolveResult | None:
     try:
+        series_name = _required_text(data["series_name"], max_chars=SERIES_NAME_MAX_CHARS)
+        identity_payload = data.get("identity")
+        if not isinstance(identity_payload, dict):
+            identity_payload = {
+                "title": data.get("metadata_title") or series_name,
+                "series_name": series_name,
+            }
+        identity = book_identity_from_dict(
+            identity_payload,
+            fallback_title=_optional_text(data.get("metadata_title"), max_chars=METADATA_TEXT_MAX_CHARS) or series_name,
+            fallback_series=series_name,
+        )
+        if identity is None:
+            return None
         return ResolveResult(
-            series_name=_required_text(data["series_name"], max_chars=SERIES_NAME_MAX_CHARS),
+            identity=identity,
             source=_required_text(data.get("source") or "缓存", max_chars=80),
             confidence=_confidence(data.get("confidence") or 0.0),
             local_guess=_required_text(
                 data.get("local_guess") or data["series_name"],
                 max_chars=METADATA_TEXT_MAX_CHARS,
             ),
-            metadata_title=_optional_text(data.get("metadata_title"), max_chars=METADATA_TEXT_MAX_CHARS),
             metadata_summary=_optional_text(
                 data.get("metadata_summary"),
                 max_chars=METADATA_SUMMARY_MAX_CHARS,

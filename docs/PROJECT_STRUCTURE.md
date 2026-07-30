@@ -10,6 +10,7 @@ LightNovelSelector/
 │  ├─ cli.py                     命令行入口
 │  ├─ constants.py               版本与公共常量
 │  ├─ files.py                   文件扫描、完整哈希、内容提示与封面读取
+│  ├─ identity.py                书籍身份归一化、合并与显示标签
 │  ├─ metadata.py                系列解析、联网元数据与缓存
 │  ├─ models.py                  Python 数据模型
 │  ├─ parsing.py                 文件名与卷号解析

@@ -11,17 +11,24 @@ from .constants import (
     BANGUMI_SEARCH_LIMIT,
     BANGUMI_SEARCH_URL,
     BANGUMI_SUBJECT_WEB_URL,
+    IDENTITY_MAX_AUTHORS,
+    IDENTITY_MAX_TAGS,
     METADATA_SUMMARY_MAX_CHARS,
     METADATA_TEXT_MAX_CHARS,
 )
 from .files import http_json, validate_https_url
-from .models import BookMetadata, ResolveResult
+from .identity import (
+    identity_from_filename,
+    normalize_identity_values,
+)
+from .models import BookIdentity, BookMetadata, ResolveResult
 from .parsing import (
     acceptance_threshold,
     collapse_spaces,
     extract_book_lookup_query,
     extract_series_guess,
     normalize_for_match,
+    normalize_language_code,
     parse_volume_number,
     safe_folder_name,
     score_title,
@@ -88,6 +95,49 @@ def bangumi_title_candidates(item: dict) -> list[str]:
     return unique_existing(values)
 
 
+def bangumi_infobox_values(item: dict, labels: tuple[str, ...]) -> list[str]:
+    infobox = item.get("infobox")
+    if not isinstance(infobox, list):
+        return []
+    values: list[str] = []
+    for row in infobox[:100]:
+        if not isinstance(row, dict):
+            continue
+        key = collapse_spaces(str(row.get("key") or "")).casefold()
+        if key and any(label.casefold() in key for label in labels):
+            values.extend(flatten_bangumi_value(row.get("value")))
+    return unique_existing(values)
+
+
+def bangumi_tags(item: dict) -> tuple[str, ...]:
+    raw_tags = item.get("tags")
+    if not isinstance(raw_tags, list):
+        return ()
+    values = [tag.get("name") for tag in raw_tags[:100] if isinstance(tag, dict)]
+    return normalize_identity_values(values, limit=IDENTITY_MAX_TAGS)
+
+
+def bangumi_identity_from_item(item: dict, *, query: str) -> BookIdentity:
+    candidates = bangumi_title_candidates(item)
+    title = candidates[0] if candidates else query[:METADATA_TEXT_MAX_CHARS]
+    author_values = bangumi_infobox_values(item, ("作者", "著者", "原作"))
+    language_values = bangumi_infobox_values(item, ("语言", "語言"))
+    language = next(
+        (normalized for value in language_values if (normalized := normalize_language_code(value)) is not None),
+        None,
+    )
+    title_volume = parse_volume_number(title)
+    query_volume = parse_volume_number(query)
+    return BookIdentity(
+        title=title,
+        series_name=safe_folder_name(extract_series_guess(title)),
+        authors=normalize_identity_values(author_values, limit=IDENTITY_MAX_AUTHORS),
+        volume_number=title_volume if title_volume is not None else query_volume,
+        language=language,
+        tags=bangumi_tags(item),
+    )
+
+
 def bangumi_cover_url(item: dict) -> str | None:
     images = item.get("images")
     if not isinstance(images, dict):
@@ -125,10 +175,8 @@ def bangumi_subject_url(item: dict) -> str | None:
 
 
 def bangumi_metadata_from_item(item: dict, *, confidence: float, query: str) -> BookMetadata:
-    candidates = bangumi_title_candidates(item)
-    title = candidates[0] if candidates else query[:METADATA_TEXT_MAX_CHARS]
     return BookMetadata(
-        title=title,
+        identity=bangumi_identity_from_item(item, query=query),
         source="Bangumi",
         confidence=confidence,
         query=query,
@@ -215,9 +263,13 @@ def suggest_renamed_filename(
 ) -> str:
     volume_number = None
     if metadata is not None:
-        volume_number = parse_volume_number(metadata.title) or parse_volume_number(metadata.query)
+        volume_number = metadata.identity.volume_number
+        if volume_number is None:
+            volume_number = parse_volume_number(metadata.query)
     if volume_number is None:
-        volume_number = parse_volume_number(identity_query) or parse_volume_number(original_path.name)
+        volume_number = parse_volume_number(identity_query)
+    if volume_number is None:
+        volume_number = parse_volume_number(original_path.name)
 
     if series_name and volume_number is not None:
         base = f"{series_name} 第{volume_number:02d}卷"
@@ -243,7 +295,8 @@ class SeriesResolver:
         self.last_network_error: str | None = None
 
     def resolve(self, file_name: str) -> ResolveResult:
-        local_guess = extract_series_guess(file_name)
+        local_identity = identity_from_filename(file_name)
+        local_guess = local_identity.series_name
         cache_key = normalize_for_match(local_guess)
         if cache_key in self._cache:
             return self._cache[cache_key]
@@ -262,7 +315,7 @@ class SeriesResolver:
         if result is None:
             suffix = "（联网失败）" if self.last_network_error else ""
             result = ResolveResult(
-                series_name=local_guess,
+                identity=local_identity,
                 source=f"本地规则{suffix}",
                 confidence=0.55,
                 local_guess=local_guess,
@@ -285,7 +338,7 @@ class SeriesResolver:
         cached = self._cache.get(cache_key)
         if cached is not None:
             return BookMetadata(
-                title=cached.metadata_title or cached.series_name,
+                identity=cached.identity,
                 source=cached.source,
                 confidence=cached.confidence,
                 query=query,
@@ -297,11 +350,10 @@ class SeriesResolver:
         cached_metadata = book_metadata_from_dict(cached_payload) if cached_payload else None
         if cached_metadata is not None:
             self._cache[cache_key] = ResolveResult(
-                series_name=cached_metadata.title,
+                identity=cached_metadata.identity,
                 source=cached_metadata.source,
                 confidence=cached_metadata.confidence,
                 local_guess=query,
-                metadata_title=cached_metadata.title,
                 metadata_summary=cached_metadata.summary,
                 metadata_cover_url=cached_metadata.cover_url,
                 metadata_url=cached_metadata.url,
@@ -356,11 +408,10 @@ class SeriesResolver:
         metadata = bangumi_metadata_from_item(best[1], confidence=best[0], query=query)
         self.persistent_cache.set(cache_key, book_metadata_to_dict(metadata))
         self._cache[cache_key] = ResolveResult(
-            series_name=metadata.title,
+            identity=metadata.identity,
             source=metadata.source,
             confidence=metadata.confidence,
             local_guess=query,
-            metadata_title=metadata.title,
             metadata_summary=metadata.summary,
             metadata_cover_url=metadata.cover_url,
             metadata_url=metadata.url,
@@ -408,12 +459,20 @@ class SeriesResolver:
         item = best[2]
         display_titles = bangumi_title_candidates(item)
         display_title = display_titles[0] if display_titles else best[1]
+        identity = bangumi_identity_from_item(item, query=query)
+        identity = BookIdentity(
+            title=display_title,
+            series_name=safe_folder_name(extract_series_guess(display_title)),
+            authors=identity.authors,
+            volume_number=identity.volume_number,
+            language=identity.language,
+            tags=identity.tags,
+        )
         return ResolveResult(
-            series_name=safe_folder_name(display_title),
+            identity=identity,
             source="Bangumi",
             confidence=best[0],
             local_guess=query,
-            metadata_title=display_title,
             metadata_summary=clean_summary(item.get("summary")),
             metadata_cover_url=bangumi_cover_url(item),
             metadata_url=bangumi_subject_url(item),
@@ -432,6 +491,7 @@ class SeriesResolver:
                 native
               }
               synonyms
+              genres
             }
           }
         }
@@ -484,8 +544,16 @@ class SeriesResolver:
             ]
         )
         canonical = canonical_candidates[0]
+        genres = best[2].get("genres")
+        if not isinstance(genres, list):
+            genres = []
         return ResolveResult(
-            series_name=safe_folder_name(canonical),
+            identity=BookIdentity(
+                title=canonical,
+                series_name=safe_folder_name(extract_series_guess(canonical)),
+                volume_number=parse_volume_number(query),
+                tags=normalize_identity_values(genres, limit=IDENTITY_MAX_TAGS),
+            ),
             source="AniList",
             confidence=best[0],
             local_guess=query,
@@ -529,8 +597,24 @@ class SeriesResolver:
             ]
         )
         canonical = canonical_candidates[0]
+        author_values = (
+            [author.get("name") for author in best[2].get("authors", [])[:20] if isinstance(author, dict)]
+            if isinstance(best[2].get("authors"), list)
+            else []
+        )
+        tag_values: list[object] = []
+        for key in ("genres", "themes", "demographics"):
+            values = best[2].get(key)
+            if isinstance(values, list):
+                tag_values.extend(item.get("name") for item in values[:40] if isinstance(item, dict))
         return ResolveResult(
-            series_name=safe_folder_name(canonical),
+            identity=BookIdentity(
+                title=canonical,
+                series_name=safe_folder_name(extract_series_guess(canonical)),
+                authors=normalize_identity_values(author_values, limit=IDENTITY_MAX_AUTHORS),
+                volume_number=parse_volume_number(query),
+                tags=normalize_identity_values(tag_values, limit=IDENTITY_MAX_TAGS),
+            ),
             source="Jikan",
             confidence=best[0],
             local_guess=query,

@@ -27,7 +27,13 @@ from .files import (
     file_fingerprint,
     find_duplicate_files,
     match_custom_rule,
+    read_book_identity,
     read_identity_hint,
+)
+from .identity import (
+    identity_from_filename,
+    merge_book_identities,
+    with_series_name,
 )
 from .metadata import SeriesResolver, suggest_renamed_filename
 from .models import ClassificationPlan, CustomRule, ResolveResult
@@ -39,7 +45,12 @@ from .parsing import (
     safe_folder_name,
     weak_file_name_query,
 )
-from .storage import append_json_line_durable, write_json_atomic, write_json_lines_exclusive
+from .storage import (
+    append_json_line_durable,
+    book_identity_to_dict,
+    write_json_atomic,
+    write_json_lines_exclusive,
+)
 
 _ACTIVE_REPORT_PATHS: set[Path] = set()
 _ACTIVE_REPORT_PATHS_LOCK = threading.Lock()
@@ -125,6 +136,7 @@ def classification_plan_to_report_item(
         "source_path": str(plan.source_path),
         "target_path": str(plan.target_path),
         "actual_target_path": str(actual_target_path) if actual_target_path else None,
+        "identity": book_identity_to_dict(plan.identity),
         "series_name": plan.series_name,
         "resolver_source": plan.resolver_source,
         "confidence": round(plan.confidence, 4),
@@ -133,7 +145,7 @@ def classification_plan_to_report_item(
         "note": plan.note,
         "duplicate_of": str(plan.duplicate_of) if plan.duplicate_of else None,
         "rename_to": plan.rename_to,
-        "metadata_title": plan.metadata_title,
+        "metadata_title": plan.identity.title,
         "metadata_url": plan.metadata_url,
         "source_size": plan.source_size,
         "source_mtime_ns": plan.source_mtime_ns,
@@ -760,12 +772,13 @@ def build_classification_plan(
             if candidate_fingerprint is None or candidate_fingerprint != original_fingerprint:
                 duplicate_of = None
         if duplicate_of is not None:
-            local_guess = extract_series_guess(path.name)
-            folder_name = safe_folder_name(local_guess)
+            identity = identity_from_filename(path.name)
+            local_guess = identity.series_name
+            folder_name = safe_folder_name(identity.series_name)
             plans.append(
                 ClassificationPlan(
                     source_path=path,
-                    series_name=folder_name,
+                    identity=with_series_name(identity, folder_name),
                     target_dir=root / folder_name,
                     target_path=path,
                     resolver_source="重复文件检测",
@@ -788,12 +801,13 @@ def build_classification_plan(
             identity_hint = read_identity_hint(path)
             identity_query = identity_query_for_path(path, identity_hint)
             file_query = extract_book_lookup_query(path.name)
+            local_identity = read_book_identity(path, identity_hint)
             network_query = None if weak_file_name_query(path.name) else file_query
             custom_rule = match_custom_rule(path.name, identity_query, rules)
             if custom_rule is not None:
                 network_query = custom_rule.series
                 result = ResolveResult(
-                    series_name=safe_folder_name(custom_rule.series),
+                    identity=with_series_name(local_identity, custom_rule.series),
                     source="自定义规则",
                     confidence=1.0,
                     local_guess=identity_query,
@@ -801,7 +815,10 @@ def build_classification_plan(
             elif network_query is None:
                 used_content_hint = bool(identity_hint and identity_query != file_query)
                 result = ResolveResult(
-                    series_name=extract_series_guess(identity_query),
+                    identity=with_series_name(
+                        local_identity,
+                        extract_series_guess(identity_query),
+                    ),
                     source="本地内容提示" if used_content_hint else "本地规则",
                     confidence=0.6 if used_content_hint else 0.45,
                     local_guess=identity_query,
@@ -822,6 +839,16 @@ def build_classification_plan(
                     identity_query=identity_query,
                 )
                 target_name = rename_to
+            identity = merge_book_identities(
+                local_identity,
+                replace(
+                    result.identity,
+                    title=local_identity.title,
+                    volume_number=local_identity.volume_number,
+                ),
+                metadata.identity if metadata else None,
+                series_name=folder_name,
+            )
             proposed_target_path = target_dir / target_name
             try:
                 already_classified = path.resolve() == proposed_target_path.resolve()
@@ -838,7 +865,7 @@ def build_classification_plan(
             plans.append(
                 ClassificationPlan(
                     source_path=path,
-                    series_name=folder_name,
+                    identity=identity,
                     target_dir=target_dir,
                     target_path=target_path,
                     resolver_source=result.source,
@@ -846,7 +873,6 @@ def build_classification_plan(
                     local_guess=result.local_guess,
                     source_size=source_stat.st_size if source_stat else None,
                     source_mtime_ns=source_stat.st_mtime_ns if source_stat else None,
-                    metadata_title=(metadata.title if metadata else result.metadata_title),
                     metadata_summary=(metadata.summary if metadata else result.metadata_summary),
                     metadata_cover_url=(metadata.cover_url if metadata else result.metadata_cover_url),
                     metadata_url=(metadata.url if metadata else result.metadata_url),
@@ -860,12 +886,13 @@ def build_classification_plan(
                 )
             )
         except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
-            local_guess = extract_series_guess(path.name)
-            folder_name = safe_folder_name(local_guess)
+            identity = identity_from_filename(path.name)
+            local_guess = identity.series_name
+            folder_name = safe_folder_name(identity.series_name)
             plans.append(
                 ClassificationPlan(
                     source_path=path,
-                    series_name=folder_name,
+                    identity=with_series_name(identity, folder_name),
                     target_dir=root / folder_name,
                     target_path=path,
                     resolver_source="文件读取失败",
@@ -926,12 +953,14 @@ def revise_classification_plan(
 
     return replace(
         plan,
-        series_name=folder_name,
+        identity=with_series_name(
+            read_book_identity(plan.source_path, plan.identity_hint),
+            folder_name,
+        ),
         target_dir=target_dir,
         target_path=target_path,
         resolver_source="手动修正",
         confidence=1.0,
-        metadata_title=None,
         metadata_summary=None,
         metadata_cover_url=None,
         metadata_url=None,

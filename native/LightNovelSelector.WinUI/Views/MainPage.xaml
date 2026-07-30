@@ -600,6 +600,31 @@
                                                 </StackPanel>
                                             </Grid>
 
+                                            <StackPanel Spacing="8">
+                                                <StackPanel Spacing="3">
+                                                    <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="作者" />
+                                                    <TextBlock x:Name="DetailAuthorsText" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <Grid ColumnSpacing="16">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Spacing="3">
+                                                        <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="卷号" />
+                                                        <TextBlock x:Name="DetailVolumeText" Style="{StaticResource MutedTextStyle}" />
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Spacing="3">
+                                                        <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="语言" />
+                                                        <TextBlock x:Name="DetailLanguageText" Style="{StaticResource MutedTextStyle}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                                <StackPanel Spacing="3">
+                                                    <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="标签" />
+                                                    <TextBlock x:Name="DetailTagsText" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </StackPanel>
+
                                             <StackPanel Spacing="5">
                                                 <TextBlock FontSize="12" FontWeight="SemiBold" Text="简介" />
                                                 <TextBlock x:Name="DetailSummaryText" MaxLines="7" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" />

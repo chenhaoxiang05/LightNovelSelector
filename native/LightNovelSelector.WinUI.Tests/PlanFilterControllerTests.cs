@@ -13,7 +13,11 @@ public sealed class PlanFilterControllerTests
         {
             Index = 0,
             FileName = "青春物语 01.epub",
+            BookTitle = "我的青春恋爱物语果然有问题",
             SeriesName = "青春物语",
+            AuthorsLabel = "渡航",
+            LanguageLabel = "简体中文",
+            TagsLabel = "校园 · 青春",
             TargetName = "青春物语 第01卷.epub",
             ResolverSource = "自定义规则",
             Status = "ready",
@@ -43,6 +47,9 @@ public sealed class PlanFilterControllerTests
     [DataRow("第01卷", 0)]
     [DataRow("文件名识别", 1)]
     [DataRow("UNKNOWN", 2)]
+    [DataRow("渡航", 0)]
+    [DataRow("校园", 0)]
+    [DataRow("简体中文", 0)]
     public void SearchCoversAllVisibleFields(string query, int expectedIndex)
     {
         var result = PlanFilterController.Apply(Plans, new PlanFilterState(query, string.Empty, string.Empty));

@@ -75,6 +75,10 @@ public sealed partial class MainPage
     private async Task RenderDetailAsync(BookDetail detail)
     {
         DetailTitleText.Text = detail.Title;
+        DetailAuthorsText.Text = detail.AuthorsLabel;
+        DetailVolumeText.Text = detail.VolumeLabel;
+        DetailLanguageText.Text = detail.LanguageLabel;
+        DetailTagsText.Text = detail.TagsLabel;
         DetailSummaryText.Text = detail.Summary;
         DetailTargetText.Text = detail.TargetPath;
         DetailConfidenceText.Text = $"{detail.ResolverSource} · 置信度 {detail.ConfidenceLabel}";
@@ -112,6 +116,18 @@ public sealed partial class MainPage
         {
             Text = $"{detail.StatusLabel} · {detail.ResolverSource} · 置信度 {detail.ConfidenceLabel}",
             Foreground = ResourceBrush("TextFillColorSecondaryBrush"),
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"作者：{detail.AuthorsLabel}　卷号：{detail.VolumeLabel}　语言：{detail.LanguageLabel}",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = ResourceBrush("TextFillColorSecondaryBrush"),
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"标签：{detail.TagsLabel}",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = ResourceBrush("TextFillColorTertiaryBrush"),
         });
         panel.Children.Add(new TextBlock
         {
