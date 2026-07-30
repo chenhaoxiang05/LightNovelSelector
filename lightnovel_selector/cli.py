@@ -78,7 +78,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true", help="只预览，不移动文件")
     parser.add_argument("--no-network", action="store_true", help="关闭联网识别，只使用本地文件名规则")
     parser.add_argument("--recursive", action="store_true", help="包含子文件夹中的小说文件")
-    parser.add_argument("--auto-rename", action="store_true", help="根据电子书内容和 Bangumi 单卷信息自动重命名")
+    parser.add_argument("--auto-rename", action="store_true", help="根据电子书内容和在线单卷元数据自动重命名")
     parser.add_argument("--quiet", action="store_true", help="减少命令行输出")
     return parser.parse_args(argv)
 

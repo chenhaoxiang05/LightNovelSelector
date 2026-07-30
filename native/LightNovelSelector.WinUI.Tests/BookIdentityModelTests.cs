@@ -123,4 +123,25 @@ public sealed class BookIdentityModelTests
         CollectionAssert.AreEqual(new[] { 0, 1, 4 }, result.UpdatedIndices.ToArray());
         Assert.AreEqual(7, result.Snapshot.PlansRevision);
     }
+
+    [TestMethod]
+    public void SnapshotDeserializesMetadataProviderInventory()
+    {
+        const string payload = """
+            {
+              "metadata_providers": [
+                { "id": "bangumi", "name": "Bangumi", "priority": 10 },
+                { "id": "community", "name": "社区书库", "priority": 40 }
+              ]
+            }
+            """;
+
+        var snapshot = JsonSerializer.Deserialize<AppSnapshot>(payload, JsonOptions);
+
+        Assert.IsNotNull(snapshot);
+        Assert.AreEqual(2, snapshot.MetadataProviders.Count);
+        Assert.AreEqual("community", snapshot.MetadataProviders[1].Id);
+        Assert.AreEqual("社区书库", snapshot.MetadataProviders[1].Name);
+        Assert.AreEqual(40, snapshot.MetadataProviders[1].Priority);
+    }
 }

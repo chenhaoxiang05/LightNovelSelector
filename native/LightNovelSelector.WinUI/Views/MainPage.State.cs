@@ -42,6 +42,9 @@ public sealed partial class MainPage
         FolderPathText.Text = string.IsNullOrWhiteSpace(snapshot.Folder)
             ? "选择一个目录，或将目录拖放到这里"
             : snapshot.Folder;
+        NetworkProviderDescriptionText.Text = MetadataProviderDisplay.BuildDescription(
+            snapshot.MetadataProviders
+        );
         OpenFolderButton.IsEnabled = !string.IsNullOrWhiteSpace(snapshot.Folder);
         SetCount(ReadyCountText, snapshot.Counts.Ready);
         SetCount(SeriesCountText, snapshot.Counts.Series);

@@ -1270,7 +1270,12 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3">
                                             <TextBlock FontWeight="SemiBold" Text="联网补全元数据" />
-                                            <TextBlock Style="{StaticResource MutedTextStyle}" Text="使用 Bangumi 补充标题、简介、封面和识别置信度。" TextWrapping="Wrap" />
+                                            <TextBlock
+                                                x:Name="NetworkProviderDescriptionText"
+                                                AutomationProperties.Name="当前元数据来源"
+                                                Style="{StaticResource MutedTextStyle}"
+                                                Text="正在读取可用的元数据来源。"
+                                                TextWrapping="Wrap" />
                                         </StackPanel>
                                         <ToggleSwitch x:Name="NetworkToggle" Grid.Column="1" AutomationProperties.Name="联网补全元数据" Toggled="OnSettingsToggleChanged" />
                                     </Grid>

@@ -13,7 +13,8 @@ LightNovelSelector/
 │  ├─ constants.py               版本与公共常量
 │  ├─ files.py                   文件扫描、完整哈希、内容提示与封面读取
 │  ├─ identity.py                书籍身份归一化、合并与显示标签
-│  ├─ metadata.py                系列解析、联网元数据与缓存
+│  ├─ metadata.py                提供器协调、异常隔离与元数据缓存
+│  ├─ providers/                 公开扩展接口及独立在线书库实现
 │  ├─ models.py                  Python 数据模型
 │  ├─ parsing.py                 文件名与卷号解析
 │  ├─ sidecar.py                 JSON Lines Sidecar 服务

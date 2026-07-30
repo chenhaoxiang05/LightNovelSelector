@@ -49,6 +49,7 @@ from .parsing import (
     safe_folder_name,
     weak_file_name_query,
 )
+from .providers import MetadataProvider, MetadataProviderRegistry
 from .scan_cache import (
     LocalFileAnalysis,
     PersistentScanCache,
@@ -756,6 +757,7 @@ def build_classification_plan(
     progress_count: Callable[[int, int], None] | None = None,
     checkpoint: Callable[[], None] | None = None,
     scan_cache: PersistentScanCache | None = None,
+    metadata_providers: Iterable[MetadataProvider] | MetadataProviderRegistry | None = None,
 ) -> list[ClassificationPlan]:
     root = validate_classification_root(root)
 
@@ -775,7 +777,10 @@ def build_classification_plan(
         scan_cache=scan_cache,
     )
     rules = tuple(custom_rules or ())
-    resolver = SeriesResolver(use_network=use_network)
+    resolver = SeriesResolver(
+        use_network=use_network,
+        providers=metadata_providers,
+    )
     plans: list[ClassificationPlan] = []
     reserved_targets: set[Path] = set()
     duplicate_fingerprints: dict[Path, str | None] = {}

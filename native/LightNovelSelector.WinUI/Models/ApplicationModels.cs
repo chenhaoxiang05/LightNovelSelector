@@ -11,6 +11,7 @@ public enum ConnectionState
 public sealed class AppSnapshot
 {
     public AppInfo App { get; init; } = new();
+    public IReadOnlyList<MetadataProviderInfo> MetadataProviders { get; init; } = [];
     public string Folder { get; init; } = string.Empty;
     public AppSettings Settings { get; init; } = new();
     public OperationState Operation { get; init; } = new();
@@ -21,6 +22,13 @@ public sealed class AppSnapshot
     public IReadOnlyList<PlanItem>? Plans { get; init; }
     public IReadOnlyList<LogEntry> Logs { get; init; } = [];
     public int LogCursor { get; init; }
+}
+
+public sealed class MetadataProviderInfo
+{
+    public string Id { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public int Priority { get; init; }
 }
 
 public sealed class ScanCacheStats

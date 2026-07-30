@@ -110,6 +110,18 @@ Python 核心使用不可变 `BookIdentity` 作为识别结果的唯一语义模
 
 文件正文与 EPUB 元数据只参与本地身份补全。联网请求仍只使用文件名、用户规则或手动系列名称构造的查询，不发送正文、作者列表、标签、完整哈希或报告内容。
 
+## 元数据提供器边界
+
+`MetadataProvider` 是在线书库的唯一公开扩展接口，固定提供系列匹配和可选书籍详情两个入口。`MetadataProviderRegistry` 在启动时验证提供器 ID、显示名、优先级、缓存版本和重复项，并按优先级生成不可变顺序。`SeriesResolver` 只遍历注册表、隔离异常、归一化输出和管理缓存，不包含任何服务 URL 或远程字段映射。
+
+内置 Bangumi、AniList、Jikan 分别位于 `lightnovel_selector/providers/`。扫描、候选比较、详情加载和 `ApplicationService` 共用同一注册表；Sidecar 快照以附加字段 `metadata_providers` 返回 ID、名称和优先级，旧客户端可安全忽略，WinUI 设置页据此显示实际来源。Sidecar 协议版本保持 1。
+
+提供器输出进入计划前会重新限制标题、系列、作者、标签、卷号、语言、有限置信度、简介和 HTTPS URL；提供器声明的 `source` 与 `query` 不受信任，核心分别替换为已注册显示名和当前查询。单个提供器抛出的普通异常只记录有界错误并继续后续来源；`MemoryError` 不会被吞掉。
+
+元数据缓存键包含按优先级排列的 `provider_id@cache_version` 指纹，每条记录同时绑定实际命中的 `provider_id`。读取缓存时会确认来源仍在当前注册表并重新执行输出契约；未知来源、损坏记录或不安全 URL 不会进入分类计划。同一查询在不同提供器组合中不会共享结果；提供器改变远程字段映射或结果语义时必须提升自己的缓存版本。
+
+应用不会自动发现用户目录、环境变量或 Python entry point 中的插件，避免未经确认的代码继承文件整理权限。第三方代码必须由调用方显式注入，或作为经过审查的内置模块注册。完整接口示例和测试要求见 [元数据提供器开发指南](METADATA_PROVIDERS.md)。
+
 ## 增量扫描与哈希缓存边界
 
 WinUI 发起扫描时，Python 为本次任务创建一个 `PersistentScanCache` 会话。缓存保存在 `%LOCALAPPDATA%\LightNovelSelector\scan_cache.json`，在任务成功、取消或失败退出上下文时最多原子写入一次。损坏缓存按空缓存处理；写入失败只进入日志和快照中的 `scan_cache.write_warning`，当前分类计划仍然有效。
