@@ -103,7 +103,7 @@ class FilenameParsingTests(unittest.TestCase):
         )
 
     def test_safe_folder_name(self) -> None:
-        self.assertEqual(safe_folder_name('A:B/C*D?'), "A_B_C_D_")
+        self.assertEqual(safe_folder_name("A:B/C*D?"), "A_B_C_D_")
         self.assertEqual(safe_folder_name("CON"), "_CON")
         self.assertEqual(safe_folder_name("LPT1.txt"), "_LPT1.txt")
 
@@ -357,7 +357,9 @@ class MovePlanTests(unittest.TestCase):
             first.write_text("short", encoding="utf-8")
             second.write_text("longer unique content", encoding="utf-8")
 
-            with patch.object(lightnovel_classifier, "file_fingerprint", wraps=lightnovel_classifier.file_fingerprint) as full_hash:
+            with patch.object(
+                lightnovel_classifier, "file_fingerprint", wraps=lightnovel_classifier.file_fingerprint
+            ) as full_hash:
                 duplicates = find_duplicate_files([first, second])
 
             self.assertEqual(duplicates, {})
@@ -788,10 +790,13 @@ class MovePlanTests(unittest.TestCase):
                     second.write_text("changed while batch was running", encoding="utf-8")
                 return result
 
-            with patch(
-                "lightnovel_selector.classification.shutil.move",
-                side_effect=change_second_after_first,
-            ), self.assertRaisesRegex(ValueError, "扫描后发生变化"):
+            with (
+                patch(
+                    "lightnovel_selector.classification.shutil.move",
+                    side_effect=change_second_after_first,
+                ),
+                self.assertRaisesRegex(ValueError, "扫描后发生变化"),
+            ):
                 execute_classification_plan(plans, report_path=report_path)
 
             report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -807,10 +812,13 @@ class MovePlanTests(unittest.TestCase):
             book.write_text("one", encoding="utf-8")
             plans = build_classification_plan(root, use_network=False)
 
-            with patch(
-                "lightnovel_selector.classification.write_json_atomic",
-                side_effect=PermissionError("blocked"),
-            ), self.assertRaises(OSError):
+            with (
+                patch(
+                    "lightnovel_selector.classification.write_json_atomic",
+                    side_effect=PermissionError("blocked"),
+                ),
+                self.assertRaises(OSError),
+            ):
                 execute_classification_plan(plans, report_path=root / "report.json")
 
             self.assertTrue(book.exists())

@@ -30,7 +30,7 @@
 </picture>
 
 > [!TIP]
-> 最新稳定版是 **WinUI 3 原生版 `v2.0.1`**。可直接下载 [Windows x64 安装器](https://github.com/chenhaoxiang05/LightNovelSelector/releases/download/v2.0.1/LightNovelSelector-v2.0.1-win-x64-setup.exe)，不需要另装 Python、.NET 或 Windows App SDK。
+> 最新稳定版是 **WinUI 3 原生版 `v2.0.2`**。可直接下载 [Windows x64 安装器](https://github.com/chenhaoxiang05/LightNovelSelector/releases/download/v2.0.2/LightNovelSelector-v2.0.2-win-x64-setup.exe)，不需要另装 Python、.NET 或 Windows App SDK。
 
 ## 为什么使用它
 
@@ -38,17 +38,17 @@
 - **识别结果可解释**：显示作品系列、目标位置、识别来源和置信度，并允许手动修正。
 - **批量操作仍可控**：支持搜索、系列筛选、状态筛选、重复标记和错误隔离。
 - **文件安全优先**：完整 SHA-256 指纹确认重复内容，目标冲突不会覆盖现有文件。
-- **失败也能恢复**：每个成功移动项都会及时写入报告，批处理中途失败仍可按报告撤销。
+- **失败也能恢复**：每次移动前都会把恢复意图刷盘，批处理中断后可重建报告并撤销已完成项。
 - **本地优先**：小说文件、哈希和报告保留在本机；联网识别可随时关闭。
 
 ## 快速开始
 
 ### 下载发布版
 
-从 [`v2.0.1` 发布页](https://github.com/chenhaoxiang05/LightNovelSelector/releases/tag/v2.0.1) 下载：
+从 [`v2.0.2` 发布页](https://github.com/chenhaoxiang05/LightNovelSelector/releases/tag/v2.0.2) 下载：
 
 ```text
-LightNovelSelector-v2.0.1-win-x64-setup.exe
+LightNovelSelector-v2.0.2-win-x64-setup.exe
 ```
 
 安装器按当前 Windows 用户安装，不要求管理员权限，并包含 .NET、Windows App SDK 与 Python Sidecar。发布产物暂未进行商业代码签名，请只从本仓库 Release 下载并核对发布页提供的 SHA-256。
@@ -56,7 +56,7 @@ LightNovelSelector-v2.0.1-win-x64-setup.exe
 下载后可在 PowerShell 中计算校验值，并与 Release 页面逐字比对：
 
 ```powershell
-Get-FileHash .\LightNovelSelector-v2.0.1-win-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\LightNovelSelector-v2.0.2-win-x64-setup.exe -Algorithm SHA256
 ```
 
 ### 从源码运行 WinUI 3 版本
@@ -124,7 +124,7 @@ LightNovelSelector 将“能恢复”视为批量整理的基本要求：
 - 目标存在同名文件时不会覆盖，重复项与错误项默认跳过。
 - 批量整理使用线性恢复日志，部分移动成功、进程异常退出或后续步骤失败时仍可重建已完成记录。
 - 恢复时会同时核对原计划、源和目标位置及文件状态；状态有歧义时停止并要求人工检查。
-- 撤销同样执行冲突检查，不用另一次覆盖去修复第一次操作。
+- 撤销会把每项严格判定为“待撤销”或“已恢复”；源和目标同时存在、同时缺失或文件状态不匹配时整批停止。
 - 分类后的目标文件若已被编辑、替换为目录或符号链接，撤销会停止并保留现状。
 - 撤销前会校验报告版本、应用标识、所在目录和全部文件路径，拒绝执行超出所选目录的记录。
 

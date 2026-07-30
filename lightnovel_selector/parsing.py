@@ -38,10 +38,7 @@ def html_to_text(value: str) -> str:
 
 def contains_cjk(value: str) -> bool:
     return any(
-        "\u3400" <= char <= "\u9fff"
-        or "\u3040" <= char <= "\u30ff"
-        or "\uac00" <= char <= "\ud7af"
-        for char in value
+        "\u3400" <= char <= "\u9fff" or "\u3040" <= char <= "\u30ff" or "\uac00" <= char <= "\ud7af" for char in value
     )
 
 
@@ -72,12 +69,18 @@ def strip_bracket_noise(value: str) -> str:
     text = value.strip()
     while changed:
         changed = False
-        leading = re.match(rf"^\s*([{re.escape(left_brackets)}])([^]{re.escape(right_brackets)}]{{1,60}})([{re.escape(right_brackets)}])\s*", text)
+        leading = re.match(
+            rf"^\s*([{re.escape(left_brackets)}])([^]{re.escape(right_brackets)}]{{1,60}})([{re.escape(right_brackets)}])\s*",
+            text,
+        )
         if leading and is_noise_tag(leading.group(2), position="leading"):
             text = text[leading.end() :].strip()
             changed = True
 
-        trailing = re.search(rf"\s*([{re.escape(left_brackets)}])([^]{re.escape(right_brackets)}]{{1,60}})([{re.escape(right_brackets)}])\s*$", text)
+        trailing = re.search(
+            rf"\s*([{re.escape(left_brackets)}])([^]{re.escape(right_brackets)}]{{1,60}})([{re.escape(right_brackets)}])\s*$",
+            text,
+        )
         if trailing and is_noise_tag(trailing.group(2), position="trailing"):
             text = text[: trailing.start()].strip()
             changed = True

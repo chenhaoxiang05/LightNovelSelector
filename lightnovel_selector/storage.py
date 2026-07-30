@@ -224,9 +224,7 @@ def append_json_line_durable(path: Path, payload: object, *, max_bytes: int) -> 
     if path.is_symlink() or not path.is_file():
         raise OSError(f"恢复日志不存在或不是普通文件：{path}")
 
-    encoded = (
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
-    ).encode("utf-8")
+    encoded = (json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
     with path.open("r+b") as handle:
         handle.seek(0, os.SEEK_END)
         current_size = handle.tell()
@@ -267,11 +265,7 @@ def app_settings_from_dict(data: dict) -> AppSettings:
         recursive=recursive if isinstance(recursive, bool) else False,
         auto_rename=auto_rename if isinstance(auto_rename, bool) else False,
         custom_rules=tuple(rules),
-        last_folder=(
-            last_folder
-            if isinstance(last_folder, str) and len(last_folder) <= LOCAL_PATH_MAX_CHARS
-            else ""
-        ),
+        last_folder=(last_folder if isinstance(last_folder, str) and len(last_folder) <= LOCAL_PATH_MAX_CHARS else ""),
     )
 
 
@@ -281,10 +275,7 @@ def app_settings_to_dict(settings: AppSettings) -> dict:
         "recursive": settings.recursive,
         "auto_rename": settings.auto_rename,
         "last_folder": settings.last_folder,
-        "custom_rules": [
-            {"pattern": rule.pattern, "series": rule.series}
-            for rule in settings.custom_rules
-        ],
+        "custom_rules": [{"pattern": rule.pattern, "series": rule.series} for rule in settings.custom_rules],
     }
 
 
@@ -342,10 +333,7 @@ class PersistentMetadataCache:
                 continue
             valid_entries.append((key, entry, cached_at))
         valid_entries.sort(key=lambda item: item[2], reverse=True)
-        return {
-            key: entry
-            for key, entry, _ in valid_entries[:METADATA_CACHE_MAX_ENTRIES]
-        }
+        return {key: entry for key, entry, _ in valid_entries[:METADATA_CACHE_MAX_ENTRIES]}
 
     def _save(self) -> None:
         entries = self._prune_entries(self.data.get("entries", {}))

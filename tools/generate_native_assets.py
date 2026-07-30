@@ -103,9 +103,7 @@ def main() -> None:
         "SplashScreen.scale-200.png": make_asset((1240, 600), 208),
         "Square150x150Logo.scale-200.png": make_asset((300, 300), 268),
         "Square44x44Logo.scale-200.png": make_asset((88, 88), 78),
-        "Square44x44Logo.targetsize-24_altform-unplated.png": make_asset(
-            (24, 24), 23, plated=False, supersample=8
-        ),
+        "Square44x44Logo.targetsize-24_altform-unplated.png": make_asset((24, 24), 23, plated=False, supersample=8),
         "Square44x44Logo.targetsize-48_altform-lightunplated.png": make_asset(
             (48, 48), 46, plated=False, light_glyph=True, supersample=6
         ),

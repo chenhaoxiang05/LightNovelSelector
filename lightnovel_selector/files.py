@@ -94,10 +94,7 @@ def _validate_public_hostname_resolution(url: str) -> None:
         raise urllib.error.URLError(f"无法安全解析远程主机：{hostname}") from exc
     if not addresses or any(
         not address.is_global
-        and not (
-            trusted_proxy_domain
-            and any(address in network for network in _PROXY_SYNTHETIC_NETWORKS)
-        )
+        and not (trusted_proxy_domain and any(address in network for network in _PROXY_SYNTHETIC_NETWORKS))
         for address in addresses
     ):
         raise urllib.error.URLError("远程主机解析到了本机或内部网络地址。")
@@ -261,9 +258,7 @@ def read_epub_cover_bytes(path: Path) -> bytes | None:
                     return data
 
             image_hrefs = [
-                item.get("href", "")
-                for item in manifest_items
-                if item.get("media-type", "").startswith("image/")
+                item.get("href", "") for item in manifest_items if item.get("media-type", "").startswith("image/")
             ]
             fallback_name = pick_archive_cover_name(resolve_zip_member(rootfile_path, href) for href in image_hrefs)
             if fallback_name:
@@ -414,10 +409,7 @@ def file_fingerprint(
                 break
             digest.update(chunk)
     final_stat = path.stat()
-    if (
-        initial_stat.st_size != final_stat.st_size
-        or initial_stat.st_mtime_ns != final_stat.st_mtime_ns
-    ):
+    if initial_stat.st_size != final_stat.st_size or initial_stat.st_mtime_ns != final_stat.st_mtime_ns:
         raise OSError(f"文件在计算指纹时发生变化：{path}")
     return f"{final_stat.st_size}:{digest.hexdigest()}"
 
@@ -432,10 +424,7 @@ def file_quick_signature(path: Path) -> str:
             handle.seek(max(0, initial_stat.st_size - FILE_FINGERPRINT_CHUNK_SIZE))
             digest.update(handle.read(FILE_FINGERPRINT_CHUNK_SIZE))
     final_stat = path.stat()
-    if (
-        initial_stat.st_size != final_stat.st_size
-        or initial_stat.st_mtime_ns != final_stat.st_mtime_ns
-    ):
+    if initial_stat.st_size != final_stat.st_size or initial_stat.st_mtime_ns != final_stat.st_mtime_ns:
         raise OSError(f"文件在计算快速签名时发生变化：{path}")
     return f"{final_stat.st_size}:{digest.hexdigest()}"
 

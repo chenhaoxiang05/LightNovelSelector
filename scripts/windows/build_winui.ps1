@@ -298,6 +298,7 @@ if (-not $SkipTests) {
     Invoke-External -FilePath $python -Arguments @("-m", "py_compile", (Join-Path $ProjectRoot "lightnovel_classifier.py"), (Join-Path $ProjectRoot "lightnovel_sidecar.py"))
     Invoke-External -FilePath $python -Arguments @("-m", "pytest", "-q")
     Invoke-External -FilePath $python -Arguments @("-m", "ruff", "check", ".")
+    Invoke-External -FilePath $python -Arguments @("-m", "ruff", "format", "--check", ".")
     Invoke-External -FilePath $python -Arguments @("-m", "mypy", "lightnovel_classifier.py", "lightnovel_sidecar.py", "lightnovel_selector", "tests")
     Invoke-External -FilePath $python -Arguments @("-m", "bandit", "-q", "-r", "lightnovel_selector", "lightnovel_classifier.py", "lightnovel_sidecar.py")
     Invoke-External -FilePath $python -Arguments @("-m", "vulture", "lightnovel_classifier.py", "lightnovel_selector", "tests", "--min-confidence", "80")
