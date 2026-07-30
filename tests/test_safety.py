@@ -3,6 +3,7 @@ import os
 import socket
 import unittest
 import zipfile
+from datetime import datetime
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -37,9 +38,11 @@ class RemoteResponseSafetyTests(unittest.TestCase):
         opened_response.read.return_value = b"x" * (REMOTE_JSON_MAX_BYTES + 1)
 
         opened_response.geturl.return_value = "https://example.test/search"
-        with patch("lightnovel_selector.files._open_https", return_value=response):
-            with self.assertRaisesRegex(RuntimeError, "超过允许大小"):
-                http_json("https://example.test/search")
+        with (
+            patch("lightnovel_selector.files._open_https", return_value=response),
+            self.assertRaisesRegex(RuntimeError, "超过允许大小"),
+        ):
+            http_json("https://example.test/search")
 
         opened_response.read.assert_called_once_with(REMOTE_JSON_MAX_BYTES + 1)
 
@@ -50,9 +53,11 @@ class RemoteResponseSafetyTests(unittest.TestCase):
         opened_response.read.return_value = b"{invalid"
 
         opened_response.geturl.return_value = "https://example.test/search"
-        with patch("lightnovel_selector.files._open_https", return_value=response):
-            with self.assertRaisesRegex(RuntimeError, "无效 JSON"):
-                http_json("https://example.test/search")
+        with (
+            patch("lightnovel_selector.files._open_https", return_value=response),
+            self.assertRaisesRegex(RuntimeError, "无效 JSON"),
+        ):
+            http_json("https://example.test/search")
 
     def test_http_json_normalizes_excessive_nesting(self) -> None:
         response = MagicMock()
@@ -64,9 +69,9 @@ class RemoteResponseSafetyTests(unittest.TestCase):
         with (
             patch("lightnovel_selector.files._open_https", return_value=response),
             patch("lightnovel_selector.files.json.loads", side_effect=RecursionError),
+            self.assertRaisesRegex(RuntimeError, "无效 JSON"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "无效 JSON"):
-                http_json("https://example.test/search")
+            http_json("https://example.test/search")
 
     def test_remote_requests_reject_unsafe_urls_before_opening(self) -> None:
         for url in (
@@ -77,11 +82,10 @@ class RemoteResponseSafetyTests(unittest.TestCase):
             "https://127.0.0.1/cover.jpg",
             "https://[::1]/cover.jpg",
         ):
-            with self.subTest(url=url):
-                with patch("lightnovel_selector.files._open_https") as opener:
-                    with self.assertRaises(ValueError):
-                        http_bytes(url, max_bytes=32)
-                    opener.assert_not_called()
+            with self.subTest(url=url), patch("lightnovel_selector.files._open_https") as opener:
+                with self.assertRaises(ValueError):
+                    http_bytes(url, max_bytes=32)
+                opener.assert_not_called()
 
     def test_remote_request_rejects_https_redirect_downgrade(self) -> None:
         from lightnovel_selector.files import _HttpsOnlyRedirectHandler
@@ -271,18 +275,22 @@ class ReportSafetyTests(unittest.TestCase):
         with TemporaryDirectory() as temp_dir:
             report_path = Path(temp_dir) / "classification_report.json"
             report_path.write_text('{"payload":"too large"}', encoding="utf-8")
-            with patch("lightnovel_selector.classification.REPORT_MAX_BYTES", 8):
-                with self.assertRaisesRegex(ValueError, "超过允许大小"):
-                    load_classification_report(report_path)
+            with (
+                patch("lightnovel_selector.classification.REPORT_MAX_BYTES", 8),
+                self.assertRaisesRegex(ValueError, "超过允许大小"),
+            ):
+                load_classification_report(report_path)
 
     def test_excessively_nested_report_is_rejected(self) -> None:
         with TemporaryDirectory() as temp_dir:
             report_path = Path(temp_dir) / "classification_report.json"
             report_path.write_text("{}", encoding="utf-8")
 
-            with patch("lightnovel_selector.classification.json.loads", side_effect=RecursionError):
-                with self.assertRaisesRegex(ValueError, "格式无效"):
-                    load_classification_report(report_path)
+            with (
+                patch("lightnovel_selector.classification.json.loads", side_effect=RecursionError),
+                self.assertRaisesRegex(ValueError, "格式无效"),
+            ):
+                load_classification_report(report_path)
 
 
 class SidecarSafetyTests(unittest.TestCase):
@@ -338,6 +346,7 @@ class UndoReportSafetyTests(unittest.TestCase):
 
             self.assertEqual(report["schema_version"], REPORT_SCHEMA_VERSION)
             self.assertEqual(Path(report["root_path"]), root.resolve())
+            self.assertIsNotNone(datetime.fromisoformat(report["created_at"]).utcoffset())
             self.assertEqual(report["items"][0]["source_size"], 3)
             self.assertIsInstance(report["items"][0]["source_mtime_ns"], int)
             self.assertEqual(undo_classification_report(report_path), (1, 0))
@@ -433,9 +442,8 @@ class UndoReportSafetyTests(unittest.TestCase):
             with patch(
                 "lightnovel_selector.classification.shutil.move",
                 side_effect=change_next_target_after_first_restore,
-            ):
-                with self.assertRaisesRegex(ValueError, "已发生变化"):
-                    undo_classification_report(report_path)
+            ), self.assertRaisesRegex(ValueError, "已发生变化"):
+                undo_classification_report(report_path)
 
             self.assertFalse(first.exists())
             self.assertTrue(first_target.exists())

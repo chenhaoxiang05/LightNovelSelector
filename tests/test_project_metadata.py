@@ -1,9 +1,8 @@
-from pathlib import Path
 import unittest
+from pathlib import Path
 from xml.etree import ElementTree
 
 from lightnovel_selector.constants import APP_VERSION
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 

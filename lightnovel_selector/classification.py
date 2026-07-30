@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import shutil
 import zipfile
+from collections.abc import Callable, Iterable
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Iterable
 
 from .constants import (
     APP_NAME,
@@ -27,10 +27,10 @@ from .files import (
 from .metadata import SeriesResolver, suggest_renamed_filename
 from .models import ClassificationPlan, CustomRule, ResolveResult
 from .parsing import (
+    collapse_spaces,
     extract_book_lookup_query,
     extract_series_guess,
     identity_query_for_path,
-    collapse_spaces,
     safe_folder_name,
     weak_file_name_query,
 )
@@ -155,7 +155,7 @@ def write_classification_report(
         "version": APP_VERSION,
         "schema_version": REPORT_SCHEMA_VERSION,
         "root_path": str(resolved_report_path.parent),
-        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "created_at": datetime.now(tz=timezone.utc).astimezone().isoformat(timespec="seconds"),
         "summary": {
             "total": len(plans),
             "moved": moved,

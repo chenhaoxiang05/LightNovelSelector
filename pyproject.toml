@@ -8,6 +8,10 @@ target-version = "py310"
 line-length = 120
 exclude = ["build", "dist", ".venv", ".venv-build"]
 
+[tool.ruff.lint]
+# 外部 JSON 与设置载荷的类型不匹配属于数据校验失败，保留现有 ValueError/RuntimeError 接口。
+ignore = ["TRY004"]
+
 [tool.mypy]
 python_version = "3.10"
 exclude = "(^|[\\\\/])(build|dist|\\.venv|\\.venv-build)([\\\\/]|$)"

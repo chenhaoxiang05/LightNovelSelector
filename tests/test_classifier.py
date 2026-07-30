@@ -1,19 +1,19 @@
+import json
+import threading
+import time
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import json
-import time
-import threading
 from unittest.mock import patch
-import unittest
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import lightnovel_classifier
 from lightnovel_classifier import (
-    BookMetadata,
-    AppSettings,
     COVER_MAX_BYTES,
-    CustomRule,
     FILE_FINGERPRINT_CHUNK_SIZE,
+    AppSettings,
+    BookMetadata,
+    CustomRule,
     PersistentMetadataCache,
     bangumi_cover_url,
     bangumi_title_candidates,
@@ -31,19 +31,18 @@ from lightnovel_classifier import (
     http_json,
     identity_query_for_path,
     item_matches_volume,
+    load_app_settings,
     normalize_for_match,
     parse_volume_number,
     plan_status_label,
-    revise_classification_plan,
     read_local_cover_bytes,
+    revise_classification_plan,
     safe_folder_name,
-    load_app_settings,
     save_app_settings,
     suggest_renamed_filename,
     try_save_app_settings,
     undo_classification_report,
 )
-
 
 MINIMAL_PNG = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
@@ -311,9 +310,11 @@ class MovePlanTests(unittest.TestCase):
             for index in range(3):
                 (root / f"book-{index}.txt").write_text("content", encoding="utf-8")
 
-            with patch("lightnovel_selector.classification.SCAN_MAX_FILES", 2):
-                with self.assertRaisesRegex(ValueError, "单次扫描最多支持 2 个"):
-                    build_classification_plan(root, use_network=False)
+            with (
+                patch("lightnovel_selector.classification.SCAN_MAX_FILES", 2),
+                self.assertRaisesRegex(ValueError, "单次扫描最多支持 2 个"),
+            ):
+                build_classification_plan(root, use_network=False)
 
     def test_duplicate_detection_checks_full_file_content(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -365,9 +366,11 @@ class MovePlanTests(unittest.TestCase):
         opened_response = response.__enter__.return_value
         opened_response.geturl.return_value = "https://example.test/cover.jpg"
         opened_response.read.return_value = b"12345"
-        with patch("lightnovel_selector.files._open_https", return_value=response):
-            with self.assertRaisesRegex(RuntimeError, "超过允许大小"):
-                http_bytes("https://example.test/cover.jpg", max_bytes=4)
+        with (
+            patch("lightnovel_selector.files._open_https", return_value=response),
+            self.assertRaisesRegex(RuntimeError, "超过允许大小"),
+        ):
+            http_bytes("https://example.test/cover.jpg", max_bytes=4)
 
     def test_http_json_rejects_non_object_root(self) -> None:
         response = unittest.mock.MagicMock()
@@ -376,14 +379,18 @@ class MovePlanTests(unittest.TestCase):
         opened_response.headers.get_content_charset.return_value = "utf-8"
         opened_response.read.return_value = b"[]"
 
-        with patch("lightnovel_selector.files._open_https", return_value=response):
-            with self.assertRaisesRegex(RuntimeError, "JSON 根节点不是对象"):
-                http_json("https://example.test/search")
+        with (
+            patch("lightnovel_selector.files._open_https", return_value=response),
+            self.assertRaisesRegex(RuntimeError, "JSON 根节点不是对象"),
+        ):
+            http_json("https://example.test/search")
 
     def test_bangumi_search_rejects_invalid_data_shape(self) -> None:
-        with patch("lightnovel_selector.metadata.http_json", return_value={"data": {}}):
-            with self.assertRaisesRegex(RuntimeError, "data 不是数组"):
-                lightnovel_classifier.bangumi_search_items("Sword Art Online", timeout=1.0)
+        with (
+            patch("lightnovel_selector.metadata.http_json", return_value={"data": {}}),
+            self.assertRaisesRegex(RuntimeError, "data 不是数组"),
+        ):
+            lightnovel_classifier.bangumi_search_items("Sword Art Online", timeout=1.0)
 
     def test_recursive_scan_keeps_already_classified_file_in_place(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -551,9 +558,11 @@ class MovePlanTests(unittest.TestCase):
                     raise FileNotFoundError("simulated missing source")
                 return real_move(source, target)
 
-            with patch("lightnovel_selector.classification.shutil.move", side_effect=fail_second_move):
-                with self.assertRaises(FileNotFoundError):
-                    execute_classification_plan(plans, report_path=report_path)
+            with (
+                patch("lightnovel_selector.classification.shutil.move", side_effect=fail_second_move),
+                self.assertRaises(FileNotFoundError),
+            ):
+                execute_classification_plan(plans, report_path=report_path)
 
             self.assertTrue(report_path.exists())
             report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -600,9 +609,8 @@ class MovePlanTests(unittest.TestCase):
             with patch(
                 "lightnovel_selector.classification.shutil.move",
                 side_effect=change_second_after_first,
-            ):
-                with self.assertRaisesRegex(ValueError, "扫描后发生变化"):
-                    execute_classification_plan(plans, report_path=report_path)
+            ), self.assertRaisesRegex(ValueError, "扫描后发生变化"):
+                execute_classification_plan(plans, report_path=report_path)
 
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(report["summary"]["moved"], 1)
@@ -620,9 +628,8 @@ class MovePlanTests(unittest.TestCase):
             with patch(
                 "lightnovel_selector.classification.write_json_atomic",
                 side_effect=PermissionError("blocked"),
-            ):
-                with self.assertRaises(OSError):
-                    execute_classification_plan(plans, report_path=root / "report.json")
+            ), self.assertRaises(OSError):
+                execute_classification_plan(plans, report_path=root / "report.json")
 
             self.assertTrue(book.exists())
             self.assertFalse((root / "Sword Art Online" / book.name).exists())
@@ -1028,24 +1035,24 @@ class ApplicationServiceTests(unittest.TestCase):
             release.wait(timeout=2)
             return []
 
-        with TemporaryDirectory() as temp_dir:
-            with (
-                patch("lightnovel_selector.application.load_app_settings", return_value=AppSettings()),
-                patch("lightnovel_selector.application.try_save_app_settings", return_value=None),
-                patch("lightnovel_selector.application.build_classification_plan", side_effect=slow_scan),
-            ):
-                service = ApplicationService()
-                service.set_folder(temp_dir)
+        with (
+            TemporaryDirectory() as temp_dir,
+            patch("lightnovel_selector.application.load_app_settings", return_value=AppSettings()),
+            patch("lightnovel_selector.application.try_save_app_settings", return_value=None),
+            patch("lightnovel_selector.application.build_classification_plan", side_effect=slow_scan),
+        ):
+            service = ApplicationService()
+            service.set_folder(temp_dir)
+            service.start_scan()
+            self.assertTrue(started.wait(timeout=1))
+            revision = service.snapshot()["plans_revision"]
+
+            with self.assertRaisesRegex(RuntimeError, "尚未完成"):
                 service.start_scan()
-                self.assertTrue(started.wait(timeout=1))
-                revision = service.snapshot()["plans_revision"]
 
-                with self.assertRaisesRegex(RuntimeError, "尚未完成"):
-                    service.start_scan()
-
-                self.assertEqual(service.snapshot()["plans_revision"], revision)
-                release.set()
-                self.wait_for_operation(service)
+            self.assertEqual(service.snapshot()["plans_revision"], revision)
+            release.set()
+            self.wait_for_operation(service)
 
 
 if __name__ == "__main__":
