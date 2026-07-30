@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from .constants import (
     APP_NAME,
@@ -458,14 +459,38 @@ def _validated_undo_items(
     return moved_items
 
 
-def _validate_undo_move_state(
+def _validate_reported_file_snapshot(
+    path: Path,
+    *,
+    label: str,
+    expected_size: int | None,
+    expected_mtime_ns: int | None,
+) -> None:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"{label}不再是原来的普通文件：{path}")
+    try:
+        file_stat = path.stat()
+    except OSError as exc:
+        raise ValueError(f"无法重新校验{label}：{path}") from exc
+    if (
+        expected_size is not None
+        and expected_mtime_ns is not None
+        and (
+            file_stat.st_size != expected_size
+            or file_stat.st_mtime_ns != expected_mtime_ns
+        )
+    ):
+        raise ValueError(f"{label}已发生变化，为避免移动错误内容，已停止操作：{path.name}")
+
+
+def _reported_move_state(
     source_path: Path,
     target_path: Path,
     *,
     root_path: Path,
     expected_size: int | None,
     expected_mtime_ns: int | None,
-) -> None:
+) -> Literal["pending", "restored"]:
     current_source = _undo_item_path(
         str(source_path),
         field_name="source_path",
@@ -480,23 +505,29 @@ def _validate_undo_move_state(
     )
     if current_source != source_path or current_target != target_path:
         raise ValueError("撤销路径在操作期间发生变化，已停止撤销。")
-    if source_path.exists() or source_path.is_symlink():
-        raise ValueError(f"撤销源位置已被占用：{source_path}")
-    if target_path.is_symlink() or not target_path.is_file():
-        raise ValueError(f"撤销目标不再是原来的普通文件：{target_path}")
-    try:
-        target_stat = target_path.stat()
-    except OSError as exc:
-        raise ValueError(f"无法重新校验撤销目标：{target_path}") from exc
-    if (
-        expected_size is not None
-        and expected_mtime_ns is not None
-        and (
-            target_stat.st_size != expected_size
-            or target_stat.st_mtime_ns != expected_mtime_ns
+
+    source_present = source_path.exists() or source_path.is_symlink()
+    target_present = target_path.exists() or target_path.is_symlink()
+    if source_present and target_present:
+        raise ValueError("报告中的源文件和目标文件同时存在，状态存在歧义，请人工检查。")
+    if not source_present and not target_present:
+        raise ValueError("报告中的源文件和目标文件均不存在，状态存在歧义，请人工检查。")
+    if source_present:
+        _validate_reported_file_snapshot(
+            source_path,
+            label="报告源位置的文件",
+            expected_size=expected_size,
+            expected_mtime_ns=expected_mtime_ns,
         )
-    ):
-        raise ValueError(f"分类后的文件已发生变化，为避免移动错误内容，已拒绝撤销：{target_path.name}")
+        return "restored"
+
+    _validate_reported_file_snapshot(
+        target_path,
+        label="报告目标文件",
+        expected_size=expected_size,
+        expected_mtime_ns=expected_mtime_ns,
+    )
+    return "pending"
 
 
 def _start_report_journal(report_path: Path, execution_id: str) -> Path:
@@ -673,47 +704,19 @@ def _recover_classification_report(
             raise ValueError(
                 f"分类恢复日志第 {event_number} 项的文件状态字段不完整。"
             )
-        source_present = source_path.exists() or source_path.is_symlink()
-        target_present = target_path.exists() or target_path.is_symlink()
-        if (
-            not source_path.is_symlink()
-            and source_path.is_file()
-            and not target_present
-        ):
-            try:
-                source_stat = source_path.stat()
-            except OSError as exc:
-                raise ValueError(
-                    f"分类恢复日志第 {event_number} 项的源文件无法复核。"
-                ) from exc
-            if (
-                expected_size is not None
-                and expected_mtime_ns is not None
-                and (
-                    source_stat.st_size != expected_size
-                    or source_stat.st_mtime_ns != expected_mtime_ns
-                )
-            ):
-                raise ValueError(
-                    f"分类恢复日志第 {event_number} 项的源文件已发生变化。"
-                )
+        move_state = _reported_move_state(
+            source_path,
+            target_path,
+            root_path=root_path,
+            expected_size=expected_size,
+            expected_mtime_ns=expected_mtime_ns,
+        )
+        if move_state == "restored":
             item["actual_target_path"] = None
             item["operation"] = "skipped"
             continue
-        if not source_present and not target_path.is_symlink() and target_path.is_file():
-            _validate_undo_move_state(
-                source_path,
-                target_path,
-                root_path=root_path,
-                expected_size=expected_size,
-                expected_mtime_ns=expected_mtime_ns,
-            )
-            item["actual_target_path"] = str(target_path)
-            item["operation"] = "moved"
-            continue
-        raise ValueError(
-            f"分类恢复日志第 {event_number} 项的源和目标状态存在歧义，请人工检查后再操作。"
-        )
+        item["actual_target_path"] = str(target_path)
+        item["operation"] = "moved"
 
     moved = sum(
         isinstance(item, dict)
@@ -1100,12 +1103,7 @@ def undo_classification_report(
     root_path = _report_root(report, report_path)
     moved_items = list(reversed(_validated_undo_items(report, report_path)))
     for source_path, target_path, expected_size, expected_mtime_ns in moved_items:
-        if source_path.exists() or (
-            not target_path.exists()
-            and not target_path.is_symlink()
-        ):
-            continue
-        _validate_undo_move_state(
+        _reported_move_state(
             source_path,
             target_path,
             root_path=root_path,
@@ -1121,32 +1119,45 @@ def undo_classification_report(
         expected_size,
         expected_mtime_ns,
     ) in enumerate(moved_items, start=1):
-        if (
-            not target_path.exists()
-            and not target_path.is_symlink()
-        ) or source_path.exists():
+        move_state = _reported_move_state(
+            source_path,
+            target_path,
+            root_path=root_path,
+            expected_size=expected_size,
+            expected_mtime_ns=expected_mtime_ns,
+        )
+        if move_state == "restored":
             skipped += 1
             if progress_count:
                 progress_count(index, len(moved_items))
             continue
-        _validate_undo_move_state(
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        move_state = _reported_move_state(
             source_path,
             target_path,
             root_path=root_path,
             expected_size=expected_size,
             expected_mtime_ns=expected_mtime_ns,
         )
+        if move_state == "restored":
+            skipped += 1
+            if progress_count:
+                progress_count(index, len(moved_items))
+            continue
         if progress:
             progress(f"撤销：{target_path.name} -> {source_path}")
-        source_path.parent.mkdir(parents=True, exist_ok=True)
-        _validate_undo_move_state(
-            source_path,
-            target_path,
-            root_path=root_path,
-            expected_size=expected_size,
-            expected_mtime_ns=expected_mtime_ns,
-        )
         shutil.move(str(target_path), str(source_path))
+        if (
+            _reported_move_state(
+                source_path,
+                target_path,
+                root_path=root_path,
+                expected_size=expected_size,
+                expected_mtime_ns=expected_mtime_ns,
+            )
+            != "restored"
+        ):
+            raise RuntimeError("撤销操作完成后文件状态未达到预期，已停止后续操作。")
         restored += 1
         try:
             if not any(target_path.parent.iterdir()):

@@ -350,6 +350,7 @@ class UndoReportSafetyTests(unittest.TestCase):
             self.assertEqual(report["items"][0]["source_size"], 3)
             self.assertIsInstance(report["items"][0]["source_mtime_ns"], int)
             self.assertEqual(undo_classification_report(report_path), (1, 0))
+            self.assertEqual(undo_classification_report(report_path), (0, 1))
 
     def test_recovery_journal_rejects_target_outside_classification_root(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -504,6 +505,146 @@ class UndoReportSafetyTests(unittest.TestCase):
             self.assertFalse(source.exists())
             self.assertTrue(target.is_symlink())
             self.assertTrue(replacement.exists())
+
+    def test_undo_rejects_ambiguous_batch_before_restoring_any_file(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A Sword.Art.Online.Vol.01.txt"
+            second = root / "B Sword.Art.Online.Vol.02.txt"
+            first.write_text("first", encoding="utf-8")
+            second.write_text("second", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            plans = build_classification_plan(root, use_network=False)
+            execute_classification_plan(plans, report_path=report_path)
+            first.write_text("unexpected source occupant", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "同时存在.*状态存在歧义"):
+                undo_classification_report(report_path)
+
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertTrue(first.exists())
+            self.assertFalse(second.exists())
+            self.assertTrue(Path(report["items"][0]["actual_target_path"]).exists())
+            self.assertTrue(Path(report["items"][1]["actual_target_path"]).exists())
+
+    def test_undo_rejects_when_source_and_target_are_both_missing(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("original", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            plans = build_classification_plan(root, use_network=False)
+            execute_classification_plan(plans, report_path=report_path)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            target = Path(report["items"][0]["actual_target_path"])
+            target.unlink()
+
+            with self.assertRaisesRegex(ValueError, "均不存在.*状态存在歧义"):
+                undo_classification_report(report_path)
+
+            self.assertFalse(source.exists())
+            self.assertFalse(target.exists())
+
+    def test_repeated_undo_rejects_restored_file_changed_afterwards(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("original", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            plans = build_classification_plan(root, use_network=False)
+            execute_classification_plan(plans, report_path=report_path)
+            self.assertEqual(undo_classification_report(report_path), (1, 0))
+            source.write_text("changed after restoration", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "源位置的文件已发生变化"):
+                undo_classification_report(report_path)
+
+            self.assertTrue(source.exists())
+
+    def test_undo_can_resume_after_forced_interruption(self) -> None:
+        from shutil import move as real_move
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A Sword.Art.Online.Vol.01.txt"
+            second = root / "B Sword.Art.Online.Vol.02.txt"
+            first.write_text("first", encoding="utf-8")
+            second.write_text("second", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            plans = build_classification_plan(root, use_network=False)
+            execute_classification_plan(plans, report_path=report_path)
+            move_count = 0
+
+            def interrupt_second_restore(source_path, target_path):
+                nonlocal move_count
+                move_count += 1
+                if move_count == 2:
+                    raise KeyboardInterrupt
+                return real_move(source_path, target_path)
+
+            with (
+                patch(
+                    "lightnovel_selector.classification.shutil.move",
+                    side_effect=interrupt_second_restore,
+                ),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                undo_classification_report(report_path)
+
+            self.assertEqual(undo_classification_report(report_path), (1, 1))
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+
+    def test_undo_rejects_partial_copy_left_by_failed_move(self) -> None:
+        from shutil import copy2
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("original", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            plans = build_classification_plan(root, use_network=False)
+            execute_classification_plan(plans, report_path=report_path)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            target = Path(report["items"][0]["actual_target_path"])
+
+            def copy_then_fail(source_path, target_path):
+                copy2(source_path, target_path)
+                raise OSError("simulated cross-volume cleanup failure")
+
+            with (
+                patch(
+                    "lightnovel_selector.classification.shutil.move",
+                    side_effect=copy_then_fail,
+                ),
+                self.assertRaisesRegex(OSError, "cross-volume"),
+            ):
+                undo_classification_report(report_path)
+
+            self.assertTrue(source.exists())
+            self.assertTrue(target.exists())
+            with self.assertRaisesRegex(ValueError, "同时存在.*状态存在歧义"):
+                undo_classification_report(report_path)
+
+    def test_undo_verifies_move_postcondition(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "Sword.Art.Online.Vol.01.txt"
+            source.write_text("original", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            plans = build_classification_plan(root, use_network=False)
+            execute_classification_plan(plans, report_path=report_path)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            target = Path(report["items"][0]["actual_target_path"])
+
+            with (
+                patch("lightnovel_selector.classification.shutil.move", return_value=None),
+                self.assertRaisesRegex(RuntimeError, "文件状态未达到预期"),
+            ):
+                undo_classification_report(report_path)
+
+            self.assertFalse(source.exists())
+            self.assertTrue(target.exists())
 
     def test_undo_rejects_incomplete_file_state_fields(self) -> None:
         with TemporaryDirectory() as temp_dir:
