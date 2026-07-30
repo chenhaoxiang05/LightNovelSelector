@@ -26,6 +26,8 @@ public sealed partial class MainPage : Page
     private string _lastOperationState = "idle";
     private bool _isPolling;
     private bool _isDetailRequestActive;
+    private bool _isCandidateLookupActive;
+    private bool _isSavingCorrection;
     private bool _isRecovering;
     private bool _settingsInitialized;
     private bool _disposing;
@@ -186,7 +188,7 @@ public sealed partial class MainPage : Page
 
     private async void OnPollTimerTick(object? sender, object e)
     {
-        if (_isPolling || _isDetailRequestActive)
+        if (_isPolling || _isDetailRequestActive || _isCandidateLookupActive)
         {
             return;
         }

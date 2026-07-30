@@ -4,17 +4,19 @@ from collections.abc import Iterable
 from dataclasses import replace
 
 from .constants import (
+    CLASSIFICATION_CANDIDATE_MAX_COUNT,
     IDENTITY_MAX_AUTHORS,
     IDENTITY_MAX_TAGS,
     IDENTITY_VALUE_MAX_CHARS,
     METADATA_TEXT_MAX_CHARS,
 )
-from .models import BookIdentity
+from .models import BookIdentity, ClassificationCandidate
 from .parsing import (
     collapse_spaces,
     extract_book_lookup_query,
     extract_series_guess,
     infer_language,
+    normalize_for_match,
     parse_volume_number,
     safe_folder_name,
 )
@@ -87,6 +89,27 @@ def merge_book_identities(
 
 def with_series_name(identity: BookIdentity, series_name: str) -> BookIdentity:
     return replace(identity, series_name=safe_folder_name(series_name))
+
+
+def merge_classification_candidates(
+    *groups: Iterable[ClassificationCandidate],
+) -> tuple[ClassificationCandidate, ...]:
+    result: list[ClassificationCandidate] = []
+    positions: dict[str, int] = {}
+    for group in groups:
+        for candidate in group:
+            key = normalize_for_match(candidate.identity.series_name)
+            if not key:
+                continue
+            position = positions.get(key)
+            if position is None:
+                if len(result) >= CLASSIFICATION_CANDIDATE_MAX_COUNT:
+                    continue
+                positions[key] = len(result)
+                result.append(candidate)
+            elif candidate.confidence > result[position].confidence:
+                result[position] = candidate
+    return tuple(result)
 
 
 def language_display_name(language: str | None) -> str:

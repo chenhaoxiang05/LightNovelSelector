@@ -167,11 +167,46 @@ public sealed class PythonSidecarClient : IAsyncDisposable
         CancellationToken cancellationToken = default
     ) => CallAsync<AppSnapshot>("edit_plan", new { index, seriesName }, cancellationToken: cancellationToken);
 
-    public Task<BookDetail> GetDetailAsync(int index, CancellationToken cancellationToken = default) =>
+    public Task<EditPlansResult> EditPlansAsync(
+        int index,
+        string seriesName,
+        string scope,
+        int plansRevision,
+        CancellationToken cancellationToken = default
+    ) =>
+        CallAsync<EditPlansResult>(
+            "edit_plans",
+            new
+            {
+                index,
+                seriesName,
+                scope,
+                plansRevision,
+            },
+            cancellationToken: cancellationToken
+        );
+
+    public Task<BookDetail> GetDetailAsync(
+        int index,
+        int plansRevision,
+        CancellationToken cancellationToken = default
+    ) =>
         CallAsync<BookDetail>(
             "get_detail",
-            new { index },
+            new { index, plansRevision },
             timeout: TimeSpan.FromSeconds(30),
+            cancellationToken: cancellationToken
+        );
+
+    public Task<CandidateLookupResult> LoadCandidatesAsync(
+        int index,
+        int plansRevision,
+        CancellationToken cancellationToken = default
+    ) =>
+        CallAsync<CandidateLookupResult>(
+            "load_candidates",
+            new { index, plansRevision },
+            timeout: TimeSpan.FromSeconds(40),
             cancellationToken: cancellationToken
         );
 

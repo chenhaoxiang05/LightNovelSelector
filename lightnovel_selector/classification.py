@@ -33,15 +33,17 @@ from .files import (
 from .identity import (
     identity_from_filename,
     merge_book_identities,
+    merge_classification_candidates,
     with_series_name,
 )
 from .metadata import SeriesResolver, suggest_renamed_filename
-from .models import ClassificationPlan, CustomRule, ResolveResult
+from .models import ClassificationCandidate, ClassificationPlan, CustomRule, ResolveResult
 from .parsing import (
     collapse_spaces,
     extract_book_lookup_query,
     extract_series_guess,
     identity_query_for_path,
+    normalize_for_match,
     safe_folder_name,
     weak_file_name_query,
 )
@@ -849,6 +851,31 @@ def build_classification_plan(
                 metadata.identity if metadata else None,
                 series_name=folder_name,
             )
+            candidates = merge_classification_candidates(
+                (
+                    ClassificationCandidate(
+                        identity=identity,
+                        source=result.source,
+                        confidence=result.confidence,
+                    ),
+                ),
+                (
+                    ClassificationCandidate(
+                        identity=metadata.identity,
+                        source=metadata.source,
+                        confidence=metadata.confidence,
+                    ),
+                )
+                if metadata
+                else (),
+                (
+                    ClassificationCandidate(
+                        identity=local_identity,
+                        source="本地识别",
+                        confidence=0.55,
+                    ),
+                ),
+            )
             proposed_target_path = target_dir / target_name
             try:
                 already_classified = path.resolve() == proposed_target_path.resolve()
@@ -883,6 +910,7 @@ def build_classification_plan(
                     series_key=folder_name,
                     status=status,
                     note=note,
+                    candidates=candidates,
                 )
             )
         except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
@@ -971,6 +999,48 @@ def revise_classification_plan(
         note=note,
         duplicate_of=None,
     )
+
+
+def classification_plan_group_indices(
+    plans: list[ClassificationPlan],
+    index: int,
+    scope: Literal["single", "same_series"],
+) -> tuple[int, ...]:
+    if index < 0 or index >= len(plans):
+        raise IndexError("分类计划索引超出范围。")
+    if scope == "single":
+        return (index,)
+    if scope != "same_series":
+        raise ValueError("批量修正范围无效。")
+
+    anchor = plans[index]
+    anchor_key = normalize_for_match(anchor.series_key or anchor.series_name)
+    if not anchor_key:
+        return (index,)
+    return tuple(
+        plan_index
+        for plan_index, plan in enumerate(plans)
+        if normalize_for_match(plan.series_key or plan.series_name) == anchor_key
+    )
+
+
+def revise_classification_plans(
+    plans: list[ClassificationPlan],
+    index: int,
+    series_name: str,
+    *,
+    scope: Literal["single", "same_series"] = "single",
+) -> tuple[int, ...]:
+    indices = classification_plan_group_indices(plans, index, scope)
+    revised_plans = list(plans)
+    for plan_index in indices:
+        revised_plans[plan_index] = revise_classification_plan(
+            revised_plans,
+            plan_index,
+            series_name,
+        )
+    plans[:] = revised_plans
+    return indices
 
 
 def execute_classification_plan(

@@ -94,6 +94,8 @@ public sealed partial class MainPage
         ApplyProgressRing.Visibility = applying ? Visibility.Visible : Visibility.Collapsed;
         ApplyButtonIcon.Visibility = applying ? Visibility.Collapsed : Visibility.Visible;
         ApplyButtonText.Text = applying ? "整理中" : "确认整理";
+        UpdateCandidateLookupState();
+        UpdateCorrectionButtonState();
 
         var (glyph, brushKey) = operation.State switch
         {

@@ -63,4 +63,64 @@ public sealed class BookIdentityModelTests
         Assert.AreEqual(0, plan.Identity.Authors.Count);
         Assert.AreEqual(0, plan.Identity.Tags.Count);
     }
+
+    [TestMethod]
+    public void CandidateLookupPayloadDeserializesComparisonFields()
+    {
+        const string payload = """
+            {
+              "index": 2,
+              "warning": null,
+              "candidates": [
+                {
+                  "title": "Demo 第03卷",
+                  "series_name": "Demo",
+                  "authors_label": "Example Author",
+                  "volume_label": "第 3 卷",
+                  "language_label": "英语",
+                  "tags_label": "Fantasy",
+                  "source": "Bangumi",
+                  "confidence": 0.91,
+                  "confidence_label": "91%",
+                  "is_current": true,
+                  "current_label": "当前",
+                  "identity": {
+                    "title": "Demo 第03卷",
+                    "series_name": "Demo"
+                  }
+                }
+              ]
+            }
+            """;
+
+        var result = JsonSerializer.Deserialize<CandidateLookupResult>(payload, JsonOptions);
+
+        Assert.IsNotNull(result);
+        Assert.AreEqual(2, result.Index);
+        Assert.AreEqual(1, result.Candidates.Count);
+        Assert.IsTrue(result.Candidates[0].IsCurrent);
+        Assert.AreEqual("Demo · Bangumi 91%", result.Candidates[0].DisplayLabel);
+    }
+
+    [TestMethod]
+    public void BatchEditPayloadKeepsUpdatedCountAndSnapshot()
+    {
+        const string payload = """
+            {
+              "updated_count": 3,
+              "updated_indices": [0, 1, 4],
+              "snapshot": {
+                "plans_revision": 7,
+                "plans": []
+              }
+            }
+            """;
+
+        var result = JsonSerializer.Deserialize<EditPlansResult>(payload, JsonOptions);
+
+        Assert.IsNotNull(result);
+        Assert.AreEqual(3, result.UpdatedCount);
+        CollectionAssert.AreEqual(new[] { 0, 1, 4 }, result.UpdatedIndices.ToArray());
+        Assert.AreEqual(7, result.Snapshot.PlansRevision);
+    }
 }

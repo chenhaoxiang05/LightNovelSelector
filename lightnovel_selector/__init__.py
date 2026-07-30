@@ -3,6 +3,7 @@ from __future__ import annotations
 # ruff: noqa: F401
 from .classification import (
     build_classification_plan,
+    classification_plan_group_indices,
     classification_plan_to_report_item,
     count_plan_statuses,
     execute_classification_plan,
@@ -10,6 +11,7 @@ from .classification import (
     load_classification_report,
     plan_status_label,
     revise_classification_plan,
+    revise_classification_plans,
     undo_classification_report,
     unique_target_path,
     validate_classification_root,
@@ -43,6 +45,7 @@ from .identity import (
     identity_from_filename,
     language_display_name,
     merge_book_identities,
+    merge_classification_candidates,
     normalize_identity_values,
     volume_display_name,
     with_series_name,
@@ -68,6 +71,7 @@ from .models import (
     AppSettings,
     BookIdentity,
     BookMetadata,
+    ClassificationCandidate,
     ClassificationPlan,
     CustomRule,
     ResolveResult,

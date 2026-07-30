@@ -14,6 +14,13 @@ class BookIdentity:
     tags: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class ClassificationCandidate:
+    identity: BookIdentity
+    source: str
+    confidence: float
+
+
 @dataclass(frozen=True, init=False)
 class ResolveResult:
     identity: BookIdentity
@@ -155,6 +162,7 @@ class ClassificationPlan:
     status: str = "ready"
     note: str = ""
     duplicate_of: Path | None = None
+    candidates: tuple[ClassificationCandidate, ...] = ()
 
     def __init__(
         self,
@@ -179,6 +187,7 @@ class ClassificationPlan:
         status: str = "ready",
         note: str = "",
         duplicate_of: Path | None = None,
+        candidates: tuple[ClassificationCandidate, ...] = (),
         *,
         identity: BookIdentity | None = None,
     ) -> None:
@@ -220,6 +229,7 @@ class ClassificationPlan:
         object.__setattr__(self, "status", status)
         object.__setattr__(self, "note", note)
         object.__setattr__(self, "duplicate_of", duplicate_of)
+        object.__setattr__(self, "candidates", candidates)
 
     @property
     def series_name(self) -> str:
