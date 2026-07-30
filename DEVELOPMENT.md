@@ -33,11 +33,11 @@ py -3 -m venv .venv-build
 
 ### Python 核心
 
-- `classification.py`：分类计划、完整哈希重复检测、执行、部分报告和撤销。
+- `classification.py`：分类计划、完整哈希重复检测、线性恢复日志、报告和撤销。
 - `parsing.py`：文件名清洗、卷号与系列名解析。
 - `files.py`：文件扫描、内容提示、封面和网络字节读取。
 - `metadata.py`：本地/在线系列解析与缓存。
-- `storage.py`：设置、缓存和原子 JSON 持久化。
+- `storage.py`：设置、缓存、原子 JSON 和持久化 JSON Lines。
 - `application.py`：线程安全应用状态、异步任务和快照。
 - `sidecar.py`：JSON Lines 请求分发。
 - `cli.py`：自动化命令行；不再启动桌面界面。

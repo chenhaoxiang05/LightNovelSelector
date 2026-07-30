@@ -14,7 +14,7 @@ LightNovelSelector/
 │  ├─ models.py                  Python 数据模型
 │  ├─ parsing.py                 文件名与卷号解析
 │  ├─ sidecar.py                 JSON Lines Sidecar 服务
-│  └─ storage.py                 设置、缓存和 JSON 持久化
+│  └─ storage.py                 设置、缓存及 JSON/JSON Lines 持久化
 ├─ native/
 │  ├─ LightNovelSelector.WinUI/  WinUI 3 应用
 │  │  ├─ Appearance/             主题和窗口材质

@@ -6,6 +6,7 @@ import os
 import tempfile
 import threading
 import time
+from collections.abc import Iterable
 from pathlib import Path
 
 from .constants import (
@@ -182,6 +183,58 @@ def write_json_atomic(path: Path, payload: object) -> None:
                 temporary_path.unlink(missing_ok=True)
             except OSError:
                 pass
+
+
+def write_json_lines_exclusive(path: Path, payloads: Iterable[object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor: int | None = None
+    created = False
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_BINARY"):
+            flags |= os.O_BINARY
+        descriptor = os.open(path, flags, 0o600)
+        created = True
+        with os.fdopen(
+            descriptor,
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+        ) as handle:
+            descriptor = None
+            for payload in payloads:
+                json.dump(payload, handle, ensure_ascii=False, separators=(",", ":"))
+                handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+    except BaseException:
+        if descriptor is not None:
+            os.close(descriptor)
+        if created:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
+
+
+def append_json_line_durable(path: Path, payload: object, *, max_bytes: int) -> None:
+    if max_bytes < 1:
+        raise ValueError("max_bytes 必须大于 0。")
+    if path.is_symlink() or not path.is_file():
+        raise OSError(f"恢复日志不存在或不是普通文件：{path}")
+
+    encoded = (
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    with path.open("r+b") as handle:
+        handle.seek(0, os.SEEK_END)
+        current_size = handle.tell()
+        if current_size + len(encoded) > max_bytes:
+            raise OSError(f"恢复日志超过允许大小（{max_bytes} 字节）。")
+        handle.write(encoded)
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def app_settings_from_dict(data: dict) -> AppSettings:
