@@ -1,4 +1,5 @@
 using LightNovelSelector.WinUI.Helpers;
+using LightNovelSelector.WinUI.Models;
 using LightNovelSelector.WinUI.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -200,11 +201,35 @@ public sealed partial class MainPage
 
     private async void OnUndoClick(object sender, RoutedEventArgs e)
     {
+        await StartUndoWithConfirmationAsync(null, null);
+    }
+
+    private async void OnActivityUndoClick(object sender, RoutedEventArgs e)
+    {
+        if (_selectedReport is not { CanUndo: true } selected)
+        {
+            ShowToast("所选批次没有可撤销的文件移动。", ToastKind.Warning);
+            return;
+        }
+        await StartUndoWithConfirmationAsync(selected.ReportId, selected);
+    }
+
+    private async Task StartUndoWithConfirmationAsync(
+        string? reportId,
+        ReportHistoryEntry? selected
+    )
+    {
+        var title = selected is null
+            ? "撤销最近一次分类？"
+            : $"撤销 {selected.CreatedAtLabel} 的分类？";
+        var scope = selected is null
+            ? "最近报告"
+            : $"所选批次（移动 {selected.Summary.Moved} 个文件）";
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "撤销上次分类？",
-            Content = "软件会先校验最近报告的目录与路径边界，再恢复已移动文件；原位置已有同名文件时会安全跳过。",
+            Title = title,
+            Content = $"软件会重新校验{scope}的目录、路径和当前文件状态，再恢复仍可安全撤销的移动；原位置已有同名文件时会跳过。",
             PrimaryButtonText = "开始撤销",
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Close,
@@ -216,7 +241,7 @@ public sealed partial class MainPage
 
         try
         {
-            var snapshot = await _sidecar.StartUndoAsync();
+            var snapshot = await _sidecar.StartUndoAsync(reportId);
             ApplySnapshot(snapshot);
             ShowToast("正在按报告恢复文件，请保持窗口开启。", ToastKind.Info);
         }

@@ -46,6 +46,15 @@ class FakeService:
             "plans_revision": expected_plans_revision,
         }
 
+    def start_undo(self, report_id: str | None = None) -> dict:
+        return {"report_id": report_id}
+
+    def report_summary(self, report_id: str | None = None) -> dict:
+        return {"report_id": report_id, "items": []}
+
+    def report_history(self) -> dict:
+        return {"reports": [], "total_count": 0}
+
 
 class SidecarProtocolTests(unittest.TestCase):
     def run_server(self, *requests: str) -> list[dict]:
@@ -140,6 +149,45 @@ class SidecarProtocolTests(unittest.TestCase):
                 "plans_revision": 7,
             },
         )
+
+    def test_dispatches_history_selection_without_accepting_paths(self) -> None:
+        report_id = "0123456789abcdef0123456789abcdef"
+        responses = self.run_server(
+            json.dumps(
+                {
+                    "id": 1,
+                    "method": "get_report_history",
+                }
+            ),
+            json.dumps(
+                {
+                    "id": 2,
+                    "method": "get_report",
+                    "params": {"report_id": report_id},
+                }
+            ),
+            json.dumps(
+                {
+                    "id": 3,
+                    "method": "start_undo",
+                    "params": {"report_id": report_id},
+                }
+            ),
+            '{"id":4,"method":"shutdown"}',
+        )
+
+        self.assertEqual(responses[0]["result"], {"reports": [], "total_count": 0})
+        self.assertEqual(responses[1]["result"]["report_id"], report_id)
+        self.assertEqual(responses[2]["result"]["report_id"], report_id)
+
+    def test_rejects_non_string_history_id(self) -> None:
+        responses = self.run_server(
+            '{"id":1,"method":"get_report","params":{"report_id":42}}',
+            '{"id":2,"method":"shutdown"}',
+        )
+
+        self.assertEqual(responses[0]["error"]["type"], "ProtocolError")
+        self.assertIn("必须是字符串", responses[0]["error"]["message"])
 
     def test_sidecar_module_has_clean_process_protocol(self) -> None:
         payload = '{"id":1,"method":"ping"}\n{"id":2,"method":"shutdown"}\n'

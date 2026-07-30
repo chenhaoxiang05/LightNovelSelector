@@ -11,6 +11,91 @@ public sealed partial class MainPage
     private bool _appearanceLoading;
     private bool _materialStateSubscribed;
 
+    private void LoadAppearanceSmokeReport()
+    {
+        _reportRequestSerial++;
+        _updatingReportHistory = true;
+        try
+        {
+            ReportHistory.Clear();
+            ReportHistory.Add(
+                new ReportHistoryEntry
+                {
+                    ReportId = "0123456789abcdef0123456789abcdef",
+                    Path = @"D:\Books\classification_report.json",
+                    FileName = "classification_report.json",
+                    CreatedAt = "2026-07-20T20:22:40+08:00",
+                    Version = "2.1.0-dev.3",
+                    IsLatest = true,
+                    CanUndo = true,
+                    Status = "available",
+                    StatusLabel = "可撤销",
+                    Summary = new ReportStats
+                    {
+                        Total = 3,
+                        Moved = 2,
+                        Skipped = 1,
+                    },
+                }
+            );
+            ReportHistory.Add(
+                new ReportHistoryEntry
+                {
+                    ReportId = "abcdef0123456789abcdef0123456789",
+                    Path = @"D:\Books\.lightnovel-selector\history\classification_report-old.json",
+                    FileName = "classification_report-old.json",
+                    CreatedAt = "2026-07-19T18:10:00+08:00",
+                    Version = "2.1.0-dev.2",
+                    UndoCompleted = true,
+                    Status = "undone",
+                    StatusLabel = "已撤销",
+                    Summary = new ReportStats
+                    {
+                        Total = 2,
+                        Moved = 2,
+                    },
+                }
+            );
+            _selectedReport = ReportHistory[0];
+            ReportHistoryList.SelectedItem = _selectedReport;
+        }
+        finally
+        {
+            _updatingReportHistory = false;
+        }
+
+        ReportHistoryEmptyState.Visibility = Visibility.Collapsed;
+        ReportHistoryStatusText.Text = "共 2 个批次";
+        ReportHistoryWarningText.Visibility = Visibility.Collapsed;
+        ReportStatusText.Text = @"生成于 2026-07-20 20:22:40 · D:\Books\classification_report.json";
+        ReportMovedText.Text = "移动 2";
+        ReportSkippedText.Text = "跳过 1";
+        ReportDuplicateText.Text = "重复 0";
+        ReportErrorText.Text = "错误 0";
+        ReportItems.Clear();
+        ReportItems.Add(
+            new ReportItem
+            {
+                SourcePath = @"D:\Books\青春物语 第03卷.epub",
+                TargetPath = @"D:\Books\青春物语\青春物语 第03卷.epub",
+                ActualTargetPath = @"D:\Books\青春物语\青春物语 第03卷.epub",
+                Status = "moved",
+                Operation = "moved",
+            }
+        );
+        ReportItems.Add(
+            new ReportItem
+            {
+                SourcePath = @"D:\Books\青春物语 第04卷.epub",
+                TargetPath = @"D:\Books\青春物语\青春物语 第04卷.epub",
+                Status = "duplicate",
+                Operation = "skipped",
+            }
+        );
+        ReportItemsEmptyState.Visibility = Visibility.Collapsed;
+        UpdateReportActionState();
+    }
+
     private async Task RunAppearanceSmokeTestAsync()
     {
         if (App.MainWindow is not { } window)
@@ -95,9 +180,12 @@ public sealed partial class MainPage
                 await Task.Delay(180);
             }
         }
+        window.ApplyTheme(AppearancePreferences.LoadTheme());
+        window.ApplyMaterial(AppearancePreferences.LoadMaterial());
+        await Task.Delay(220);
 
         ShellNavigation.SelectedItem = ActivityNavigationItem;
-        await Task.Delay(220);
+        await Task.Delay(500);
         ShellNavigation.SelectedItem = ShellNavigation.SettingsItem;
         await Task.Delay(220);
         ShellNavigation.SelectedItem = WorkspaceNavigationItem;

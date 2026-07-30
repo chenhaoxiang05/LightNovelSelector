@@ -5,6 +5,7 @@
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.lightnovel-selector/
 .vs/
 TestResults/
 .coverage

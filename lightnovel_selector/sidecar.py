@@ -45,12 +45,13 @@ class SidecarServer:
             "start_scan": lambda params: self._service.start_scan(),
             "cancel_operation": lambda params: self._service.cancel_operation(),
             "start_apply": lambda params: self._service.start_apply(),
-            "start_undo": lambda params: self._service.start_undo(),
+            "start_undo": self._start_undo,
             "edit_plan": self._edit_plan,
             "edit_plans": self._edit_plans,
             "get_detail": self._get_detail,
             "load_candidates": self._load_candidates,
-            "get_report": lambda params: self._service.report_summary(),
+            "get_report": self._get_report,
+            "get_report_history": lambda params: self._service.report_history(),
         }
 
     @staticmethod
@@ -117,6 +118,16 @@ class SidecarServer:
             expected_plans_revision=self._optional_integer(params, "plans_revision"),
         )
 
+    def _start_undo(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self._service.start_undo(
+            self._optional_string(params, "report_id", max_chars=64),
+        )
+
+    def _get_report(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self._service.report_summary(
+            self._optional_string(params, "report_id", max_chars=64),
+        )
+
     @staticmethod
     def _integer(params: dict[str, Any], name: str, *, default: int | None = None) -> int:
         if name not in params:
@@ -135,6 +146,22 @@ class SidecarServer:
         value = params[name]
         if isinstance(value, bool) or not isinstance(value, int):
             raise ProtocolError(f"参数 {name} 必须是整数。")
+        return value
+
+    @staticmethod
+    def _optional_string(
+        params: dict[str, Any],
+        name: str,
+        *,
+        max_chars: int,
+    ) -> str | None:
+        if name not in params or params[name] is None:
+            return None
+        value = params[name]
+        if not isinstance(value, str):
+            raise ProtocolError(f"参数 {name} 必须是字符串。")
+        if len(value) > max_chars:
+            raise ProtocolError(f"参数 {name} 不能超过 {max_chars} 个字符。")
         return value
 
     @staticmethod

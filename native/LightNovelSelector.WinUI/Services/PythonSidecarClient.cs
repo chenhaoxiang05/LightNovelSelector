@@ -158,8 +158,10 @@ public sealed class PythonSidecarClient : IAsyncDisposable
     public Task<AppSnapshot> StartApplyAsync(CancellationToken cancellationToken = default) =>
         CallAsync<AppSnapshot>("start_apply", cancellationToken: cancellationToken);
 
-    public Task<AppSnapshot> StartUndoAsync(CancellationToken cancellationToken = default) =>
-        CallAsync<AppSnapshot>("start_undo", cancellationToken: cancellationToken);
+    public Task<AppSnapshot> StartUndoAsync(
+        string? reportId = null,
+        CancellationToken cancellationToken = default
+    ) => CallAsync<AppSnapshot>("start_undo", new { reportId }, cancellationToken: cancellationToken);
 
     public Task<AppSnapshot> EditPlanAsync(
         int index,
@@ -210,8 +212,13 @@ public sealed class PythonSidecarClient : IAsyncDisposable
             cancellationToken: cancellationToken
         );
 
-    public Task<ReportSummary> GetReportAsync(CancellationToken cancellationToken = default) =>
-        CallAsync<ReportSummary>("get_report", cancellationToken: cancellationToken);
+    public Task<ReportSummary> GetReportAsync(
+        string? reportId = null,
+        CancellationToken cancellationToken = default
+    ) => CallAsync<ReportSummary>("get_report", new { reportId }, cancellationToken: cancellationToken);
+
+    public Task<ReportHistoryResult> GetReportHistoryAsync(CancellationToken cancellationToken = default) =>
+        CallAsync<ReportHistoryResult>("get_report_history", cancellationToken: cancellationToken);
 
     public async Task<T> CallAsync<T>(
         string method,

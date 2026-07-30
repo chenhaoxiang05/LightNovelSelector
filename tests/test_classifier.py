@@ -25,6 +25,7 @@ from lightnovel_classifier import (
     CustomRule,
     PersistentMetadataCache,
     ResolveResult,
+    archive_classification_report,
     bangumi_cover_url,
     bangumi_identity_from_item,
     bangumi_title_candidates,
@@ -35,6 +36,7 @@ from lightnovel_classifier import (
     build_classification_plan,
     classification_plan_group_indices,
     classification_plan_to_report_item,
+    classification_report_history_directory,
     clean_summary,
     count_plan_statuses,
     execute_classification_plan,
@@ -47,8 +49,10 @@ from lightnovel_classifier import (
     identity_query_for_path,
     infer_language,
     item_matches_volume,
+    list_classification_reports,
     load_app_settings,
     load_classification_report,
+    mark_classification_report_undone,
     merge_classification_candidates,
     normalize_for_match,
     parse_volume_number,
@@ -56,6 +60,7 @@ from lightnovel_classifier import (
     read_book_identity,
     read_epub_book_identity,
     read_local_cover_bytes,
+    resolve_classification_report,
     revise_classification_plan,
     revise_classification_plans,
     safe_folder_name,
@@ -1051,6 +1056,201 @@ class MovePlanTests(unittest.TestCase):
             )
 
 
+class ReportHistoryTests(unittest.TestCase):
+    def test_archives_multiple_batches_and_undoes_a_selected_history_report(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "Demo Vol.01.txt"
+            first.write_text("one", encoding="utf-8")
+            report_path = root / "classification_report.json"
+
+            execute_classification_plan(
+                build_classification_plan(root, use_network=False),
+                report_path=report_path,
+            )
+            first_history_path = archive_classification_report(report_path)
+            self.assertIsNotNone(first_history_path)
+            assert first_history_path is not None
+            first_report = load_classification_report(first_history_path)
+            first_id = first_report["execution_id"]
+
+            second = root / "Other Vol.01.txt"
+            second.write_text("two", encoding="utf-8")
+            execute_classification_plan(
+                build_classification_plan(root, use_network=False),
+                report_path=report_path,
+            )
+            archive_classification_report(report_path)
+            latest_report = load_classification_report(report_path)
+
+            history = list_classification_reports(root)
+
+            self.assertEqual(history["total_count"], 2)
+            self.assertEqual(history["invalid_count"], 0)
+            self.assertEqual(history["reports"][0]["report_id"], latest_report["execution_id"])
+            self.assertTrue(history["reports"][0]["is_latest"])
+            self.assertEqual(
+                resolve_classification_report(root, first_id),
+                first_history_path,
+            )
+
+            restored, skipped = undo_classification_report(first_history_path)
+            mark_classification_report_undone(
+                first_history_path,
+                restored=restored,
+                skipped=skipped,
+            )
+
+            refreshed = list_classification_reports(root)
+            first_entry = next(item for item in refreshed["reports"] if item["report_id"] == first_id)
+            self.assertEqual((restored, skipped), (1, 0))
+            self.assertTrue(first.exists())
+            self.assertTrue((root / "Other" / second.name).exists())
+            self.assertEqual(first_entry["status"], "undone")
+            self.assertFalse(first_entry["can_undo"])
+
+    def test_history_listing_counts_corrupt_entries_and_rejects_invalid_ids(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            history_dir = classification_report_history_directory(root, create=True)
+            self.assertIsNotNone(history_dir)
+            assert history_dir is not None
+            (history_dir / "classification_report-invalid.json").write_text(
+                "not-json",
+                encoding="utf-8",
+            )
+
+            history = list_classification_reports(root)
+
+            self.assertEqual(history["total_count"], 0)
+            self.assertEqual(history["invalid_count"], 1)
+            with self.assertRaisesRegex(ValueError, "执行编号无效"):
+                resolve_classification_report(root, "../outside")
+
+    def test_valid_archive_remains_resolvable_when_latest_report_is_corrupt(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "Demo Vol.01.txt"
+            book.write_text("one", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            execute_classification_plan(
+                build_classification_plan(root, use_network=False),
+                report_path=report_path,
+            )
+            archived = archive_classification_report(report_path)
+            self.assertIsNotNone(archived)
+            assert archived is not None
+            report_id = load_classification_report(archived)["execution_id"]
+            report_path.write_text("corrupt", encoding="utf-8")
+
+            resolved = resolve_classification_report(root, report_id)
+
+            self.assertEqual(resolved, archived)
+            wrong_id = "f" * 32
+            mismatched = archived.with_name(f"classification_report-20260720T120000Z-{wrong_id}.json")
+            mismatched.write_bytes(archived.read_bytes())
+            history = list_classification_reports(root)
+            self.assertEqual(history["total_count"], 1)
+            self.assertEqual(history["invalid_count"], 2)
+
+    def test_history_directory_cannot_replace_the_primary_report(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "Demo Vol.01.txt"
+            book.write_text("one", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            execute_classification_plan(
+                build_classification_plan(root, use_network=False),
+                report_path=report_path,
+            )
+            (root / ".lightnovel-selector").write_text("occupied", encoding="utf-8")
+
+            with self.assertRaises(NotADirectoryError):
+                archive_classification_report(report_path)
+
+            self.assertTrue(report_path.is_file())
+            self.assertEqual(load_classification_report(report_path)["summary"]["moved"], 1)
+
+    def test_history_report_outside_its_declared_root_is_rejected(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            root = base / "library"
+            outside = base / "outside"
+            root.mkdir()
+            outside.mkdir()
+            book = root / "Demo Vol.01.txt"
+            book.write_text("one", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            execute_classification_plan(
+                build_classification_plan(root, use_network=False),
+                report_path=report_path,
+            )
+            copied_report = outside / "classification_report.json"
+            copied_report.write_bytes(report_path.read_bytes())
+
+            with self.assertRaisesRegex(ValueError, "必须保留"):
+                undo_classification_report(copied_report)
+
+    def test_history_directory_symbolic_link_is_rejected(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            root = base / "library"
+            outside = base / "outside"
+            root.mkdir()
+            outside.mkdir()
+            book = root / "Demo Vol.01.txt"
+            book.write_text("one", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            execute_classification_plan(
+                build_classification_plan(root, use_network=False),
+                report_path=report_path,
+            )
+            history_root = root / ".lightnovel-selector"
+            history_root.mkdir()
+            try:
+                (history_root / "history").symlink_to(outside, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"当前测试环境无法创建目录符号链接：{exc}")
+
+            with self.assertRaisesRegex(ValueError, "符号链接或目录联接"):
+                archive_classification_report(report_path)
+
+            self.assertFalse(any(outside.iterdir()))
+
+    def test_legacy_report_remains_visible_without_archive_warning(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "Demo Vol.01.txt"
+            book.write_text("one", encoding="utf-8")
+            report_path = root / "classification_report.json"
+            execute_classification_plan(
+                build_classification_plan(root, use_network=False),
+                report_path=report_path,
+            )
+            report = load_classification_report(report_path)
+            report["schema_version"] = 1
+            report.pop("execution_id", None)
+            report.pop("root_path", None)
+            report_path.write_text(
+                json.dumps(report, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            with patch(
+                "lightnovel_selector.application.load_app_settings",
+                return_value=AppSettings(use_network=False),
+            ):
+                service = ApplicationService()
+            service.set_folder(str(root))
+
+            history = service.report_history()
+
+            self.assertIsNone(history["warning"])
+            self.assertEqual(history["total_count"], 1)
+            self.assertEqual(history["reports"][0]["report_id"], "latest")
+
+
 class LocalCoverTests(unittest.TestCase):
     def test_reads_epub_cover_image(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -1391,11 +1591,77 @@ class ApplicationServiceTests(unittest.TestCase):
                 self.assertEqual(applied["operation"]["state"], "success")
                 self.assertTrue(moved_path.exists())
                 self.assertTrue((root / "classification_report.json").exists())
+                history = service.report_history()
+                self.assertEqual(history["total_count"], 1)
+                self.assertIsNone(history["warning"])
+                report_id = history["reports"][0]["report_id"]
+                self.assertTrue(history["reports"][0]["can_undo"])
+                report_summary = service.report_summary(report_id)
+                self.assertEqual(report_summary["report_id"], report_id)
+                self.assertTrue(report_summary["can_undo"])
 
-                service.start_undo()
+                service.start_undo(report_id)
                 undone = self.wait_for_operation(service)
                 self.assertEqual(undone["operation"]["state"], "success")
                 self.assertTrue(book.exists())
+                refreshed_history = service.report_history()
+                self.assertEqual(refreshed_history["reports"][0]["status"], "undone")
+                refreshed_summary = service.report_summary(report_id)
+                self.assertTrue(refreshed_summary["undo_completed"])
+                self.assertFalse(refreshed_summary["can_undo"])
+                self.assertEqual(
+                    service.current_report(),
+                    root / "classification_report.json",
+                )
+
+    def test_partial_apply_failure_is_archived_for_selected_undo(self) -> None:
+        from shutil import move as real_move
+
+        from lightnovel_selector.application import ApplicationService
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A Demo Vol.01.txt"
+            second = root / "B Demo Vol.02.txt"
+            first.write_text("one", encoding="utf-8")
+            second.write_text("two", encoding="utf-8")
+            with (
+                patch(
+                    "lightnovel_selector.application.load_app_settings",
+                    return_value=AppSettings(use_network=False),
+                ),
+                patch("lightnovel_selector.application.try_save_app_settings", return_value=None),
+            ):
+                service = ApplicationService()
+                service.set_folder(str(root))
+                service.start_scan()
+                scanned = self.wait_for_operation(service)
+                self.assertEqual(scanned["operation"]["state"], "success")
+
+                def fail_second_move(source, target):
+                    if Path(source) == second:
+                        raise PermissionError("simulated locked file")
+                    return real_move(source, target)
+
+                with patch(
+                    "lightnovel_selector.classification.shutil.move",
+                    side_effect=fail_second_move,
+                ):
+                    service.start_apply()
+                    failed = self.wait_for_operation(service)
+
+                self.assertEqual(failed["operation"]["state"], "error")
+                history = service.report_history()
+                self.assertEqual(history["total_count"], 1)
+                self.assertEqual(history["reports"][0]["summary"]["moved"], 1)
+                self.assertTrue(history["reports"][0]["can_undo"])
+
+                service.start_undo(history["reports"][0]["report_id"])
+                undone = self.wait_for_operation(service)
+
+                self.assertEqual(undone["operation"]["state"], "success")
+                self.assertTrue(first.exists())
+                self.assertTrue(second.exists())
 
     def test_service_bulk_edit_returns_count_and_snapshot(self) -> None:
         from lightnovel_selector.application import ApplicationService

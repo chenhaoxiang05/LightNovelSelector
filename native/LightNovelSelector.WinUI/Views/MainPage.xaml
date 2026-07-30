@@ -778,11 +778,36 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
-                        <StackPanel x:Name="ActivityHeader" Spacing="3">
-                            <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="可追溯操作" />
-                            <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="活动与报告" />
-                            <TextBlock Style="{StaticResource MutedTextStyle}" Text="查看本次会话记录，并按报告恢复上次文件移动。" />
-                        </StackPanel>
+                        <Grid x:Name="ActivityHeader" ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="3">
+                                <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="可追溯操作" />
+                                <TextBlock Style="{StaticResource PageTitleTextStyle}" Text="活动与报告" />
+                                <TextBlock Style="{StaticResource MutedTextStyle}" Text="查看每次整理记录，导出报告，或恢复指定批次。" />
+                            </StackPanel>
+                            <Button
+                                x:Name="RefreshReportButton"
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                AutomationProperties.Name="刷新分类历史"
+                                Click="OnRefreshReportClick"
+                                IsEnabled="False"
+                                Style="{StaticResource ToolbarButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <ProgressRing
+                                        x:Name="ReportHistoryProgressRing"
+                                        Width="15"
+                                        Height="15"
+                                        IsActive="False"
+                                        Visibility="Collapsed" />
+                                    <FontIcon FontSize="14" Glyph="&#xE72C;" />
+                                    <TextBlock Text="刷新历史" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
 
                         <Border x:Name="ReportCard" Grid.Row="1" Style="{StaticResource ElevatedCardBorderStyle}">
                             <Grid ColumnSpacing="18">
@@ -791,13 +816,14 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Spacing="8">
-                                    <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="最近分类报告" />
+                                    <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="所选分类批次" />
                                     <TextBlock
                                         x:Name="ReportStatusText"
-                                        MaxLines="1"
+                                        MaxLines="2"
                                         Style="{StaticResource MutedTextStyle}"
-                                        Text="当前目录还没有分类报告。"
-                                        TextTrimming="CharacterEllipsis" />
+                                        Text="选择一个历史批次查看完整报告。"
+                                        TextTrimming="CharacterEllipsis"
+                                        TextWrapping="Wrap" />
                                     <StackPanel Orientation="Horizontal" Spacing="18">
                                         <TextBlock x:Name="ReportMovedText" FontSize="12" Text="移动 0" />
                                         <TextBlock x:Name="ReportSkippedText" FontSize="12" Text="跳过 0" />
@@ -807,10 +833,13 @@
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
                                     <Button x:Name="OpenReportButton" Click="OnOpenReportClick" IsEnabled="False" Style="{StaticResource ToolbarButtonStyle}">
-                                        <TextBlock Text="打开报告" />
+                                        <TextBlock Text="打开" />
                                     </Button>
-                                    <Button x:Name="ActivityUndoButton" Click="OnUndoClick" IsEnabled="False" Style="{StaticResource ToolbarButtonStyle}">
-                                        <TextBlock Text="按报告撤销" />
+                                    <Button x:Name="ExportReportButton" Click="OnExportReportClick" IsEnabled="False" Style="{StaticResource ToolbarButtonStyle}">
+                                        <TextBlock Text="导出" />
+                                    </Button>
+                                    <Button x:Name="ActivityUndoButton" Click="OnActivityUndoClick" IsEnabled="False" Style="{StaticResource ToolbarButtonStyle}">
+                                        <TextBlock Text="撤销此批次" />
                                     </Button>
                                 </StackPanel>
                             </Grid>
@@ -818,106 +847,198 @@
 
                         <Grid Grid.Row="2" ColumnSpacing="12">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="3*" />
-                                <ColumnDefinition Width="2*" />
+                                <ColumnDefinition Width="270" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Border x:Name="ReportItemsCard" Style="{StaticResource CardBorderStyle}">
+                            <Border x:Name="ReportHistoryCard" Style="{StaticResource CardBorderStyle}">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
                                         <RowDefinition Height="*" />
                                     </Grid.RowDefinitions>
-                                    <TextBlock Margin="0,0,0,10" Style="{StaticResource SectionTitleTextStyle}" Text="报告条目" />
-                                    <Grid Grid.Row="1">
-                                        <ListView ItemsSource="{x:Bind ReportItems}" SelectionMode="None">
+                                    <StackPanel Margin="0,0,0,10" Spacing="3">
+                                        <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="分类历史" />
+                                        <TextBlock
+                                            x:Name="ReportHistoryStatusText"
+                                            Style="{StaticResource MutedTextStyle}"
+                                            Text="选择分类目录后会显示历史批次。"
+                                            TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <TextBlock
+                                        x:Name="ReportHistoryWarningText"
+                                        Grid.Row="1"
+                                        Margin="0,0,0,8"
+                                        FontSize="11"
+                                        Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                        TextWrapping="Wrap"
+                                        Visibility="Collapsed" />
+                                    <Grid Grid.Row="2">
+                                        <ListView
+                                            x:Name="ReportHistoryList"
+                                            AutomationProperties.Name="分类历史批次"
+                                            ItemsSource="{x:Bind ReportHistory}"
+                                            SelectionChanged="OnReportHistorySelectionChanged"
+                                            SelectionMode="Single">
                                             <ListView.ItemContainerStyle>
                                                 <Style TargetType="ListViewItem">
                                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                                     <Setter Property="Padding" Value="0" />
                                                     <Setter Property="Margin" Value="0,2" />
+                                                    <Setter Property="MinHeight" Value="68" />
                                                     <Setter Property="CornerRadius" Value="6" />
                                                 </Style>
                                             </ListView.ItemContainerStyle>
                                             <ListView.ItemTemplate>
-                                                <DataTemplate x:DataType="models:ReportItem">
-                                                    <Grid Padding="9,7" ColumnSpacing="10">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="74" />
-                                                            <ColumnDefinition Width="*" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <Border
-                                                            HorizontalAlignment="Left"
-                                                            VerticalAlignment="Center"
-                                                            Background="{x:Bind Status, Converter={StaticResource StatusBrushConverter}, ConverterParameter=background}"
-                                                            CornerRadius="8"
-                                                            Padding="8,4">
+                                                <DataTemplate x:DataType="models:ReportHistoryEntry">
+                                                    <Grid
+                                                        Padding="10,8"
+                                                        RowSpacing="4"
+                                                        ToolTipService.ToolTip="{x:Bind Path}">
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="Auto" />
+                                                        </Grid.RowDefinitions>
+                                                        <Grid ColumnSpacing="8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
                                                             <TextBlock
+                                                                FontWeight="SemiBold"
+                                                                Text="{x:Bind TitleLabel}"
+                                                                TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock
+                                                                Grid.Column="1"
                                                                 FontSize="11"
-                                                                Foreground="{x:Bind Status, Converter={StaticResource StatusBrushConverter}}"
-                                                                Text="{x:Bind OperationLabel}" />
-                                                        </Border>
-                                                        <StackPanel Grid.Column="1" Spacing="2">
-                                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind FileName}" TextTrimming="CharacterEllipsis" />
-                                                            <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="{x:Bind DestinationPath}" TextTrimming="CharacterEllipsis" />
-                                                        </StackPanel>
+                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                Text="{x:Bind DisplayStatusLabel}" />
+                                                        </Grid>
+                                                        <TextBlock
+                                                            Grid.Row="1"
+                                                            FontSize="11"
+                                                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                            Text="{x:Bind SummaryLabel}"
+                                                            TextTrimming="CharacterEllipsis" />
                                                     </Grid>
                                                 </DataTemplate>
                                             </ListView.ItemTemplate>
                                         </ListView>
-                                        <StackPanel x:Name="ReportItemsEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="7">
-                                            <FontIcon FontSize="22" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xE9D5;" />
-                                            <TextBlock Style="{StaticResource MutedTextStyle}" Text="生成分类报告后会在这里显示条目" />
+                                        <StackPanel
+                                            x:Name="ReportHistoryEmptyState"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Spacing="7">
+                                            <FontIcon FontSize="22" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xE823;" />
+                                            <TextBlock Style="{StaticResource MutedTextStyle}" Text="暂无分类历史" />
                                         </StackPanel>
                                     </Grid>
                                 </Grid>
                             </Border>
 
-                            <Border x:Name="LogsCard" Grid.Column="1" Style="{StaticResource CardBorderStyle}">
-                            <Grid>
+                            <Grid Grid.Column="1" RowSpacing="12">
                                 <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="3*" />
+                                    <RowDefinition Height="2*" />
                                 </Grid.RowDefinitions>
-                                <Grid Margin="0,0,0,10">
-                                    <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="会话活动" />
-                                    <Button
-                                        AutomationProperties.Name="清空会话活动"
-                                        HorizontalAlignment="Right"
-                                        Click="OnClearVisibleLogsClick"
-                                        Style="{StaticResource IconButtonStyle}"
-                                        ToolTipService.ToolTip="清空当前显示">
-                                        <FontIcon FontSize="15" Glyph="&#xE74D;" />
-                                    </Button>
-                                </Grid>
-                                <ListView Grid.Row="1" ItemsSource="{x:Bind Logs}" SelectionMode="None">
-                                    <ListView.ItemContainerStyle>
-                                        <Style TargetType="ListViewItem">
-                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                            <Setter Property="Padding" Value="0" />
-                                            <Setter Property="MinHeight" Value="42" />
-                                        </Style>
-                                    </ListView.ItemContainerStyle>
-                                    <ListView.ItemTemplate>
-                                        <DataTemplate x:DataType="models:LogEntry">
-                                            <Grid Padding="8,7" ColumnSpacing="12">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="66" />
-                                                    <ColumnDefinition Width="82" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock FontFamily="Consolas" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="{x:Bind Time}" />
-                                                <TextBlock
-                                                    Grid.Column="1"
-                                                    FontSize="11"
-                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                    Text="{x:Bind Kind, Converter={StaticResource LogKindConverter}}" />
-                                                <TextBlock Grid.Column="2" Text="{x:Bind Message}" TextWrapping="Wrap" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ListView.ItemTemplate>
-                                </ListView>
+                                <Border x:Name="ReportItemsCard" Style="{StaticResource CardBorderStyle}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Margin="0,0,0,10" Style="{StaticResource SectionTitleTextStyle}" Text="报告条目" />
+                                        <Grid Grid.Row="1">
+                                            <ListView ItemsSource="{x:Bind ReportItems}" SelectionMode="None">
+                                                <ListView.ItemContainerStyle>
+                                                    <Style TargetType="ListViewItem">
+                                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                        <Setter Property="Padding" Value="0" />
+                                                        <Setter Property="Margin" Value="0,2" />
+                                                        <Setter Property="CornerRadius" Value="6" />
+                                                    </Style>
+                                                </ListView.ItemContainerStyle>
+                                                <ListView.ItemTemplate>
+                                                    <DataTemplate x:DataType="models:ReportItem">
+                                                        <Grid Padding="9,7" ColumnSpacing="10">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="74" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <Border
+                                                                HorizontalAlignment="Left"
+                                                                VerticalAlignment="Center"
+                                                                Background="{x:Bind Status, Converter={StaticResource StatusBrushConverter}, ConverterParameter=background}"
+                                                                CornerRadius="8"
+                                                                Padding="8,4">
+                                                                <TextBlock
+                                                                    FontSize="11"
+                                                                    Foreground="{x:Bind Status, Converter={StaticResource StatusBrushConverter}}"
+                                                                    Text="{x:Bind OperationLabel}" />
+                                                            </Border>
+                                                            <StackPanel Grid.Column="1" Spacing="2">
+                                                                <TextBlock FontWeight="SemiBold" Text="{x:Bind FileName}" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="{x:Bind DestinationPath}" TextTrimming="CharacterEllipsis" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ListView.ItemTemplate>
+                                            </ListView>
+                                            <StackPanel x:Name="ReportItemsEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="7">
+                                                <FontIcon FontSize="22" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xE9D5;" />
+                                                <TextBlock Style="{StaticResource MutedTextStyle}" Text="选择历史批次后会显示报告条目" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+
+                                <Border x:Name="LogsCard" Grid.Row="1" Style="{StaticResource CardBorderStyle}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Margin="0,0,0,10">
+                                            <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="会话活动" />
+                                            <Button
+                                                AutomationProperties.Name="清空会话活动"
+                                                HorizontalAlignment="Right"
+                                                Click="OnClearVisibleLogsClick"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                ToolTipService.ToolTip="清空当前显示">
+                                                <FontIcon FontSize="15" Glyph="&#xE74D;" />
+                                            </Button>
+                                        </Grid>
+                                        <ListView Grid.Row="1" ItemsSource="{x:Bind Logs}" SelectionMode="None">
+                                            <ListView.ItemContainerStyle>
+                                                <Style TargetType="ListViewItem">
+                                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                    <Setter Property="Padding" Value="0" />
+                                                    <Setter Property="MinHeight" Value="42" />
+                                                </Style>
+                                            </ListView.ItemContainerStyle>
+                                            <ListView.ItemTemplate>
+                                                <DataTemplate x:DataType="models:LogEntry">
+                                                    <Grid Padding="8,7" ColumnSpacing="12">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="66" />
+                                                            <ColumnDefinition Width="82" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock FontFamily="Consolas" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="{x:Bind Time}" />
+                                                        <TextBlock
+                                                            Grid.Column="1"
+                                                            FontSize="11"
+                                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                            Text="{x:Bind Kind, Converter={StaticResource LogKindConverter}}" />
+                                                        <TextBlock Grid.Column="2" Text="{x:Bind Message}" TextWrapping="Wrap" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ListView.ItemTemplate>
+                                        </ListView>
+                                    </Grid>
+                                </Border>
                             </Grid>
-                            </Border>
                         </Grid>
                     </Grid>
 

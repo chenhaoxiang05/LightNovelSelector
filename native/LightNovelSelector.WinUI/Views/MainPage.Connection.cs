@@ -96,6 +96,10 @@ public sealed partial class MainPage
         ReconnectButtonIcon.Visibility = recovering ? Visibility.Collapsed : Visibility.Visible;
         ReconnectButtonText.Text = recovering ? "连接中" : "重新连接";
         UpdateOperation(_snapshot.Operation);
+        if (state == ConnectionState.Ready && ActivityView.Visibility == Visibility.Visible)
+        {
+            _ = RefreshReportAsync();
+        }
     }
 
     private void ResetCoreSessionState()
@@ -116,7 +120,8 @@ public sealed partial class MainPage
         Plans = [];
         VisiblePlans = [];
         ResultsList.ItemsSource = VisiblePlans;
-        ReportItems.Clear();
+        _reportFolder = string.Empty;
+        ClearReportView(clearHistory: true);
         RebuildPlanFilters();
         ApplyPlanFilters();
         ShowDetailEmpty();

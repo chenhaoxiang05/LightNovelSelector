@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 APP_NAME = "Light Novel Selector"
-APP_VERSION = "2.1.0-dev.2"
+APP_VERSION = "2.1.0-dev.3"
 USER_AGENT = f"LightNovelSelector/{APP_VERSION} (+local-file-classifier)"
 BANGUMI_SEARCH_URL = "https://api.bgm.tv/v0/search/subjects"
 BANGUMI_SUBJECT_WEB_URL = "https://bgm.tv/subject/{subject_id}"
@@ -17,6 +17,11 @@ REPORT_MAX_BYTES = 64 * 1024 * 1024
 REPORT_JOURNAL_MAX_BYTES = 64 * 1024 * 1024
 REPORT_JOURNAL_SCHEMA_VERSION = 1
 REPORT_UI_MAX_ITEMS = 1000
+REPORT_HISTORY_UI_MAX_REPORTS = 100
+REPORT_HISTORY_SCAN_MAX_ENTRIES = 1000
+REPORT_HISTORY_ROOT_DIR_NAME = ".lightnovel-selector"
+REPORT_HISTORY_DIR_NAME = "history"
+REPORT_HISTORY_FILE_PREFIX = "classification_report-"
 CUSTOM_RULE_MAX_COUNT = 200
 CUSTOM_RULE_PATTERN_MAX_CHARS = 240
 SERIES_NAME_MAX_CHARS = 120
