@@ -15,11 +15,25 @@ public sealed class AppSnapshot
     public AppSettings Settings { get; init; } = new();
     public OperationState Operation { get; init; } = new();
     public PlanCounts Counts { get; init; } = new();
+    public ScanCacheStats ScanCache { get; init; } = new();
     public string? ReportPath { get; init; }
     public int PlansRevision { get; init; }
     public IReadOnlyList<PlanItem>? Plans { get; init; }
     public IReadOnlyList<LogEntry> Logs { get; init; } = [];
     public int LogCursor { get; init; }
+}
+
+public sealed class ScanCacheStats
+{
+    public int Entries { get; init; }
+    public int ReusedFiles { get; init; }
+    public int UpdatedFiles { get; init; }
+    public int InvalidatedFiles { get; init; }
+    public int QuickSignatureHits { get; init; }
+    public int FingerprintHits { get; init; }
+    public int LocalAnalysisHits { get; init; }
+    public int UncacheableFiles { get; init; }
+    public string? WriteWarning { get; init; }
 }
 
 public sealed class AppInfo

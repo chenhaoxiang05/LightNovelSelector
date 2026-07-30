@@ -46,6 +46,7 @@ from .parsing import (
     normalize_language_code,
     parse_volume_number,
 )
+from .scan_cache import PersistentScanCache, capture_file_snapshot
 
 _PROXY_SYNTHETIC_NETWORKS = (ipaddress.ip_network("198.18.0.0/15"),)
 _PROXY_SYNTHETIC_DOMAIN_SUFFIXES = (
@@ -512,7 +513,21 @@ def file_fingerprint(
     path: Path,
     *,
     checkpoint: Callable[[], None] | None = None,
+    scan_cache: PersistentScanCache | None = None,
 ) -> str:
+    cached_snapshot = None
+    if scan_cache is not None:
+        if checkpoint:
+            checkpoint()
+        cached_snapshot = capture_file_snapshot(path)
+        cached = scan_cache.get_fingerprint(path, cached_snapshot)
+        if cached is not None:
+            if checkpoint:
+                checkpoint()
+            if capture_file_snapshot(path) != cached_snapshot:
+                raise OSError(f"文件在读取缓存指纹时发生变化：{path}")
+            return cached
+
     initial_stat = path.stat()
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -526,28 +541,63 @@ def file_fingerprint(
     final_stat = path.stat()
     if initial_stat.st_size != final_stat.st_size or initial_stat.st_mtime_ns != final_stat.st_mtime_ns:
         raise OSError(f"文件在计算指纹时发生变化：{path}")
-    return f"{final_stat.st_size}:{digest.hexdigest()}"
+    fingerprint = f"{final_stat.st_size}:{digest.hexdigest()}"
+    if scan_cache is not None and cached_snapshot is not None and cached_snapshot.cacheable:
+        final_snapshot = capture_file_snapshot(path)
+        if cached_snapshot != final_snapshot:
+            raise OSError(f"文件在计算指纹时发生变化：{path}")
+        scan_cache.remember_fingerprint(path, final_snapshot, fingerprint)
+    return fingerprint
 
 
-def file_quick_signature(path: Path) -> str:
+def file_quick_signature(
+    path: Path,
+    *,
+    checkpoint: Callable[[], None] | None = None,
+    scan_cache: PersistentScanCache | None = None,
+) -> str:
+    cached_snapshot = None
+    if scan_cache is not None:
+        if checkpoint:
+            checkpoint()
+        cached_snapshot = capture_file_snapshot(path)
+        cached = scan_cache.get_quick_signature(path, cached_snapshot)
+        if cached is not None:
+            if checkpoint:
+                checkpoint()
+            if capture_file_snapshot(path) != cached_snapshot:
+                raise OSError(f"文件在读取缓存快速签名时发生变化：{path}")
+            return cached
+
     initial_stat = path.stat()
     digest = hashlib.sha256()
     digest.update(str(initial_stat.st_size).encode("ascii"))
     with path.open("rb") as handle:
+        if checkpoint:
+            checkpoint()
         digest.update(handle.read(FILE_FINGERPRINT_CHUNK_SIZE))
         if initial_stat.st_size > FILE_FINGERPRINT_CHUNK_SIZE:
+            if checkpoint:
+                checkpoint()
             handle.seek(max(0, initial_stat.st_size - FILE_FINGERPRINT_CHUNK_SIZE))
             digest.update(handle.read(FILE_FINGERPRINT_CHUNK_SIZE))
     final_stat = path.stat()
     if initial_stat.st_size != final_stat.st_size or initial_stat.st_mtime_ns != final_stat.st_mtime_ns:
         raise OSError(f"文件在计算快速签名时发生变化：{path}")
-    return f"{final_stat.st_size}:{digest.hexdigest()}"
+    signature = f"{final_stat.st_size}:{digest.hexdigest()}"
+    if scan_cache is not None and cached_snapshot is not None and cached_snapshot.cacheable:
+        final_snapshot = capture_file_snapshot(path)
+        if cached_snapshot != final_snapshot:
+            raise OSError(f"文件在计算快速签名时发生变化：{path}")
+        scan_cache.remember_quick_signature(path, final_snapshot, signature)
+    return signature
 
 
 def find_duplicate_files(
     paths: Iterable[Path],
     *,
     checkpoint: Callable[[], None] | None = None,
+    scan_cache: PersistentScanCache | None = None,
 ) -> dict[Path, Path]:
     candidates: dict[str, list[Path]] = {}
     duplicates: dict[Path, Path] = {}
@@ -555,7 +605,11 @@ def find_duplicate_files(
         if checkpoint:
             checkpoint()
         try:
-            signature = file_quick_signature(path)
+            signature = file_quick_signature(
+                path,
+                checkpoint=checkpoint,
+                scan_cache=scan_cache,
+            )
         except OSError:
             continue
         candidates.setdefault(signature, []).append(path)
@@ -568,7 +622,11 @@ def find_duplicate_files(
             if checkpoint:
                 checkpoint()
             try:
-                fingerprint = file_fingerprint(path, checkpoint=checkpoint)
+                fingerprint = file_fingerprint(
+                    path,
+                    checkpoint=checkpoint,
+                    scan_cache=scan_cache,
+                )
             except OSError:
                 continue
             first_seen = seen.get(fingerprint)

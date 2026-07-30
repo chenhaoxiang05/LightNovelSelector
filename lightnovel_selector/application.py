@@ -4,6 +4,7 @@ import base64
 import math
 import threading
 from collections import deque
+from contextlib import nullcontext
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,6 +48,7 @@ from .report_history import (
     mark_classification_report_undone,
     resolve_classification_report,
 )
+from .scan_cache import PersistentScanCache, ScanCacheStats
 from .storage import (
     app_settings_to_dict,
     book_identity_from_dict,
@@ -215,6 +217,7 @@ class ApplicationService:
         self.folder = self._existing_folder(self.settings.last_folder)
         self.plans: list[ClassificationPlan] = []
         self.plans_revision = 0
+        self.scan_cache_stats = ScanCacheStats().to_dict()
         self.report_path: Path | None = self._report_for_folder(self.folder)
         self._operation_id = 0
         self.operation = self._idle_operation(has_folder=self.folder is not None)
@@ -272,6 +275,7 @@ class ApplicationService:
     def _invalidate_plans_locked(self) -> None:
         self.plans = []
         self.plans_revision += 1
+        self.scan_cache_stats = ScanCacheStats().to_dict()
 
     def _assert_idle_locked(self) -> None:
         if self.operation["state"] == "running":
@@ -447,6 +451,7 @@ class ApplicationService:
                 "settings": app_settings_to_dict(self.settings),
                 "operation": dict(self.operation),
                 "counts": counts,
+                "scan_cache": dict(self.scan_cache_stats),
                 "report_path": str(self.report_path) if self.report_path and self.report_path.exists() else None,
                 "plans_revision": self.plans_revision,
                 "plans": plans_payload,
@@ -469,7 +474,13 @@ class ApplicationService:
             )
 
         def work() -> None:
+            scan_cache: PersistentScanCache | None = None
+            cache_stats = ScanCacheStats()
             try:
+                try:
+                    scan_cache = PersistentScanCache()
+                except OSError as exc:
+                    cache_stats = ScanCacheStats(write_warning=str(exc)[:2000])
 
                 def log(message: str) -> None:
                     if cancel_event.is_set():
@@ -486,29 +497,53 @@ class ApplicationService:
                     if cancel_event.is_set():
                         raise OperationCancelled("扫描已取消。")
 
-                plans = build_classification_plan(
-                    folder,
-                    recursive=settings.recursive,
-                    use_network=settings.use_network,
-                    auto_rename=settings.auto_rename,
-                    custom_rules=settings.custom_rules,
-                    progress=log,
-                    progress_count=progress,
-                    checkpoint=checkpoint,
-                )
+                with scan_cache if scan_cache is not None else nullcontext():
+                    plans = build_classification_plan(
+                        folder,
+                        recursive=settings.recursive,
+                        use_network=settings.use_network,
+                        auto_rename=settings.auto_rename,
+                        custom_rules=settings.custom_rules,
+                        progress=log,
+                        progress_count=progress,
+                        checkpoint=checkpoint,
+                        scan_cache=scan_cache,
+                    )
                 if cancel_event.is_set():
                     raise OperationCancelled("扫描已取消。")
+                if scan_cache is not None:
+                    cache_stats = scan_cache.stats
                 with self._lock:
                     if self.operation["id"] != operation_id:
                         return
                     self.plans = plans
                     self.plans_revision += 1
+                    self.scan_cache_stats = cache_stats.to_dict()
                     self.report_path = self._report_for_folder(folder)
-                message = f"预览完成，共识别 {len(plans)} 个文件。" if plans else "扫描完成，未找到支持的小说文件。"
+                if cache_stats.write_warning:
+                    self._append_log(
+                        f"扫描缓存不可用，但本次结果仍然有效：{cache_stats.write_warning}",
+                        "warning",
+                    )
+                if plans:
+                    reuse = (
+                        f"；复用了 {cache_stats.reused_files} 个未变化文件的缓存" if cache_stats.reused_files else ""
+                    )
+                    message = f"预览完成，共识别 {len(plans)} 个文件{reuse}。"
+                else:
+                    message = "扫描完成，未找到支持的小说文件。"
                 self._finish_operation(operation_id, "success", message)
             except OperationCancelled:
+                with self._lock:
+                    if self.operation["id"] == operation_id:
+                        stats = scan_cache.stats if scan_cache is not None else cache_stats
+                        self.scan_cache_stats = stats.to_dict()
                 self._finish_operation(operation_id, "cancelled", "扫描已取消，原文件未发生变化。")
             except Exception as exc:  # noqa: BLE001 - 后台任务边界需将未知错误转为可恢复状态。
+                with self._lock:
+                    if self.operation["id"] == operation_id:
+                        stats = scan_cache.stats if scan_cache is not None else cache_stats
+                        self.scan_cache_stats = stats.to_dict()
                 self._finish_operation(operation_id, "error", "扫描失败", error=str(exc))
 
         threading.Thread(target=work, name="novel-scan", daemon=True).start()

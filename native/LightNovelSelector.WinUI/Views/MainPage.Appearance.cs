@@ -25,7 +25,7 @@ public sealed partial class MainPage
                     Path = @"D:\Books\classification_report.json",
                     FileName = "classification_report.json",
                     CreatedAt = "2026-07-20T20:22:40+08:00",
-                    Version = "2.1.0-dev.3",
+                    Version = "2.1.0-dev.4",
                     IsLatest = true,
                     CanUndo = true,
                     Status = "available",

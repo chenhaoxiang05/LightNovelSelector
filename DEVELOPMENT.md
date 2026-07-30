@@ -38,6 +38,7 @@ py -3 -m venv .venv-build
 - `parsing.py`：文件名清洗、卷号与系列名解析。
 - `files.py`：文件扫描、内容提示、封面和网络字节读取。
 - `metadata.py`：本地/在线系列解析与缓存。
+- `scan_cache.py`：可靠文件快照、增量扫描和完整哈希缓存。
 - `storage.py`：设置、缓存、原子 JSON 和持久化 JSON Lines。
 - `application.py`：线程安全应用状态、异步任务和快照。
 - `sidecar.py`：JSON Lines 请求分发。

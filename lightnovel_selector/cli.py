@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 
 from .classification import (
@@ -12,6 +13,7 @@ from .classification import (
 )
 from .constants import REPORT_FILE_NAME
 from .models import ClassificationPlan
+from .scan_cache import PersistentScanCache
 from .storage import load_app_settings
 
 
@@ -31,14 +33,29 @@ def print_plan(plans: list[ClassificationPlan]) -> None:
 def run_cli(args: argparse.Namespace) -> int:
     root = Path(args.folder)
     settings = load_app_settings()
-    plans = build_classification_plan(
-        root,
-        recursive=args.recursive,
-        use_network=not args.no_network,
-        auto_rename=args.auto_rename,
-        custom_rules=settings.custom_rules,
-        progress=None if args.quiet else print,
-    )
+    scan_cache: PersistentScanCache | None = None
+    cache_warning: str | None = None
+    try:
+        scan_cache = PersistentScanCache()
+    except OSError as exc:
+        cache_warning = str(exc)[:2000]
+    with scan_cache if scan_cache is not None else nullcontext():
+        plans = build_classification_plan(
+            root,
+            recursive=args.recursive,
+            use_network=not args.no_network,
+            auto_rename=args.auto_rename,
+            custom_rules=settings.custom_rules,
+            progress=None if args.quiet else print,
+            scan_cache=scan_cache,
+        )
+    if scan_cache is not None:
+        cache_stats = scan_cache.stats
+        cache_warning = cache_stats.write_warning
+        if not args.quiet and cache_stats.reused_files:
+            print(f"增量扫描：复用了 {cache_stats.reused_files} 个未变化文件的缓存。")
+    if cache_warning:
+        print(f"警告：扫描缓存不可用，本次结果不受影响：{cache_warning}", file=sys.stderr)
     print_plan(plans)
     if args.dry_run:
         return 0
