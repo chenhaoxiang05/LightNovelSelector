@@ -57,7 +57,6 @@ class ClassificationPlan:
     metadata_summary: str | None = None
     metadata_cover_url: str | None = None
     metadata_url: str | None = None
-    local_cover_bytes: bytes | None = None
     identity_hint: str | None = None
     identity_query: str | None = None
     network_query: str | None = None
@@ -75,7 +74,3 @@ class ClassificationPlan:
             return self.source_path.resolve() != self.target_path.resolve()
         except OSError:
             return self.source_path != self.target_path
-
-    @property
-    def has_warning(self) -> bool:
-        return self.status != "ready" or bool(self.note)

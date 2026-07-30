@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 APP_NAME = "Light Novel Selector"
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.0.2-dev.1"
 USER_AGENT = f"LightNovelSelector/{APP_VERSION} (+local-file-classifier)"
 BANGUMI_SEARCH_URL = "https://api.bgm.tv/v0/search/subjects"
 BANGUMI_SUBJECT_WEB_URL = "https://bgm.tv/subject/{subject_id}"
@@ -23,6 +23,7 @@ METADATA_SUMMARY_MAX_CHARS = 20_000
 REMOTE_URL_MAX_CHARS = 4096
 LOCAL_PATH_MAX_CHARS = 32_767
 SCAN_MAX_FILES = 10_000
+SCAN_MAX_ENTRIES = 200_000
 CONTENT_HINT_MAX_CHARS = 5000
 CONTENT_HINT_TEXT_EXTENSIONS = {".txt", ".md", ".html", ".htm"}
 ARCHIVE_XML_MAX_BYTES = 2 * 1024 * 1024

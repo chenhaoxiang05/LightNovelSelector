@@ -49,7 +49,7 @@ VersionInfoVersion={#AppNumericVersion}.0
 VersionInfoCompany={#AppPublisher}
 VersionInfoDescription=LightNovelSelector WinUI 3 Installer
 VersionInfoProductName={#AppName}
-VersionInfoProductVersion={#AppVersion}
+VersionInfoProductVersion={#AppNumericVersion}.0
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs

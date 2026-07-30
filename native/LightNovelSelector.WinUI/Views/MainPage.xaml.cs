@@ -14,6 +14,7 @@ public sealed partial class MainPage : Page
 {
     private readonly PythonSidecarClient _sidecar = new();
     private readonly DispatcherTimer _pollTimer = new();
+    private readonly DispatcherTimer _filterTimer = new();
     private readonly SemaphoreSlim _detailRequestLock = new(1, 1);
     private readonly HashSet<int> _seenLogIds = [];
     private CancellationTokenSource? _detailCancellation;
@@ -30,8 +31,8 @@ public sealed partial class MainPage : Page
     private bool _disposing;
     private ConnectionState _connectionState = ConnectionState.Connecting;
 
-    public ObservableCollection<PlanItem> Plans { get; } = [];
-    public ObservableCollection<PlanItem> VisiblePlans { get; } = [];
+    public IReadOnlyList<PlanItem> Plans { get; private set; } = [];
+    public IReadOnlyList<PlanItem> VisiblePlans { get; private set; } = [];
     public ObservableCollection<LogEntry> Logs { get; } = [];
     public ObservableCollection<EditableRule> Rules { get; } = [];
     public ObservableCollection<ReportItem> ReportItems { get; } = [];
@@ -51,6 +52,8 @@ public sealed partial class MainPage : Page
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         _pollTimer.Tick += OnPollTimerTick;
+        _filterTimer.Interval = TimeSpan.FromMilliseconds(120);
+        _filterTimer.Tick += OnFilterTimerTick;
         Rules.CollectionChanged += (_, _) =>
         {
             UpdateRulesEmptyState();
@@ -126,6 +129,7 @@ public sealed partial class MainPage : Page
         Unloaded -= OnUnloaded;
         UnsubscribeFromMaterialState();
         _pollTimer.Stop();
+        _filterTimer.Stop();
         _detailCancellation?.Cancel();
         _detailCancellation?.Dispose();
         _detailCancellation = null;
@@ -251,7 +255,7 @@ public sealed partial class MainPage : Page
         var key = status switch
         {
             "ready" or "moved" or "unchanged" => background ? "SuccessSubtleBrush" : "SuccessTextBrush",
-            "duplicate" or "conflict" => background ? "WarningSubtleBrush" : "WarningTextBrush",
+            "duplicate" => background ? "WarningSubtleBrush" : "WarningTextBrush",
             "error" => background ? "ErrorSubtleBrush" : "ErrorTextBrush",
             _ => background ? "AccentSubtleBrush" : "AppAccentBrush",
         };
@@ -262,7 +266,6 @@ public sealed partial class MainPage : Page
     {
         "ready" or "moved" or "unchanged" => "\uE73E",
         "duplicate" => "\uE8C8",
-        "conflict" => "\uE7BA",
         "error" => "\uEA39",
         _ => "\uE946",
     };
