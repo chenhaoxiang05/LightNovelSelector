@@ -5,7 +5,7 @@ import math
 import threading
 from collections import deque
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -181,7 +181,7 @@ class ApplicationService:
             self._logs.append(
                 {
                     "id": self._next_log_id,
-                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "time": datetime.now(tz=timezone.utc).astimezone().strftime("%H:%M:%S"),
                     "kind": kind,
                     "message": str(message),
                 }
@@ -425,7 +425,7 @@ class ApplicationService:
                 self._finish_operation(operation_id, "success", message)
             except OperationCancelled:
                 self._finish_operation(operation_id, "cancelled", "扫描已取消，原文件未发生变化。")
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - 后台任务边界需将未知错误转为可恢复状态。
                 self._finish_operation(operation_id, "error", "扫描失败", error=str(exc))
 
         threading.Thread(target=work, name="novel-scan", daemon=True).start()
@@ -505,7 +505,7 @@ class ApplicationService:
                     "success",
                     f"分类完成：移动 {moved} 个，跳过 {skipped} 个。",
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - 后台任务边界需将未知错误转为可恢复状态。
                 with self._lock:
                     self._invalidate_plans_locked()
                     self.report_path = report_path if report_path.exists() else None
@@ -552,7 +552,7 @@ class ApplicationService:
                     "success",
                     f"撤销完成：恢复 {restored} 个，跳过 {skipped} 个；请重新扫描。",
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - 后台任务边界需将未知错误转为可恢复状态。
                 with self._lock:
                     self._invalidate_plans_locked()
                 self._finish_operation(operation_id, "error", "撤销失败", error=str(exc))

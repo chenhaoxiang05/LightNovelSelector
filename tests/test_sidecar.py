@@ -9,7 +9,6 @@ from pathlib import Path
 
 from lightnovel_selector.sidecar import PROTOCOL_VERSION, SidecarServer
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -88,12 +87,9 @@ class SidecarProtocolTests(unittest.TestCase):
         self.assertIn("不能超过 120", responses[0]["error"]["message"])
 
     def test_sidecar_module_has_clean_process_protocol(self) -> None:
-        payload = '\n'.join(
-            (
-                '{"id":1,"method":"ping"}',
-                '{"id":2,"method":"shutdown"}',
-                "",
-            )
+        payload = (
+            '{"id":1,"method":"ping"}\n'
+            '{"id":2,"method":"shutdown"}\n'
         )
         completed = subprocess.run(
             [sys.executable, "-m", "lightnovel_selector.sidecar"],

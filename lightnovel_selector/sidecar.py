@@ -14,7 +14,6 @@ from .constants import (
     SERIES_NAME_MAX_CHARS,
 )
 
-
 PROTOCOL_VERSION = 1
 MAX_REQUEST_CHARS = 1024 * 1024
 MAX_REQUEST_ID = 2**63 - 1
@@ -189,7 +188,7 @@ class SidecarServer:
             except (json.JSONDecodeError, ProtocolError, OSError, RuntimeError, ValueError, TypeError, IndexError) as exc:
                 response = self._error_response(request_id, exc)
                 should_stop = False
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - 协议边界必须返回结构化错误并继续服务。
                 response = self._error_response(request_id, exc)
                 should_stop = False
 
@@ -212,7 +211,7 @@ def main() -> int:
     configure_sidecar_stdio()
     try:
         return SidecarServer().serve_forever()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - 进程入口需将启动错误写入 stderr。
         print(f"Sidecar 启动失败：{exc}", file=sys.stderr, flush=True)
         return 1
 

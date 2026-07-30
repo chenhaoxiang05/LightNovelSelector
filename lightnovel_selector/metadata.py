@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.parse
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from .constants import (
     BANGUMI_DETAIL_PAGES,

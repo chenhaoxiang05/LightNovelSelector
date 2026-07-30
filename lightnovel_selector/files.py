@@ -10,8 +10,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Callable, Iterable
 
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
@@ -30,7 +30,6 @@ from .constants import (
 )
 from .models import CustomRule
 from .parsing import collapse_spaces, html_to_text, normalize_for_match
-
 
 _PROXY_SYNTHETIC_NETWORKS = (ipaddress.ip_network("198.18.0.0/15"),)
 _PROXY_SYNTHETIC_DOMAIN_SUFFIXES = (
@@ -205,7 +204,7 @@ def pick_archive_cover_name(names: Iterable[str]) -> str | None:
         preferred = 0 if any(word.casefold() in base for word in preferred_words) else 1
         return preferred, name.casefold()
 
-    return sorted(images, key=sort_key)[0]
+    return min(images, key=sort_key)
 
 
 def read_epub_cover_bytes(path: Path) -> bytes | None:

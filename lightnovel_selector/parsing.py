@@ -32,7 +32,7 @@ def html_to_text(value: str) -> str:
     try:
         parser.feed(value)
         return parser.text()
-    except Exception:
+    except Exception:  # noqa: BLE001 - 解析器失败时退回到保守的纯文本清理。
         return collapse_spaces(re.sub(r"<[^>]+>", " ", value))
 
 
@@ -61,9 +61,7 @@ def is_noise_tag(value: str, *, position: str) -> bool:
         return True
     if re.fullmatch(r"(v|vol|volume|book)?\s*[0-9０-９]{1,3}", tag, re.IGNORECASE):
         return position == "trailing"
-    if re.fullmatch(rf"第?\s*{VOLUME_TOKEN}\s*[卷册集部].*", tag):
-        return True
-    return False
+    return re.fullmatch(rf"第?\s*{VOLUME_TOKEN}\s*[卷册集部].*", tag) is not None
 
 
 def strip_bracket_noise(value: str) -> str:

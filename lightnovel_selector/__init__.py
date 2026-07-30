@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-# ruff: noqa: F401,F403
-
+# ruff: noqa: F401
 from .classification import (
     build_classification_plan,
     classification_plan_to_report_item,
@@ -16,7 +15,7 @@ from .classification import (
     validate_classification_root,
     write_classification_report,
 )
-from .constants import *  # noqa: F403
+from .constants import *
 from .files import (
     decode_bytes,
     file_fingerprint,
