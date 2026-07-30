@@ -24,7 +24,11 @@ public static class PlanFilterController
                 && (
                     query.Length == 0
                     || Contains(plan.FileName, query)
+                    || Contains(plan.BookTitle, query)
                     || Contains(plan.SeriesName, query)
+                    || Contains(plan.AuthorsLabel, query)
+                    || Contains(plan.LanguageLabel, query)
+                    || Contains(plan.TagsLabel, query)
                     || Contains(plan.TargetName, query)
                     || Contains(plan.ResolverSource, query)
                 )

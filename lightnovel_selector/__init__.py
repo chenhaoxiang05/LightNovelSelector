@@ -27,6 +27,8 @@ from .files import (
     match_custom_rule,
     pick_archive_cover_name,
     read_archive_cover_bytes,
+    read_book_identity,
+    read_epub_book_identity,
     read_epub_cover_bytes,
     read_epub_identity_hint,
     read_identity_hint,
@@ -37,12 +39,23 @@ from .files import (
     validate_https_url,
     xml_local_name,
 )
+from .identity import (
+    identity_from_filename,
+    language_display_name,
+    merge_book_identities,
+    normalize_identity_values,
+    volume_display_name,
+    with_series_name,
+)
 from .metadata import (
     SeriesResolver,
     bangumi_cover_url,
+    bangumi_identity_from_item,
+    bangumi_infobox_values,
     bangumi_metadata_from_item,
     bangumi_search_items,
     bangumi_subject_url,
+    bangumi_tags,
     bangumi_title_candidates,
     clean_summary,
     flatten_bangumi_value,
@@ -51,7 +64,14 @@ from .metadata import (
     suggest_renamed_filename,
     unique_existing,
 )
-from .models import AppSettings, BookMetadata, ClassificationPlan, CustomRule, ResolveResult
+from .models import (
+    AppSettings,
+    BookIdentity,
+    BookMetadata,
+    ClassificationPlan,
+    CustomRule,
+    ResolveResult,
+)
 from .parsing import (
     acceptance_threshold,
     clean_file_stem,
@@ -61,8 +81,10 @@ from .parsing import (
     extract_series_guess,
     html_to_text,
     identity_query_for_path,
+    infer_language,
     is_noise_tag,
     normalize_for_match,
+    normalize_language_code,
     parse_volume_number,
     safe_folder_name,
     score_title,
@@ -76,6 +98,8 @@ from .storage import (
     app_data_dir,
     app_settings_from_dict,
     app_settings_to_dict,
+    book_identity_from_dict,
+    book_identity_to_dict,
     book_metadata_from_dict,
     book_metadata_to_dict,
     get_persistent_metadata_cache,

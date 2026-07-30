@@ -28,6 +28,14 @@ public sealed class ReportModelTests
                   "source_path": "D:\\books\\demo.epub",
                   "target_path": "D:\\books\\Demo\\demo.epub",
                   "actual_target_path": "D:\\books\\Demo\\demo.epub",
+                  "identity": {
+                    "title": "Demo 第01卷",
+                    "series_name": "Demo",
+                    "authors": ["Example Author"],
+                    "volume_number": 1,
+                    "language": "en",
+                    "tags": ["Fantasy"]
+                  },
                   "series_name": "Demo",
                   "resolver_source": "文件名识别",
                   "confidence": 0.9,
@@ -48,6 +56,7 @@ public sealed class ReportModelTests
         Assert.AreEqual(1, report.Items.Count);
         Assert.AreEqual("demo.epub", report.Items[0].FileName);
         Assert.AreEqual("已移动", report.Items[0].OperationLabel);
+        Assert.AreEqual("Demo 第01卷", report.Items[0].Identity?.Title);
     }
 
     [TestMethod]

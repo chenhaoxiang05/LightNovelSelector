@@ -11,16 +11,26 @@ import lightnovel_classifier
 from lightnovel_classifier import (
     COVER_MAX_BYTES,
     FILE_FINGERPRINT_CHUNK_SIZE,
+    IDENTITY_MAX_AUTHORS,
+    IDENTITY_MAX_TAGS,
+    IDENTITY_VALUE_MAX_CHARS,
+    METADATA_TEXT_MAX_CHARS,
     SCAN_MAX_FILES,
     AppSettings,
+    BookIdentity,
     BookMetadata,
     CustomRule,
     PersistentMetadataCache,
+    ResolveResult,
     bangumi_cover_url,
+    bangumi_identity_from_item,
     bangumi_title_candidates,
+    book_identity_from_dict,
+    book_identity_to_dict,
     book_metadata_from_dict,
     book_metadata_to_dict,
     build_classification_plan,
+    classification_plan_to_report_item,
     clean_summary,
     count_plan_statuses,
     execute_classification_plan,
@@ -31,12 +41,15 @@ from lightnovel_classifier import (
     http_bytes,
     http_json,
     identity_query_for_path,
+    infer_language,
     item_matches_volume,
     load_app_settings,
     load_classification_report,
     normalize_for_match,
     parse_volume_number,
     plan_status_label,
+    read_book_identity,
+    read_epub_book_identity,
     read_local_cover_bytes,
     revise_classification_plan,
     safe_folder_name,
@@ -102,6 +115,27 @@ class FilenameParsingTests(unittest.TestCase):
             "The Novel's Extra",
         )
 
+    def test_infers_explicit_file_language_without_guessing_from_short_titles(self) -> None:
+        self.assertEqual(infer_language("【简中】青春物语 第03卷.epub"), "zh-Hans")
+        self.assertEqual(infer_language("Mushoku Tensei [zh-TW] 13.epub"), "zh-Hant")
+        self.assertEqual(infer_language("Mushoku Tensei [eng] 13.epub"), "en")
+        self.assertIsNone(infer_language("86 01.epub"))
+
+    def test_infers_language_from_long_content_samples(self) -> None:
+        self.assertEqual(infer_language(None, "これは日本語の文章です。ライトノベルの本文を確認しています。"), "ja")
+        self.assertEqual(
+            infer_language(None, "这是一个用于识别语言的简体中文段落，包含足够多的汉字来避免短标题误判。"), "zh-Hans"
+        )
+        self.assertEqual(infer_language(None, "天地玄黄宇宙洪荒日月星辰山川河海草木花鸟春夏秋冬"), "zh")
+
+    def test_preserves_volume_zero(self) -> None:
+        self.assertEqual(parse_volume_number("Demo Vol.00"), 0)
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "Demo Vol.00.txt"
+            path.write_text("prologue", encoding="utf-8")
+
+            self.assertEqual(read_book_identity(path).volume_number, 0)
+
     def test_safe_folder_name(self) -> None:
         self.assertEqual(safe_folder_name("A:B/C*D?"), "A_B_C_D_")
         self.assertEqual(safe_folder_name("CON"), "_CON")
@@ -130,8 +164,42 @@ class FilenameParsingTests(unittest.TestCase):
             "无职转生 ~到了异世界就拿出真本事~ 第13卷.epub",
         )
 
+    def test_suggested_filename_preserves_volume_zero(self) -> None:
+        self.assertEqual(
+            suggest_renamed_filename(
+                Path("Demo Vol.01.epub"),
+                series_name="Demo",
+                metadata=None,
+                identity_query="Demo Vol.00",
+            ),
+            "Demo 第00卷.epub",
+        )
+
 
 class MovePlanTests(unittest.TestCase):
+    def test_plan_payload_and_report_share_the_same_identity(self) -> None:
+        from lightnovel_selector.application import plan_to_dict
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "【简中】青春物语 第03卷.txt"
+            book.write_text(
+                "这是一个用于语言识别的简体中文正文样本，包含足够多的汉字来建立可靠判断。",
+                encoding="utf-8",
+            )
+
+            plan = build_classification_plan(root, use_network=False)[0]
+            payload = plan_to_dict(plan, 0)
+            report_item = classification_plan_to_report_item(plan)
+
+            self.assertEqual(plan.identity.series_name, "青春物语")
+            self.assertEqual(plan.identity.title, "青春物语 第03卷")
+            self.assertEqual(plan.identity.volume_number, 3)
+            self.assertEqual(plan.identity.language, "zh-Hans")
+            self.assertEqual(payload["identity"], report_item["identity"])
+            self.assertEqual(payload["book_title"], plan.identity.title)
+            self.assertEqual(payload["language_label"], "简体中文")
+
     def test_file_discovery_can_be_cancelled_before_duplicate_hashing(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -227,6 +295,33 @@ class MovePlanTests(unittest.TestCase):
             self.assertEqual(plans[0].series_name, "1")
             self.assertEqual(plans[0].resolver_source, "本地规则")
             self.assertIsNone(plans[0].network_query)
+
+    def test_series_lookup_preserves_local_book_title_and_volume(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "Demo 第03卷.txt"
+            book.write_text("content", encoding="utf-8")
+            remote_result = ResolveResult(
+                identity=BookIdentity(
+                    title="Demo",
+                    series_name="Demo",
+                    authors=("Remote Author",),
+                    volume_number=1,
+                ),
+                source="Test Provider",
+                confidence=0.95,
+                local_guess="Demo",
+            )
+
+            with patch(
+                "lightnovel_selector.classification.SeriesResolver.resolve",
+                return_value=remote_result,
+            ):
+                plans = build_classification_plan(root, use_network=True)
+
+            self.assertEqual(plans[0].identity.title, "Demo 第03卷")
+            self.assertEqual(plans[0].identity.authors, ("Remote Author",))
+            self.assertEqual(plans[0].identity.volume_number, 3)
 
     def test_duplicate_file_is_marked_and_skipped(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -883,6 +978,81 @@ class LocalCoverTests(unittest.TestCase):
 
             self.assertEqual(read_local_cover_bytes(epub_path), MINIMAL_PNG)
 
+    def test_reads_complete_epub_book_identity(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            epub_path = Path(temp_dir) / "weak-name.epub"
+            with ZipFile(epub_path, "w", ZIP_DEFLATED) as archive:
+                archive.writestr(
+                    "META-INF/container.xml",
+                    """<?xml version="1.0"?>
+                    <container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">
+                      <rootfiles>
+                        <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+                      </rootfiles>
+                    </container>""",
+                )
+                archive.writestr(
+                    "OEBPS/content.opf",
+                    """<?xml version="1.0"?>
+                    <package xmlns="http://www.idpf.org/2007/opf"
+                             xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0">
+                      <metadata>
+                        <dc:title>无职转生 第13卷</dc:title>
+                        <dc:creator>理不尽な孫の手</dc:creator>
+                        <dc:language>zh-CN</dc:language>
+                        <dc:subject>异世界</dc:subject>
+                        <dc:subject>成长</dc:subject>
+                        <meta name="calibre:series" content="无职转生"/>
+                        <meta name="calibre:series_index" content="13"/>
+                      </metadata>
+                    </package>""",
+                )
+
+            identity = read_epub_book_identity(epub_path)
+
+            self.assertEqual(
+                identity,
+                BookIdentity(
+                    title="无职转生 第13卷",
+                    series_name="无职转生",
+                    authors=("理不尽な孫の手",),
+                    volume_number=13,
+                    language="zh-Hans",
+                    tags=("异世界", "成长"),
+                ),
+            )
+            self.assertEqual(read_book_identity(epub_path).authors, ("理不尽な孫の手",))
+
+    def test_bounds_untrusted_epub_identity_fields(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            epub_path = Path(temp_dir) / "oversized.epub"
+            creators = "".join(f"<dc:creator>{index}-{'A' * 300}</dc:creator>" for index in range(20))
+            subjects = "".join(f"<dc:subject>{index}-{'T' * 300}</dc:subject>" for index in range(30))
+            with ZipFile(epub_path, "w", ZIP_DEFLATED) as archive:
+                archive.writestr(
+                    "META-INF/container.xml",
+                    """<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                    <rootfiles><rootfile full-path="content.opf"/></rootfiles></container>""",
+                )
+                archive.writestr(
+                    "content.opf",
+                    f"""<package xmlns="http://www.idpf.org/2007/opf"
+                    xmlns:dc="http://purl.org/dc/elements/1.1/"><metadata>
+                    <dc:title>{"X" * 2000}</dc:title>{creators}{subjects}
+                    </metadata></package>""",
+                )
+
+            identity = read_epub_book_identity(epub_path)
+
+            self.assertIsNotNone(identity)
+            assert identity is not None
+            self.assertEqual(len(identity.title), METADATA_TEXT_MAX_CHARS)
+            self.assertEqual(len(identity.authors), IDENTITY_MAX_AUTHORS)
+            self.assertEqual(len(identity.tags), IDENTITY_MAX_TAGS)
+            self.assertTrue(
+                all(len(value) <= IDENTITY_VALUE_MAX_CHARS for value in (*identity.authors, *identity.tags))
+            )
+
     def test_skips_oversized_archive_cover(self) -> None:
         with TemporaryDirectory() as temp_dir:
             archive_path = Path(temp_dir) / "book.cbz"
@@ -908,6 +1078,26 @@ class BangumiMetadataTests(unittest.TestCase):
             ["刀剑神域", "ソードアート・オンライン", "Sword Art Online", "SAO"],
         )
         self.assertEqual(bangumi_cover_url(item), "https://example.test/common.jpg")
+
+    def test_extracts_unified_identity_from_bangumi_item(self) -> None:
+        item = {
+            "id": 207694,
+            "name": "無職転生 ~異世界行ったら本気だす~ (13)",
+            "name_cn": "无职转生 ～到了异世界就拿出真本事～ (13)",
+            "infobox": [
+                {"key": "作者", "value": "理不尽な孫の手"},
+                {"key": "语言", "value": "日文"},
+            ],
+            "tags": [{"name": "异世界"}, {"name": "奇幻"}],
+        }
+
+        identity = bangumi_identity_from_item(item, query="无职转生 13")
+
+        self.assertEqual(identity.series_name, "无职转生 ~到了异世界就拿出真本事")
+        self.assertEqual(identity.authors, ("理不尽な孫の手",))
+        self.assertEqual(identity.volume_number, 13)
+        self.assertEqual(identity.language, "ja")
+        self.assertEqual(identity.tags, ("异世界", "奇幻"))
 
     def test_malformed_remote_metadata_degrades_without_type_errors(self) -> None:
         item = {
@@ -952,6 +1142,39 @@ class BangumiMetadataTests(unittest.TestCase):
             loaded = book_metadata_from_dict(PersistentMetadataCache(Path(temp_dir) / "cache.json").get(key) or {})
 
             self.assertEqual(loaded, metadata)
+
+    def test_unified_identity_serialization_is_bounded_and_legacy_compatible(self) -> None:
+        identity = BookIdentity(
+            title="Mushoku Tensei (13)",
+            series_name="Mushoku Tensei",
+            authors=("Rifujin na Magonote",),
+            volume_number=13,
+            language="en",
+            tags=("Fantasy", "Isekai"),
+        )
+
+        self.assertEqual(book_identity_from_dict(book_identity_to_dict(identity)), identity)
+        legacy = book_metadata_from_dict(
+            {
+                "title": "Mushoku Tensei (13)",
+                "source": "legacy",
+                "confidence": 0.8,
+                "query": "Mushoku Tensei 13",
+            }
+        )
+        self.assertIsNotNone(legacy)
+        assert legacy is not None
+        self.assertEqual(legacy.identity.series_name, "Mushoku Tensei")
+        self.assertEqual(legacy.identity.volume_number, 13)
+        self.assertIsNone(
+            book_identity_from_dict(
+                {
+                    "title": "Broken",
+                    "series_name": "Broken",
+                    "authors": "not-an-array",
+                }
+            )
+        )
 
     def test_cached_metadata_rejects_invalid_types_and_non_finite_confidence(self) -> None:
         self.assertIsNone(book_metadata_from_dict({"title": ["not", "text"]}))

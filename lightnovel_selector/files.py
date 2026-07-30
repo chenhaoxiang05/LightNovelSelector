@@ -23,13 +23,29 @@ from .constants import (
     CONTENT_HINT_TEXT_EXTENSIONS,
     COVER_MAX_BYTES,
     FILE_FINGERPRINT_CHUNK_SIZE,
+    IDENTITY_MAX_AUTHORS,
+    IDENTITY_MAX_TAGS,
+    IDENTITY_VALUE_MAX_CHARS,
     LOCAL_COVER_EXTENSIONS,
+    METADATA_TEXT_MAX_CHARS,
     REMOTE_JSON_MAX_BYTES,
     REMOTE_URL_MAX_CHARS,
     USER_AGENT,
 )
-from .models import CustomRule
-from .parsing import collapse_spaces, html_to_text, normalize_for_match
+from .identity import (
+    identity_from_filename,
+    merge_book_identities,
+    normalize_identity_values,
+)
+from .models import BookIdentity, CustomRule
+from .parsing import (
+    collapse_spaces,
+    extract_series_guess,
+    html_to_text,
+    normalize_for_match,
+    normalize_language_code,
+    parse_volume_number,
+)
 
 _PROXY_SYNTHETIC_NETWORKS = (ipaddress.ip_network("198.18.0.0/15"),)
 _PROXY_SYNTHETIC_DOMAIN_SUFFIXES = (
@@ -313,7 +329,7 @@ def read_epub_identity_hint(path: Path) -> str | None:
             for element in opf_root.iter():
                 name = xml_local_name(element.tag)
                 if name == "title" and element.text:
-                    titles.append(collapse_spaces(element.text))
+                    titles.append(collapse_spaces(element.text)[:METADATA_TEXT_MAX_CHARS])
                 elif name == "item":
                     item_id = element.attrib.get("id")
                     href = element.attrib.get("href")
@@ -351,6 +367,98 @@ def read_epub_identity_hint(path: Path) -> str | None:
         return None
 
 
+def read_epub_book_identity(path: Path, fallback: BookIdentity | None = None) -> BookIdentity | None:
+    fallback = fallback or identity_from_filename(path.name)
+    try:
+        with zipfile.ZipFile(path) as epub:
+            container_data = read_zip_member(
+                epub,
+                "META-INF/container.xml",
+                max_bytes=ARCHIVE_XML_MAX_BYTES,
+            )
+            if not container_data:
+                return None
+            container = ElementTree.fromstring(container_data)
+            rootfile_path = next(
+                (
+                    element.attrib.get("full-path")
+                    for element in container.iter()
+                    if xml_local_name(element.tag) == "rootfile" and element.attrib.get("full-path")
+                ),
+                None,
+            )
+            if not rootfile_path:
+                return None
+            opf_data = read_zip_member(epub, rootfile_path, max_bytes=ARCHIVE_XML_MAX_BYTES)
+            if not opf_data:
+                return None
+            opf_root = ElementTree.fromstring(opf_data)
+
+            titles: list[str] = []
+            creators: list[str] = []
+            languages: list[str] = []
+            subjects: list[str] = []
+            series_names: list[str] = []
+            series_index: int | None = None
+            for element in opf_root.iter():
+                name = xml_local_name(element.tag).casefold()
+                text = collapse_spaces(element.text or "")
+                if name == "title" and text and len(titles) < 3:
+                    titles.append(text[:METADATA_TEXT_MAX_CHARS])
+                elif name == "creator" and text and len(creators) < IDENTITY_MAX_AUTHORS * 2:
+                    creators.append(text[:IDENTITY_VALUE_MAX_CHARS])
+                elif name == "language" and text and len(languages) < 8:
+                    languages.append(text[:35])
+                elif name == "subject" and text and len(subjects) < IDENTITY_MAX_TAGS * 2:
+                    subjects.append(text[:IDENTITY_VALUE_MAX_CHARS])
+                elif name == "meta":
+                    meta_name = str(element.attrib.get("name") or "").casefold()
+                    property_name = str(element.attrib.get("property") or "").casefold()
+                    content = collapse_spaces(str(element.attrib.get("content") or "") or text)[
+                        :METADATA_TEXT_MAX_CHARS
+                    ]
+                    if content and (meta_name == "calibre:series" or property_name == "belongs-to-collection"):
+                        if len(series_names) < 8:
+                            series_names.append(content)
+                    elif meta_name == "calibre:series_index" and content:
+                        try:
+                            numeric_index = float(content)
+                        except ValueError:
+                            numeric_index = -1
+                        if numeric_index.is_integer() and 0 <= numeric_index <= 999:
+                            series_index = int(numeric_index)
+
+            title = titles[0] if titles else fallback.title
+            series_name = series_names[0] if series_names else extract_series_guess(title)
+            language = next(
+                (normalized for value in languages if (normalized := normalize_language_code(value)) is not None),
+                fallback.language,
+            )
+            volume_number = series_index
+            if volume_number is None:
+                volume_number = parse_volume_number(title)
+            if volume_number is None:
+                volume_number = fallback.volume_number
+            epub_identity = BookIdentity(
+                title=title,
+                series_name=series_name,
+                authors=normalize_identity_values(creators, limit=IDENTITY_MAX_AUTHORS),
+                volume_number=volume_number,
+                language=language,
+                tags=normalize_identity_values(subjects, limit=IDENTITY_MAX_TAGS),
+            )
+            return merge_book_identities(fallback, epub_identity)
+    except (
+        OSError,
+        KeyError,
+        RuntimeError,
+        zipfile.BadZipFile,
+        ElementTree.ParseError,
+        DefusedXmlException,
+    ):
+        return None
+
+
 def read_text_identity_hint(path: Path) -> str | None:
     try:
         with path.open("rb") as file:
@@ -371,6 +479,13 @@ def read_identity_hint(path: Path) -> str | None:
     if suffix in CONTENT_HINT_TEXT_EXTENSIONS:
         return read_text_identity_hint(path)
     return None
+
+
+def read_book_identity(path: Path, hint: str | None = None) -> BookIdentity:
+    fallback = identity_from_filename(path.name, hint=hint)
+    if path.suffix.casefold() == ".epub":
+        return read_epub_book_identity(path, fallback) or fallback
+    return fallback
 
 
 def read_archive_cover_bytes(path: Path) -> bytes | None:
