@@ -5,6 +5,7 @@ from .classification import (
     build_classification_plan,
     classification_plan_group_indices,
     classification_plan_to_report_item,
+    classification_report_root,
     count_plan_statuses,
     execute_classification_plan,
     find_novel_files,
@@ -96,6 +97,13 @@ from .parsing import (
     strip_release_words,
     title_has_volume,
     weak_file_name_query,
+)
+from .report_history import (
+    archive_classification_report,
+    classification_report_history_directory,
+    list_classification_reports,
+    mark_classification_report_undone,
+    resolve_classification_report,
 )
 from .storage import (
     PersistentMetadataCache,

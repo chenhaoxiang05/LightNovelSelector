@@ -198,12 +198,55 @@ public sealed class CancelResult
 
 public sealed class ReportSummary
 {
+    public string ReportId { get; init; } = "latest";
     public string Path { get; init; } = string.Empty;
     public string? CreatedAt { get; init; }
+    public bool UndoCompleted { get; init; }
+    public string? UndoCompletedAt { get; init; }
+    public bool CanUndo { get; init; }
     public int ItemCount { get; init; }
     public bool ItemsTruncated { get; init; }
     public ReportStats Summary { get; init; } = new();
     public IReadOnlyList<ReportItem> Items { get; init; } = [];
+}
+
+public sealed class ReportHistoryResult
+{
+    public IReadOnlyList<ReportHistoryEntry> Reports { get; init; } = [];
+    public int TotalCount { get; init; }
+    public int InvalidCount { get; init; }
+    public bool Truncated { get; init; }
+    public string? Warning { get; init; }
+}
+
+public sealed class ReportHistoryEntry
+{
+    public string ReportId { get; set; } = "latest";
+    public string Path { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public string? CreatedAt { get; set; }
+    public string Version { get; set; } = string.Empty;
+    public bool IsLatest { get; set; }
+    public bool UndoCompleted { get; set; }
+    public string? UndoCompletedAt { get; set; }
+    public bool CanUndo { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string StatusLabel { get; set; } = string.Empty;
+    public ReportStats Summary { get; set; } = new();
+
+    public string CreatedAtLabel =>
+        DateTimeOffset.TryParse(CreatedAt, out var timestamp)
+            ? timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+            : string.IsNullOrWhiteSpace(CreatedAt) ? "时间未知" : CreatedAt;
+
+    public string TitleLabel => CreatedAtLabel;
+    public string DisplayStatusLabel => IsLatest ? $"最近 · {StatusLabel}" : StatusLabel;
+    public string SummaryLabel =>
+        $"移动 {Summary.Moved} · 跳过 {Summary.Skipped} · 错误 {Summary.Errors}";
+    public string AccessibilityLabel =>
+        $"{CreatedAtLabel}，{DisplayStatusLabel}，移动 {Summary.Moved}，跳过 {Summary.Skipped}，错误 {Summary.Errors}";
+
+    public override string ToString() => AccessibilityLabel;
 }
 
 public sealed class ReportStats

@@ -34,6 +34,7 @@ py -3 -m venv .venv-build
 ### Python 核心
 
 - `classification.py`：分类计划、完整哈希重复检测、线性恢复日志、报告和撤销。
+- `report_history.py`：报告归档、受限历史列表、执行编号解析和撤销状态。
 - `parsing.py`：文件名清洗、卷号与系列名解析。
 - `files.py`：文件扫描、内容提示、封面和网络字节读取。
 - `metadata.py`：本地/在线系列解析与缓存。
@@ -47,6 +48,7 @@ py -3 -m venv .venv-build
 - `Views/MainWindow.*`：标题栏、窗口尺寸、主题与窗口材质。
 - `Views/MainPage.*`：按状态、筛选、详情、报告、设置、通知和连接职责拆分。
 - `Services/PythonSidecarClient.cs`：进程生命周期、请求关联、超时与安全重连。
+- `Security/ReportPathSafety.cs`：限制 WinUI 可打开或导出的本地报告位置。
 - `ViewModels/`：连接状态、筛选等可独立测试的纯逻辑。
 - `Appearance/` 与 `Styles/`：主题、Acrylic/Mica 回退和语义设计令牌。
 - `Helpers/Motion.cs`：按压、页面 reveal、Toast 与减少动态效果。

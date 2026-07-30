@@ -31,6 +31,10 @@ public sealed partial class MainPage : Page
     private bool _isRecovering;
     private bool _settingsInitialized;
     private bool _disposing;
+    private bool _updatingReportHistory;
+    private int _reportRequestSerial;
+    private string _reportFolder = string.Empty;
+    private ReportHistoryEntry? _selectedReport;
     private ConnectionState _connectionState = ConnectionState.Connecting;
 
     public IReadOnlyList<PlanItem> Plans { get; private set; } = [];
@@ -38,6 +42,7 @@ public sealed partial class MainPage : Page
     public ObservableCollection<LogEntry> Logs { get; } = [];
     public ObservableCollection<EditableRule> Rules { get; } = [];
     public ObservableCollection<ReportItem> ReportItems { get; } = [];
+    public ObservableCollection<ReportHistoryEntry> ReportHistory { get; } = [];
 
     public bool IsCriticalOperation =>
         _connectionState == ConnectionState.Ready
@@ -132,6 +137,7 @@ public sealed partial class MainPage : Page
         UnsubscribeFromMaterialState();
         _pollTimer.Stop();
         _filterTimer.Stop();
+        _reportRequestSerial++;
         _detailCancellation?.Cancel();
         _detailCancellation?.Dispose();
         _detailCancellation = null;
@@ -239,7 +245,14 @@ public sealed partial class MainPage : Page
             await Task.Yield();
             ActivityView.UpdateLayout();
             Motion.RevealPage(ActivityView);
-            await RefreshReportAsync();
+            if (App.IsAppearanceSmokeTest)
+            {
+                LoadAppearanceSmokeReport();
+            }
+            else
+            {
+                await RefreshReportAsync();
+            }
         }
         else
         {

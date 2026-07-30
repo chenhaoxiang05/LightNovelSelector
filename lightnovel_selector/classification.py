@@ -14,6 +14,8 @@ from typing import Literal
 from .constants import (
     APP_NAME,
     APP_VERSION,
+    REPORT_HISTORY_DIR_NAME,
+    REPORT_HISTORY_ROOT_DIR_NAME,
     REPORT_JOURNAL_MAX_BYTES,
     REPORT_JOURNAL_SCHEMA_VERSION,
     REPORT_MAX_BYTES,
@@ -358,8 +360,30 @@ def _report_root(report: dict, report_path: Path) -> Path:
     except OSError as exc:
         raise ValueError(f"无法解析撤销报告的分类根目录：{exc}") from exc
     if report_path.parent != resolved_root:
-        raise ValueError("撤销报告必须保留在生成它的分类根目录中。")
+        expected_history_root = resolved_root / REPORT_HISTORY_ROOT_DIR_NAME
+        expected_history_dir = expected_history_root / REPORT_HISTORY_DIR_NAME
+        try:
+            resolved_history_root = expected_history_root.resolve()
+            resolved_history_dir = expected_history_dir.resolve()
+        except (OSError, ValueError) as exc:
+            raise ValueError("无法安全解析分类历史目录。") from exc
+        if (
+            resolved_history_root != expected_history_root.absolute()
+            or resolved_history_dir != expected_history_dir.absolute()
+        ):
+            raise ValueError("分类历史目录不能是符号链接或目录联接。")
+        try:
+            resolved_history_root.relative_to(resolved_root)
+            resolved_history_dir.relative_to(resolved_root)
+        except ValueError as exc:
+            raise ValueError("分类历史目录超出分类根目录。") from exc
+        if report_path.parent != resolved_history_dir:
+            raise ValueError("撤销报告必须保留在生成它的分类根目录或历史目录中。")
     return resolved_root
+
+
+def classification_report_root(report: dict, report_path: Path) -> Path:
+    return _report_root(report, report_path.expanduser().resolve())
 
 
 def _undo_item_path(value: object, *, field_name: str, item_number: int, root_path: Path) -> Path:

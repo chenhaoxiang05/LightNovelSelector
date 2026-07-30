@@ -79,8 +79,6 @@ public sealed partial class MainPage
         RefreshButton.IsEnabled = coreReady && hasFolder && !running;
         SaveSettingsButton.IsEnabled = coreReady && _settingsDirty && !running;
         ApplyButton.IsEnabled = coreReady && hasMovablePlans && !running;
-        UndoButton.IsEnabled = coreReady && _snapshot.ReportPath is not null && !running;
-        ActivityUndoButton.IsEnabled = UndoButton.IsEnabled;
         CancelButton.Visibility = coreReady && running && operation.CanCancel
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -94,6 +92,7 @@ public sealed partial class MainPage
         ApplyProgressRing.Visibility = applying ? Visibility.Visible : Visibility.Collapsed;
         ApplyButtonIcon.Visibility = applying ? Visibility.Collapsed : Visibility.Visible;
         ApplyButtonText.Text = applying ? "整理中" : "确认整理";
+        UpdateReportActionState();
         UpdateCandidateLookupState();
         UpdateCorrectionButtonState();
 
@@ -140,19 +139,14 @@ public sealed partial class MainPage
 
     private void UpdateReportAvailability()
     {
-        var available = _snapshot.ReportPath is not null;
-        OpenReportButton.IsEnabled = available;
-        if (available)
+        if (!string.IsNullOrWhiteSpace(_snapshot.Folder))
         {
+            UpdateReportActionState();
             return;
         }
 
-        ReportStatusText.Text = "当前目录还没有分类报告。";
-        ReportMovedText.Text = "移动 0";
-        ReportSkippedText.Text = "跳过 0";
-        ReportDuplicateText.Text = "重复 0";
-        ReportErrorText.Text = "错误 0";
-        ReportItems.Clear();
-        ReportItemsEmptyState.Visibility = Visibility.Visible;
+        _reportFolder = string.Empty;
+        ClearReportView(clearHistory: true);
+        ReportHistoryStatusText.Text = "选择分类目录后会显示历史批次。";
     }
 }

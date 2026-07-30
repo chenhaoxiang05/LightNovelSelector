@@ -41,6 +41,12 @@ from .identity import (
 from .metadata import SeriesResolver
 from .models import AppSettings, ClassificationCandidate, ClassificationPlan, CustomRule
 from .parsing import collapse_spaces, normalize_for_match
+from .report_history import (
+    archive_classification_report,
+    list_classification_reports,
+    mark_classification_report_undone,
+    resolve_classification_report,
+)
 from .storage import (
     app_settings_to_dict,
     book_identity_from_dict,
@@ -551,6 +557,7 @@ class ApplicationService:
                     report_path=report_path,
                 )
                 report = load_classification_report(report_path)
+                self._archive_report_best_effort(report_path)
                 actual_targets = {
                     str(item.get("source_path")): Path(str(item.get("actual_target_path")))
                     for item in report.get("items", [])
@@ -584,6 +591,8 @@ class ApplicationService:
                     f"分类完成：移动 {moved} 个，跳过 {skipped} 个。",
                 )
             except Exception as exc:  # noqa: BLE001 - 后台任务边界需将未知错误转为可恢复状态。
+                if report_path.exists() and not report_path.is_symlink():
+                    self._archive_report_best_effort(report_path)
                 with self._lock:
                     self._invalidate_plans_locked()
                     self.report_path = report_path if report_path.exists() else None
@@ -597,11 +606,28 @@ class ApplicationService:
             return self.report_path
         return self._report_for_folder(self.folder)
 
-    def start_undo(self) -> dict[str, Any]:
+    def _archive_report_best_effort(self, report_path: Path) -> Path | None:
+        try:
+            return archive_classification_report(report_path)
+        except (OSError, RuntimeError, ValueError) as exc:
+            self._append_log(f"分类报告已保留，但历史归档失败：{exc}", "warning")
+            return None
+
+    def start_undo(self, report_id: str | None = None) -> dict[str, Any]:
         with self._lock:
+            folder = self.folder
             report_path = self._latest_report_locked()
-            if report_path is None:
-                raise FileNotFoundError("当前目录没有可用的分类报告。")
+            self._assert_idle_locked()
+        if folder is None:
+            raise FileNotFoundError("请先选择要撤销的分类目录。")
+        if report_id not in {None, "", "latest"}:
+            report_path = resolve_classification_report(folder, report_id)
+        if report_path is None:
+            raise FileNotFoundError("当前目录没有可用的分类报告。")
+        with self._lock:
+            self._assert_idle_locked()
+            if self.folder != folder:
+                raise RuntimeError("分类目录已变化，请重新选择历史批次。")
             operation_id, _ = self._start_operation_locked(
                 "undo",
                 "正在按报告撤销上次分类…",
@@ -623,9 +649,19 @@ class ApplicationService:
                         total=total,
                     ),
                 )
+                try:
+                    mark_classification_report_undone(
+                        report_path,
+                        restored=restored,
+                        skipped=skipped,
+                    )
+                except (OSError, RuntimeError, ValueError) as exc:
+                    self._append_log(f"文件已恢复，但报告状态未能更新：{exc}", "warning")
+                if report_path.name == REPORT_FILE_NAME:
+                    self._archive_report_best_effort(report_path)
                 with self._lock:
                     self._invalidate_plans_locked()
-                    self.report_path = report_path
+                    self.report_path = self._report_for_folder(self.folder)
                 self._finish_operation(
                     operation_id,
                     "success",
@@ -861,10 +897,33 @@ class ApplicationService:
             result["candidates"] = classification_candidate_payloads(current_plan)
         return result
 
-    def report_summary(self) -> dict[str, Any]:
+    def report_history(self) -> dict[str, Any]:
         with self._lock:
+            folder = self.folder
             report_path = self._latest_report_locked()
             apply_running = self.operation["state"] == "running" and self.operation["kind"] == "apply"
+        if folder is None:
+            raise FileNotFoundError("请先选择要查看历史的分类目录。")
+
+        archive_warning = None
+        if report_path is not None and not apply_running:
+            try:
+                archive_classification_report(report_path)
+            except (OSError, RuntimeError, ValueError) as exc:
+                archive_warning = f"最新报告可用，但暂时无法写入历史归档：{exc}"
+        result = list_classification_reports(folder, recover_latest=not apply_running)
+        result["warning"] = archive_warning
+        return result
+
+    def report_summary(self, report_id: str | None = None) -> dict[str, Any]:
+        with self._lock:
+            folder = self.folder
+            report_path = self._latest_report_locked()
+            apply_running = self.operation["state"] == "running" and self.operation["kind"] == "apply"
+        if report_id not in {None, "", "latest"}:
+            if folder is None:
+                raise FileNotFoundError("请先选择要查看的分类目录。")
+            report_path = resolve_classification_report(folder, report_id)
         if report_path is None:
             raise FileNotFoundError("当前目录没有分类报告。")
         report = load_classification_report(
@@ -875,17 +934,25 @@ class ApplicationService:
         items = report.get("items")
         if not isinstance(summary, dict) or not isinstance(items, list):
             raise ValueError("分类报告格式无效：summary 或 items 类型错误。")
+        execution_id = report.get("execution_id")
+        resolved_report_id = execution_id if isinstance(execution_id, str) and len(execution_id) == 32 else "latest"
+        undo_completed_at = _report_text(report.get("undo_completed_at"), max_chars=64) or None
+        moved_count = _report_count(summary.get("moved"))
         safe_items = [
             safe_item for item in items[:REPORT_UI_MAX_ITEMS] if (safe_item := _report_item_for_ui(item)) is not None
         ]
         return {
+            "report_id": resolved_report_id,
             "path": str(report_path),
             "created_at": _report_text(report.get("created_at"), max_chars=64) or None,
+            "undo_completed": undo_completed_at is not None,
+            "undo_completed_at": undo_completed_at,
+            "can_undo": undo_completed_at is None and moved_count > 0,
             "item_count": len(items),
             "items_truncated": len(items) > REPORT_UI_MAX_ITEMS,
             "summary": {
                 "total": _report_count(summary.get("total")),
-                "moved": _report_count(summary.get("moved")),
+                "moved": moved_count,
                 "skipped": _report_count(summary.get("skipped")),
                 "duplicates": _report_count(summary.get("duplicates")),
                 "errors": _report_count(summary.get("errors")),
