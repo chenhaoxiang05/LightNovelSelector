@@ -17,7 +17,9 @@
             IsSettingsVisible="True"
             IsTitleBarAutoPaddingEnabled="False"
             OpenPaneLength="224"
+            PaneClosed="OnNavigationPaneClosed"
             PaneDisplayMode="Left"
+            PaneOpened="OnNavigationPaneOpened"
             SelectionChanged="OnNavigationSelectionChanged">
             <NavigationView.Resources>
                 <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="{ThemeResource NavigationSelectionColor}" />
@@ -54,7 +56,7 @@
             <NavigationView.PaneFooter>
                 <StackPanel Margin="12,8,12,12" Spacing="10">
                     <Border Height="1" Background="{ThemeResource DividerBrush}" />
-                    <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="安全工作流" />
+                    <TextBlock x:Name="WorkflowEyebrow" Style="{StaticResource EyebrowTextStyle}" Text="安全工作流" />
                     <StackPanel x:Name="WorkflowStepsPanel" Spacing="8">
                         <Grid ColumnSpacing="9">
                             <Grid.ColumnDefinitions>
@@ -108,13 +110,23 @@
                             <TextBlock x:Name="CompactWorkflowStepText" VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold" Text="当前：选择目录" />
                         </StackPanel>
                     </Border>
-                    <Border Padding="9,6" Background="{ThemeResource SuccessSubtleBrush}" CornerRadius="8">
-                        <StackPanel Orientation="Horizontal" Spacing="7">
+                    <Border
+                        x:Name="SafetyStatusBadge"
+                        Padding="9,6"
+                        Background="{ThemeResource SuccessSubtleBrush}"
+                        CornerRadius="8"
+                        ToolTipService.ToolTip="所有文件操作均在本机完成">
+                        <StackPanel HorizontalAlignment="Center" Orientation="Horizontal" Spacing="7">
                             <Ellipse Width="6" Height="6" Fill="{ThemeResource SuccessTextBrush}" />
-                            <TextBlock VerticalAlignment="Center" FontSize="11" Foreground="{ThemeResource SuccessTextBrush}" Text="本地安全处理" />
+                            <TextBlock
+                                x:Name="SafetyStatusText"
+                                VerticalAlignment="Center"
+                                FontSize="11"
+                                Foreground="{ThemeResource SuccessTextBrush}"
+                                Text="本地安全处理" />
                         </StackPanel>
                     </Border>
-                    <StackPanel Spacing="1">
+                    <StackPanel x:Name="VersionStack" Spacing="1">
                         <TextBlock FontSize="10" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="LIGHT NOVEL SELECTOR" />
                         <TextBlock x:Name="VersionText" FontSize="10" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="原生预览" />
                     </StackPanel>
@@ -122,7 +134,7 @@
             </NavigationView.PaneFooter>
 
             <NavigationView.Content>
-                <Grid Padding="26,18,26,24" RowSpacing="10">
+                <Grid x:Name="ShellContentGrid" Padding="26,18,26,24" RowSpacing="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
@@ -154,30 +166,6 @@
                     </InfoBar>
 
                     <Grid x:Name="WorkspaceView" Grid.Row="1" RowSpacing="12">
-                        <VisualStateManager.VisualStateGroups>
-                            <VisualStateGroup>
-                                <VisualState x:Name="CompactWorkspaceState">
-                                    <VisualState.StateTriggers>
-                                        <AdaptiveTrigger MinWindowWidth="0" />
-                                    </VisualState.StateTriggers>
-                                    <VisualState.Setters>
-                                        <Setter Target="DetailColumn.Width" Value="0" />
-                                        <Setter Target="DetailCard.Visibility" Value="Collapsed" />
-                                        <Setter Target="ShellNavigation.IsPaneOpen" Value="False" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                                <VisualState x:Name="WideWorkspaceState">
-                                    <VisualState.StateTriggers>
-                                        <AdaptiveTrigger MinWindowWidth="1120" />
-                                    </VisualState.StateTriggers>
-                                    <VisualState.Setters>
-                                        <Setter Target="DetailColumn.Width" Value="360" />
-                                        <Setter Target="DetailCard.Visibility" Value="Visible" />
-                                        <Setter Target="ShellNavigation.IsPaneOpen" Value="True" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                            </VisualStateGroup>
-                        </VisualStateManager.VisualStateGroups>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -223,12 +211,16 @@
                             <Border.BackgroundTransition>
                                 <BrushTransition Duration="0:0:0.100" />
                             </Border.BackgroundTransition>
-                            <Grid ColumnSpacing="16">
+                            <Grid x:Name="FolderLayoutGrid" ColumnSpacing="16" RowSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="44" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
                                 <Border x:Name="FolderIconSurface" Width="44" Height="44" Background="{ThemeResource AccentSubtleBrush}" CornerRadius="8">
                                     <FontIcon Foreground="{ThemeResource AppAccentBrush}" Glyph="&#xED25;" />
                                 </Border>
@@ -241,7 +233,13 @@
                                         Text="选择一个目录，或将目录拖放到这里"
                                         TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
-                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                                <StackPanel
+                                    x:Name="FolderActions"
+                                    Grid.Column="2"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Orientation="Horizontal"
+                                    Spacing="8">
                                     <Button
                                         x:Name="OpenFolderButton"
                                         AutomationProperties.Name="在文件资源管理器中打开目录"
@@ -285,14 +283,23 @@
                             </Grid>
                         </Border>
 
-                        <Grid x:Name="StatsGrid" Grid.Row="2" ColumnSpacing="10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Border Style="{StaticResource LowCardBorderStyle}">
+                        <Border
+                            x:Name="StatsSurface"
+                            Grid.Row="2"
+                            Padding="0"
+                            Style="{StaticResource LowCardBorderStyle}">
+                            <Grid x:Name="StatsGrid" ColumnSpacing="0" RowSpacing="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                            <Border x:Name="ReadyMetricTile" Style="{StaticResource MetricTileBorderStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -308,7 +315,7 @@
                                     </Border>
                                 </Grid>
                             </Border>
-                            <Border Grid.Column="1" Style="{StaticResource LowCardBorderStyle}">
+                            <Border x:Name="SeriesMetricTile" Grid.Column="1" Style="{StaticResource MetricTileBorderStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -324,7 +331,7 @@
                                     </Border>
                                 </Grid>
                             </Border>
-                            <Border Grid.Column="2" Style="{StaticResource LowCardBorderStyle}">
+                            <Border x:Name="DuplicateMetricTile" Grid.Column="2" Style="{StaticResource MetricTileBorderStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -340,7 +347,7 @@
                                     </Border>
                                 </Grid>
                             </Border>
-                            <Border Grid.Column="3" Style="{StaticResource LowCardBorderStyle}">
+                            <Border x:Name="AttentionMetricTile" Grid.Column="3" Style="{StaticResource MetricTileBorderStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -356,15 +363,21 @@
                                     </Border>
                                 </Grid>
                             </Border>
-                        </Grid>
+                            </Grid>
+                        </Border>
 
-                        <Grid Grid.Row="3" MinHeight="310" ColumnSpacing="12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="3*" />
-                                <ColumnDefinition x:Name="DetailColumn" Width="360" />
-                            </Grid.ColumnDefinitions>
+                        <Border
+                            x:Name="WorkspaceDataSurface"
+                            Grid.Row="3"
+                            MinHeight="310"
+                            Style="{StaticResource WorkspaceSurfaceBorderStyle}">
+                            <Grid x:Name="ResultsDetailGrid">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="3*" />
+                                    <ColumnDefinition x:Name="DetailColumn" Width="360" />
+                                </Grid.ColumnDefinitions>
 
-                            <Border x:Name="ResultsCard" Style="{StaticResource CardBorderStyle}">
+                            <Border x:Name="ResultsCard" Style="{StaticResource ContentRegionBorderStyle}">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -386,19 +399,34 @@
                                                 <TextBlock x:Name="ResultCountText" AutomationProperties.LiveSetting="Polite" FontSize="12" Text="0 个文件" />
                                             </Border>
                                         </StackPanel>
-                                        <Button
-                                            x:Name="RefreshButton"
+                                        <StackPanel
                                             Grid.Column="1"
-                                            AutomationProperties.Name="重新扫描"
-                                            Click="OnScanClick"
-                                            IsEnabled="False"
-                                            Style="{StaticResource IconButtonStyle}"
-                                            ToolTipService.ToolTip="重新扫描">
-                                            <FontIcon FontSize="15" Glyph="&#xE72C;" />
-                                        </Button>
+                                            HorizontalAlignment="Right"
+                                            Orientation="Horizontal"
+                                            Spacing="6">
+                                            <Button
+                                                x:Name="CompactDetailButton"
+                                                AutomationProperties.Name="查看所选文件详情"
+                                                Click="OnCompactDetailClick"
+                                                IsEnabled="False"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                ToolTipService.ToolTip="查看所选文件详情"
+                                                Visibility="Collapsed">
+                                                <FontIcon FontSize="15" Glyph="&#xE8A5;" />
+                                            </Button>
+                                            <Button
+                                                x:Name="RefreshButton"
+                                                AutomationProperties.Name="重新扫描"
+                                                Click="OnScanClick"
+                                                IsEnabled="False"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                ToolTipService.ToolTip="重新扫描">
+                                                <FontIcon FontSize="15" Glyph="&#xE72C;" />
+                                            </Button>
+                                        </StackPanel>
                                     </Grid>
 
-                                    <Grid Grid.Row="1" Margin="0,0,0,10" ColumnSpacing="8">
+                                    <Grid x:Name="FilterGrid" Grid.Row="1" Margin="0,0,0,10" ColumnSpacing="8" RowSpacing="8">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="180" />
@@ -406,6 +434,10 @@
                                             <ColumnDefinition Width="36" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
                                         <AutoSuggestBox
                                             x:Name="ResultSearchBox"
                                             AutomationProperties.Name="搜索分类结果"
@@ -448,6 +480,7 @@
                                             <FontIcon FontSize="14" Glyph="&#xE894;" />
                                         </Button>
                                         <FontIcon
+                                            x:Name="FilterScopeInfoIcon"
                                             Grid.Column="4"
                                             Margin="3,0,0,0"
                                             VerticalAlignment="Center"
@@ -550,7 +583,7 @@
                                 </Grid>
                             </Border>
 
-                            <Border x:Name="DetailCard" Grid.Column="1" Style="{StaticResource LowCardBorderStyle}">
+                            <Border x:Name="DetailCard" Grid.Column="1" Style="{StaticResource DetailRegionBorderStyle}">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -727,15 +760,20 @@
                                     </ScrollViewer>
                                 </Grid>
                             </Border>
-                        </Grid>
+                            </Grid>
+                        </Border>
 
                         <Border x:Name="OperationCard" Grid.Row="4" Style="{StaticResource ElevatedCardBorderStyle}">
-                            <Grid ColumnSpacing="14">
+                            <Grid x:Name="OperationLayoutGrid" ColumnSpacing="14" RowSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
                                 <Border x:Name="OperationIconSurface" Width="36" Height="36" Background="{ThemeResource AccentSubtleBrush}" CornerRadius="8">
                                     <FontIcon x:Name="OperationIcon" Foreground="{ThemeResource AppAccentBrush}" Glyph="&#xE946;" />
                                 </Border>
@@ -747,7 +785,13 @@
                                     <TextBlock x:Name="OperationMessageText" AutomationProperties.LiveSetting="Polite" FontWeight="SemiBold" Text="等待选择目录" TextTrimming="CharacterEllipsis" />
                                     <ProgressBar x:Name="OperationProgressBar" Height="4" Maximum="100" Value="0" />
                                 </StackPanel>
-                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                                <StackPanel
+                                    x:Name="OperationActions"
+                                    Grid.Column="2"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Orientation="Horizontal"
+                                    Spacing="8">
                                     <Button x:Name="CancelButton" Click="OnCancelClick" Style="{StaticResource ToolbarButtonStyle}" Visibility="Collapsed">
                                         <TextBlock Text="停止" />
                                     </Button>

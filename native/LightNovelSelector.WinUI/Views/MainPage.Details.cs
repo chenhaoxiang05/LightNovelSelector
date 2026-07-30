@@ -12,11 +12,14 @@ namespace LightNovelSelector.WinUI;
 public sealed partial class MainPage
 {
     private const int MaxCoverDataUriChars = 12 * 1024 * 1024;
+    private bool _compactDetailDialogOpen;
 
     private async void OnResultSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         _detailCancellation?.Cancel();
         _detailCancellation?.Dispose();
+        _detail = null;
+        UpdateCompactDetailButtonState();
         var cancellation = new CancellationTokenSource();
         _detailCancellation = cancellation;
         if (ResultsList.SelectedItem is not PlanItem plan)
@@ -65,6 +68,7 @@ public sealed partial class MainPage
                 _isDetailRequestActive = false;
                 _detailRequestLock.Release();
             }
+            UpdateCompactDetailButtonState();
             if (ReferenceEquals(_detailCancellation, cancellation))
             {
                 _detailCancellation = null;
@@ -108,11 +112,37 @@ public sealed partial class MainPage
         DetailLoadingState.Visibility = Visibility.Collapsed;
         DetailEmptyState.Visibility = Visibility.Collapsed;
         DetailContent.Visibility = Visibility.Visible;
+        UpdateCompactDetailButtonState();
         Motion.Enter(DetailContent);
-        if (DetailCard.Visibility == Visibility.Collapsed)
+    }
+
+    private async void OnCompactDetailClick(object sender, RoutedEventArgs e)
+    {
+        if (_detail is null || _compactDetailDialogOpen)
         {
-            await ShowCompactDetailDialogAsync(detail);
+            return;
         }
+
+        _compactDetailDialogOpen = true;
+        UpdateCompactDetailButtonState();
+        try
+        {
+            await ShowCompactDetailDialogAsync(_detail);
+        }
+        finally
+        {
+            _compactDetailDialogOpen = false;
+            UpdateCompactDetailButtonState();
+        }
+    }
+
+    private void UpdateCompactDetailButtonState()
+    {
+        CompactDetailButton.IsEnabled = CompactDetailButton.Visibility == Visibility.Visible
+            && _detail is not null
+            && !_compactDetailDialogOpen
+            && !_isDetailRequestActive
+            && _connectionState == ConnectionState.Ready;
     }
 
     private void RenderCandidates(IReadOnlyList<SeriesCandidate> candidates)
@@ -386,6 +416,7 @@ public sealed partial class MainPage
         DetailLoadingState.Visibility = Visibility.Collapsed;
         DetailContent.Visibility = Visibility.Collapsed;
         DetailEmptyState.Visibility = Visibility.Visible;
+        UpdateCompactDetailButtonState();
     }
 
     private async void OnSaveCorrectionClick(object sender, RoutedEventArgs e)

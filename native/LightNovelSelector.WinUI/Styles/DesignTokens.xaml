@@ -5,17 +5,19 @@
 
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
-            <Color x:Key="BackdropToneColor">#08000000</Color>
-            <Color x:Key="LowCardBackgroundColor">#5CFFFFFF</Color>
-            <Color x:Key="CardBackgroundColor">#8CFFFFFF</Color>
-            <Color x:Key="ElevatedCardBackgroundColor">#B8FFFFFF</Color>
-            <Color x:Key="CardHoverColor">#A8FFFFFF</Color>
-            <Color x:Key="CardBorderHighlightColor">#82FFFFFF</Color>
-            <Color x:Key="CardBorderShadowColor">#20000000</Color>
-            <Color x:Key="LowCardBorderHighlightColor">#5CFFFFFF</Color>
-            <Color x:Key="LowCardBorderShadowColor">#12000000</Color>
-            <Color x:Key="SubtleSurfaceColor">#10000000</Color>
-            <Color x:Key="DividerColor">#1A000000</Color>
+            <Color x:Key="BackdropToneColor">#05000000</Color>
+            <Color x:Key="LowCardBackgroundColor">#30FFFFFF</Color>
+            <Color x:Key="CardBackgroundColor">#5CFFFFFF</Color>
+            <Color x:Key="ElevatedCardBackgroundColor">#92FFFFFF</Color>
+            <Color x:Key="CardHoverColor">#72FFFFFF</Color>
+            <Color x:Key="CardBorderHighlightColor">#2EFFFFFF</Color>
+            <Color x:Key="CardBorderShadowColor">#0D000000</Color>
+            <Color x:Key="LowCardBorderHighlightColor">#12FFFFFF</Color>
+            <Color x:Key="LowCardBorderShadowColor">#08000000</Color>
+            <Color x:Key="ElevatedCardBorderHighlightColor">#70FFFFFF</Color>
+            <Color x:Key="ElevatedCardBorderShadowColor">#14000000</Color>
+            <Color x:Key="SubtleSurfaceColor">#0A000000</Color>
+            <Color x:Key="DividerColor">#14000000</Color>
             <Color x:Key="NavigationSelectionColor">#180F6CBD</Color>
             <Color x:Key="ListHoverColor">#6EFFFFFF</Color>
             <Color x:Key="ListPressedColor">#1F0F6CBD</Color>
@@ -40,34 +42,36 @@
                 x:Key="NavigationViewDefaultPaneBackground"
                 FallbackColor="#F2F7FAFF"
                 TintColor="#FFF4F8FF"
-                TintLuminosityOpacity="0.78"
-                TintOpacity="0.22" />
+                TintLuminosityOpacity="0.80"
+                TintOpacity="0.14" />
             <AcrylicBrush
                 x:Key="NavigationViewExpandedPaneBackground"
                 FallbackColor="#F2F7FAFF"
                 TintColor="#FFF4F8FF"
-                TintLuminosityOpacity="0.78"
-                TintOpacity="0.22" />
+                TintLuminosityOpacity="0.80"
+                TintOpacity="0.14" />
             <AcrylicBrush
                 x:Key="NavigationViewTopPaneBackground"
                 FallbackColor="#F2F7FAFF"
                 TintColor="#FFF4F8FF"
-                TintLuminosityOpacity="0.78"
-                TintOpacity="0.22" />
-            <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="#3DFFFFFF" />
+                TintLuminosityOpacity="0.80"
+                TintOpacity="0.14" />
+            <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="Transparent" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
-            <Color x:Key="BackdropToneColor">#18080C12</Color>
-            <Color x:Key="LowCardBackgroundColor">#6615191F</Color>
-            <Color x:Key="CardBackgroundColor">#8C1A1E24</Color>
-            <Color x:Key="ElevatedCardBackgroundColor">#B522272E</Color>
-            <Color x:Key="CardHoverColor">#A2252B33</Color>
-            <Color x:Key="CardBorderHighlightColor">#3DFFFFFF</Color>
-            <Color x:Key="CardBorderShadowColor">#38000000</Color>
-            <Color x:Key="LowCardBorderHighlightColor">#2BFFFFFF</Color>
-            <Color x:Key="LowCardBorderShadowColor">#24000000</Color>
-            <Color x:Key="SubtleSurfaceColor">#14FFFFFF</Color>
-            <Color x:Key="DividerColor">#24FFFFFF</Color>
+            <Color x:Key="BackdropToneColor">#10080C12</Color>
+            <Color x:Key="LowCardBackgroundColor">#3010151B</Color>
+            <Color x:Key="CardBackgroundColor">#52151A20</Color>
+            <Color x:Key="ElevatedCardBackgroundColor">#8C1B2027</Color>
+            <Color x:Key="CardHoverColor">#661F252D</Color>
+            <Color x:Key="CardBorderHighlightColor">#1FFFFFFF</Color>
+            <Color x:Key="CardBorderShadowColor">#20000000</Color>
+            <Color x:Key="LowCardBorderHighlightColor">#14FFFFFF</Color>
+            <Color x:Key="LowCardBorderShadowColor">#10000000</Color>
+            <Color x:Key="ElevatedCardBorderHighlightColor">#42FFFFFF</Color>
+            <Color x:Key="ElevatedCardBorderShadowColor">#2A000000</Color>
+            <Color x:Key="SubtleSurfaceColor">#0FFFFFFF</Color>
+            <Color x:Key="DividerColor">#1CFFFFFF</Color>
             <Color x:Key="NavigationSelectionColor">#2E4A9EFF</Color>
             <Color x:Key="ListHoverColor">#3DFFFFFF</Color>
             <Color x:Key="ListPressedColor">#334A9EFF</Color>
@@ -92,21 +96,21 @@
                 x:Key="NavigationViewDefaultPaneBackground"
                 FallbackColor="#F21D2025"
                 TintColor="#FF15191F"
-                TintLuminosityOpacity="0.62"
-                TintOpacity="0.38" />
+                TintLuminosityOpacity="0.64"
+                TintOpacity="0.26" />
             <AcrylicBrush
                 x:Key="NavigationViewExpandedPaneBackground"
                 FallbackColor="#F21D2025"
                 TintColor="#FF15191F"
-                TintLuminosityOpacity="0.62"
-                TintOpacity="0.38" />
+                TintLuminosityOpacity="0.64"
+                TintOpacity="0.26" />
             <AcrylicBrush
                 x:Key="NavigationViewTopPaneBackground"
                 FallbackColor="#F21D2025"
                 TintColor="#FF15191F"
-                TintLuminosityOpacity="0.62"
-                TintOpacity="0.38" />
-            <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="#2EFFFFFF" />
+                TintLuminosityOpacity="0.64"
+                TintOpacity="0.26" />
+            <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="Transparent" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="HighContrast">
             <Color x:Key="BackdropToneColor">Transparent</Color>
@@ -118,6 +122,8 @@
             <Color x:Key="CardBorderShadowColor">{ThemeResource SystemColorWindowTextColor}</Color>
             <Color x:Key="LowCardBorderHighlightColor">{ThemeResource SystemColorWindowTextColor}</Color>
             <Color x:Key="LowCardBorderShadowColor">{ThemeResource SystemColorWindowTextColor}</Color>
+            <Color x:Key="ElevatedCardBorderHighlightColor">{ThemeResource SystemColorWindowTextColor}</Color>
+            <Color x:Key="ElevatedCardBorderShadowColor">{ThemeResource SystemColorWindowTextColor}</Color>
             <Color x:Key="SubtleSurfaceColor">{ThemeResource SystemColorWindowColor}</Color>
             <Color x:Key="DividerColor">{ThemeResource SystemColorWindowTextColor}</Color>
             <Color x:Key="NavigationSelectionColor">{ThemeResource SystemColorHighlightColor}</Color>
@@ -154,6 +160,10 @@
     <LinearGradientBrush x:Key="LowCardBorderBrush" StartPoint="0.5,0" EndPoint="0.5,1">
         <GradientStop Offset="0" Color="{ThemeResource LowCardBorderHighlightColor}" />
         <GradientStop Offset="1" Color="{ThemeResource LowCardBorderShadowColor}" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ElevatedCardBorderBrush" StartPoint="0.5,0" EndPoint="0.5,1">
+        <GradientStop Offset="0" Color="{ThemeResource ElevatedCardBorderHighlightColor}" />
+        <GradientStop Offset="1" Color="{ThemeResource ElevatedCardBorderShadowColor}" />
     </LinearGradientBrush>
     <SolidColorBrush x:Key="SubtleSurfaceBrush" Color="{ThemeResource SubtleSurfaceColor}" />
     <SolidColorBrush x:Key="DividerBrush" Color="{ThemeResource DividerColor}" />
@@ -194,10 +204,33 @@
 
     <Style x:Key="ElevatedCardBorderStyle" TargetType="Border" BasedOn="{StaticResource CompactCardBorderStyle}">
         <Setter Property="Background" Value="{ThemeResource ElevatedCardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource ElevatedCardBorderBrush}" />
     </Style>
 
     <Style x:Key="HeroCardBorderStyle" TargetType="Border" BasedOn="{StaticResource ElevatedCardBorderStyle}">
         <Setter Property="Padding" Value="18" />
+    </Style>
+
+    <Style x:Key="WorkspaceSurfaceBorderStyle" TargetType="Border" BasedOn="{StaticResource CardBorderStyle}">
+        <Setter Property="Padding" Value="0" />
+    </Style>
+
+    <Style x:Key="ContentRegionBorderStyle" TargetType="Border">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="20" />
+    </Style>
+
+    <Style x:Key="DetailRegionBorderStyle" TargetType="Border" BasedOn="{StaticResource ContentRegionBorderStyle}">
+        <Setter Property="BorderBrush" Value="{ThemeResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1,0,0,0" />
+        <Setter Property="Padding" Value="18" />
+    </Style>
+
+    <Style x:Key="MetricTileBorderStyle" TargetType="Border">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="14" />
     </Style>
 
     <Style x:Key="SectionTitleTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SubtitleTextBlockStyle}">

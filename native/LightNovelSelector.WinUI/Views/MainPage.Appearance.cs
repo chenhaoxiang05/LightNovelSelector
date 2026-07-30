@@ -25,7 +25,7 @@ public sealed partial class MainPage
                     Path = @"D:\Books\classification_report.json",
                     FileName = "classification_report.json",
                     CreatedAt = "2026-07-20T20:22:40+08:00",
-                    Version = "2.1.0-dev.4",
+                    Version = "2.1.0-dev.5",
                     IsLatest = true,
                     CanUndo = true,
                     Status = "available",
@@ -103,6 +103,7 @@ public sealed partial class MainPage
             throw new InvalidOperationException("外观冒烟测试无法访问主窗口。");
         }
 
+        LoadAppearanceSmokeWorkspace();
         var smokeDetail = new BookDetail
         {
             Index = 0,
@@ -164,6 +165,16 @@ public sealed partial class MainPage
         ApplySeriesGroupCheckBox.IsChecked = true;
         await Task.Delay(180);
         ApplySeriesGroupCheckBox.IsChecked = false;
+        if (
+            int.TryParse(
+                Environment.GetEnvironmentVariable("LN_SELECTOR_WINUI_APPEARANCE_HOLD_MS"),
+                out var requestedHold
+            )
+            && requestedHold > 0
+        )
+        {
+            await Task.Delay(Math.Min(requestedHold, 15_000));
+        }
 
         foreach (var theme in new[] { "light", "dark", "system", "dark" })
         {
@@ -190,6 +201,96 @@ public sealed partial class MainPage
         await Task.Delay(220);
         ShellNavigation.SelectedItem = WorkspaceNavigationItem;
         await Task.Delay(220);
+    }
+
+    private void LoadAppearanceSmokeWorkspace()
+    {
+        var plans = new[]
+        {
+            new PlanItem
+            {
+                Index = 0,
+                FileName = "刀剑神域 第01卷.txt",
+                Extension = ".txt",
+                SourcePath = @"D:\Books\刀剑神域 第01卷.txt",
+                BookTitle = "刀剑神域 第01卷",
+                SeriesName = "刀剑神域",
+                SeriesKey = "刀剑神域",
+                TargetDir = @"D:\Books\刀剑神域",
+                TargetPath = @"D:\Books\刀剑神域\刀剑神域 第01卷.txt",
+                TargetName = "刀剑神域 第01卷.txt",
+                ResolverSource = "Bangumi",
+                Confidence = 1,
+                ConfidenceLabel = "100%",
+                Status = "ready",
+                StatusLabel = "可执行",
+                WillMove = true,
+            },
+            new PlanItem
+            {
+                Index = 1,
+                FileName = "无职转生 第13卷 副本.txt",
+                Extension = ".txt",
+                SourcePath = @"D:\Books\无职转生 第13卷 副本.txt",
+                BookTitle = "无职转生 第13卷",
+                SeriesName = "无职转生 ～到了异世界就拿出真本事～",
+                SeriesKey = "无职转生",
+                TargetDir = @"D:\Books\无职转生",
+                TargetPath = @"D:\Books\无职转生\无职转生 第13卷.txt",
+                TargetName = "无职转生 第13卷.txt",
+                ResolverSource = "Bangumi",
+                Confidence = 0.91,
+                ConfidenceLabel = "91%",
+                Status = "ready",
+                StatusLabel = "可执行",
+                WillMove = true,
+            },
+            new PlanItem
+            {
+                Index = 2,
+                FileName = "无职转生 第13卷.txt",
+                Extension = ".txt",
+                SourcePath = @"D:\Books\无职转生 第13卷.txt",
+                BookTitle = "无职转生 第13卷",
+                SeriesName = "无职转生",
+                SeriesKey = "无职转生",
+                TargetDir = @"D:\Books\无职转生",
+                TargetPath = @"D:\Books\无职转生\无职转生 第13卷.txt",
+                TargetName = "无职转生 第13卷.txt",
+                ResolverSource = "重复文件检测",
+                Confidence = 1,
+                ConfidenceLabel = "100%",
+                Status = "duplicate",
+                StatusLabel = "重复",
+                Note = "与现有文件内容相同",
+            },
+        };
+
+        ApplySnapshot(
+            new AppSnapshot
+            {
+                App = _snapshot.App,
+                Folder = @"D:\Books",
+                Settings = _snapshot.Settings,
+                Operation = new OperationState
+                {
+                    Id = 1,
+                    Kind = "scan",
+                    State = "success",
+                    Message = "预览完成，共识别 3 个文件。",
+                    Done = 3,
+                    Total = 3,
+                },
+                Counts = new PlanCounts
+                {
+                    Ready = 2,
+                    Duplicate = 1,
+                    Series = 3,
+                },
+                PlansRevision = 1,
+                Plans = plans,
+            }
+        );
     }
 
     private void LoadAppearanceSettings()
@@ -316,10 +417,4 @@ public sealed partial class MainPage
         );
     }
 
-    private void OnRootLayoutSizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        var compact = e.NewSize.Height < 760;
-        WorkflowStepsPanel.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-        CompactWorkflowSummary.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
-    }
 }
