@@ -244,6 +244,53 @@ if ($appVersion -notmatch "^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$") {
     throw "Invalid application version: $appVersion"
 }
 $numericVersion = ($appVersion -split "[-+]", 2)[0]
+$assemblyVersion = "$numericVersion.0"
+
+[xml]$nativeProjectXml = Get-Content -LiteralPath (
+    Join-Path $ProjectRoot "native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj"
+)
+[xml]$appManifestXml = Get-Content -LiteralPath (
+    Join-Path $ProjectRoot "native\LightNovelSelector.WinUI\app.manifest"
+)
+[xml]$packageManifestXml = Get-Content -LiteralPath (
+    Join-Path $ProjectRoot "native\LightNovelSelector.WinUI\Package.appxmanifest"
+)
+$versionChecks = [ordered]@{
+    "C# Version" = @(
+        [string]$nativeProjectXml.SelectSingleNode("/Project/PropertyGroup/Version").InnerText,
+        $appVersion
+    )
+    "C# AssemblyVersion" = @(
+        [string]$nativeProjectXml.SelectSingleNode("/Project/PropertyGroup/AssemblyVersion").InnerText,
+        $assemblyVersion
+    )
+    "C# FileVersion" = @(
+        [string]$nativeProjectXml.SelectSingleNode("/Project/PropertyGroup/FileVersion").InnerText,
+        $assemblyVersion
+    )
+    "C# InformationalVersion" = @(
+        [string]$nativeProjectXml.SelectSingleNode("/Project/PropertyGroup/InformationalVersion").InnerText,
+        $appVersion
+    )
+    "app.manifest version" = @(
+        [string]$appManifestXml.SelectSingleNode(
+            "/*[local-name()='assembly']/*[local-name()='assemblyIdentity']"
+        ).GetAttribute("version"),
+        $assemblyVersion
+    )
+    "Package.appxmanifest version" = @(
+        [string]$packageManifestXml.SelectSingleNode(
+            "/*[local-name()='Package']/*[local-name()='Identity']"
+        ).GetAttribute("Version"),
+        $assemblyVersion
+    )
+}
+foreach ($entry in $versionChecks.GetEnumerator()) {
+    if ($entry.Value[0] -ne $entry.Value[1]) {
+        throw "$($entry.Key) is $($entry.Value[0]); expected $($entry.Value[1])."
+    }
+}
+Write-Host "Version metadata verified: $appVersion"
 
 if (-not $SkipTests) {
     Write-Host "[5/9] Running Python checks..."

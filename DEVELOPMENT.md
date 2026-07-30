@@ -93,7 +93,7 @@ git diff --check
 
 - 默认跟随 Windows 深浅色，首次材质为 Acrylic；透明效果关闭或高对比度时回退实色。
 - 窗口只创建一层 Desktop Acrylic，卡片使用半透明实色，避免重复模糊带来的 GPU 开销。
-- 高频列表筛选和键盘操作不增加位移动画。
+- 高频列表筛选和键盘操作不增加位移动画；大结果集采用短防抖和单次数据源替换，避免逐行刷新阻塞界面。
 - 进入、Toast、页面切换和按压只动画 `Opacity`、`Translation`、`Scale`，单次不超过 220ms。
 - 按下 100ms、释放 160ms；Toast 进入 180/220ms、退出 140ms。
 - 动画从当前 Composition 状态继续，快速连续通知不会跳回起点。
@@ -101,6 +101,10 @@ git diff --check
 - 图标按钮必须同时提供 Tooltip 和 `AutomationProperties.Name`。
 
 ## 构建单 EXE 安装器
+
+开发版本使用 `主版本.次版本.修订版本-dev.序号`。修改版本时必须同步
+`lightnovel_selector/constants.py`、WinUI 项目属性、`app.manifest` 和
+`Package.appxmanifest`；正式构建会在打包前自动拒绝不一致的版本元数据。
 
 ```powershell
 .\build_winui.bat
@@ -121,7 +125,7 @@ git diff --check
 最终只保留：
 
 ```text
-dist\winui\LightNovelSelector-v2.0.1-win-x64-setup.exe
+dist\winui\LightNovelSelector-v<版本>-win-x64-setup.exe
 ```
 
 安装器会在安装前显示根目录中的 MIT `LICENSE`，并把项目许可证、`THIRD_PARTY_NOTICES.md` 以及 Python、PyInstaller、defusedxml、.NET、Windows App SDK、WebView2 和 Inno Setup 的原始许可文本保留在应用安装目录。

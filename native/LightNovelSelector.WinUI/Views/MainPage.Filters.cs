@@ -44,12 +44,8 @@ public sealed partial class MainPage
             SelectedFilterValue(SeriesFilter),
             SelectedFilterValue(StatusFilter)
         );
-        var filtered = PlanFilterController.Apply(Plans, state);
-        VisiblePlans.Clear();
-        foreach (var plan in filtered)
-        {
-            VisiblePlans.Add(plan);
-        }
+        VisiblePlans = PlanFilterController.Apply(Plans, state);
+        ResultsList.ItemsSource = VisiblePlans;
 
         ResultCountText.Text = state.IsActive
             ? $"{VisiblePlans.Count} / {Plans.Count} 个文件"
@@ -72,14 +68,35 @@ public sealed partial class MainPage
         }
     }
 
-    private void OnResultSearchTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args) =>
-        ApplyPlanFilters();
+    private void OnResultSearchTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+        if (_filterControlsLoading)
+        {
+            return;
+        }
+        _filterTimer.Stop();
+        _filterTimer.Start();
+    }
 
-    private void OnPlanFilterSelectionChanged(object sender, SelectionChangedEventArgs e) =>
+    private void OnFilterTimerTick(object? sender, object e)
+    {
+        _filterTimer.Stop();
         ApplyPlanFilters();
+    }
+
+    private void OnPlanFilterSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_filterControlsLoading)
+        {
+            return;
+        }
+        _filterTimer.Stop();
+        ApplyPlanFilters();
+    }
 
     private void OnClearFiltersClick(object sender, RoutedEventArgs e)
     {
+        _filterTimer.Stop();
         _filterControlsLoading = true;
         ResultSearchBox.Text = string.Empty;
         SeriesFilter.SelectedIndex = 0;

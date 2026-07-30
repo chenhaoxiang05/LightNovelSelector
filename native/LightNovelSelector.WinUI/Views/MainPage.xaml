@@ -433,7 +433,6 @@
                                             <ComboBoxItem Content="全部状态" Tag="" />
                                             <ComboBoxItem Content="可执行" Tag="ready" />
                                             <ComboBoxItem Content="重复" Tag="duplicate" />
-                                            <ComboBoxItem Content="冲突" Tag="conflict" />
                                             <ComboBoxItem Content="错误" Tag="error" />
                                             <ComboBoxItem Content="无需移动" Tag="unchanged" />
                                             <ComboBoxItem Content="已移动" Tag="moved" />
@@ -477,7 +476,6 @@
                                         <ListView
                                             x:Name="ResultsList"
                                             ItemContainerStyle="{StaticResource ResultItemContainerStyle}"
-                                            ItemsSource="{x:Bind VisiblePlans}"
                                             SelectionChanged="OnResultSelectionChanged"
                                             Style="{StaticResource ResultListViewStyle}">
                                             <ListView.Resources>

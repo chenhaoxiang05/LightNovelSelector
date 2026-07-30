@@ -13,6 +13,7 @@ from .constants import (
     APP_VERSION,
     REPORT_MAX_BYTES,
     REPORT_SCHEMA_VERSION,
+    SCAN_MAX_ENTRIES,
     SCAN_MAX_FILES,
     SERIES_NAME_MAX_CHARS,
     SUPPORTED_EXTENSIONS,
@@ -58,18 +59,40 @@ def _is_supported_regular_file(path: Path) -> bool:
         return False
 
 
-def find_novel_files(root: Path, recursive: bool = False) -> list[Path]:
+def find_novel_files(
+    root: Path,
+    recursive: bool = False,
+    *,
+    checkpoint: Callable[[], None] | None = None,
+) -> list[Path]:
+    root = root.expanduser().resolve()
     iterator = root.rglob("*") if recursive else root.iterdir()
     files: list[Path] = []
-    for path in iterator:
+    for inspected, path in enumerate(iterator, start=1):
+        if checkpoint:
+            checkpoint()
+        if inspected > SCAN_MAX_ENTRIES:
+            raise ValueError(
+                f"单次扫描最多检查 {SCAN_MAX_ENTRIES} 个目录项，请缩小目录范围后重试。"
+            )
         if not _is_supported_regular_file(path):
             continue
+        if recursive:
+            try:
+                path.resolve().relative_to(root)
+            except (OSError, ValueError):
+                continue
         files.append(path)
         if len(files) > SCAN_MAX_FILES:
             raise ValueError(
                 f"单次扫描最多支持 {SCAN_MAX_FILES} 个小说文件，请分目录处理。"
             )
-    return sorted(files, key=lambda item: item.name.casefold())
+
+    def sort_key(item: Path) -> tuple[str, str, str]:
+        relative = item.relative_to(root).as_posix()
+        return item.name.casefold(), relative.casefold(), relative
+
+    return sorted(files, key=sort_key)
 
 
 def unique_target_path(target_path: Path, reserved: set[Path]) -> Path:
@@ -427,7 +450,13 @@ def build_classification_plan(
 ) -> list[ClassificationPlan]:
     root = validate_classification_root(root)
 
-    files = find_novel_files(root, recursive=recursive)
+    if progress:
+        progress("正在查找支持的小说文件…")
+    files = find_novel_files(
+        root,
+        recursive=recursive,
+        checkpoint=checkpoint,
+    )
     if files and progress:
         progress(f"正在检查 {len(files)} 个文件的重复内容…")
 

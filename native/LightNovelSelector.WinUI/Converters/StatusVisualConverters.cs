@@ -13,7 +13,7 @@ public sealed class StatusBrushConverter : IValueConverter
         var key = status switch
         {
             "ready" or "moved" or "unchanged" => background ? "SuccessSubtleBrush" : "SuccessTextBrush",
-            "duplicate" or "conflict" => background ? "WarningSubtleBrush" : "WarningTextBrush",
+            "duplicate" => background ? "WarningSubtleBrush" : "WarningTextBrush",
             "error" => background ? "ErrorSubtleBrush" : "ErrorTextBrush",
             _ => background ? "AccentSubtleBrush" : "AppAccentBrush",
         };
@@ -30,7 +30,6 @@ public sealed class StatusGlyphConverter : IValueConverter
     {
         "ready" or "moved" or "unchanged" => "\uE73E",
         "duplicate" => "\uE8C8",
-        "conflict" => "\uE7BA",
         "error" => "\uEA39",
         _ => "\uE946",
     };

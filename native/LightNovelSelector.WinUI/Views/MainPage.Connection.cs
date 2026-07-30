@@ -111,9 +111,11 @@ public sealed partial class MainPage
         _lastOperationState = "idle";
         _settingsInitialized = false;
         _seenLogIds.Clear();
+        _filterTimer.Stop();
         Logs.Clear();
-        Plans.Clear();
-        VisiblePlans.Clear();
+        Plans = [];
+        VisiblePlans = [];
+        ResultsList.ItemsSource = VisiblePlans;
         ReportItems.Clear();
         RebuildPlanFilters();
         ApplyPlanFilters();

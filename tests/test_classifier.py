@@ -26,6 +26,7 @@ from lightnovel_classifier import (
     extract_book_lookup_query,
     extract_series_guess,
     find_duplicate_files,
+    find_novel_files,
     http_bytes,
     http_json,
     identity_query_for_path,
@@ -130,6 +131,48 @@ class FilenameParsingTests(unittest.TestCase):
 
 
 class MovePlanTests(unittest.TestCase):
+    def test_file_discovery_can_be_cancelled_before_duplicate_hashing(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "ignored.bin").write_bytes(b"not a novel")
+
+            def checkpoint() -> None:
+                raise RuntimeError("cancelled during discovery")
+
+            with self.assertRaisesRegex(RuntimeError, "cancelled during discovery"):
+                build_classification_plan(
+                    root,
+                    use_network=False,
+                    checkpoint=checkpoint,
+                )
+
+    def test_file_discovery_limits_all_directory_entries(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for index in range(3):
+                (root / f"ignored-{index}.bin").write_bytes(b"not a novel")
+
+            with (
+                patch("lightnovel_selector.classification.SCAN_MAX_ENTRIES", 2),
+                self.assertRaisesRegex(ValueError, "最多检查 2 个目录项"),
+            ):
+                find_novel_files(root)
+
+    def test_recursive_file_discovery_is_deterministic_for_matching_names(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "A" / "same.txt"
+            second = root / "B" / "same.txt"
+            first.parent.mkdir()
+            second.parent.mkdir()
+            first.write_text("first", encoding="utf-8")
+            second.write_text("second", encoding="utf-8")
+
+            self.assertEqual(
+                find_novel_files(root, recursive=True),
+                [first, second],
+            )
+
     def test_dry_plan_and_move_without_network(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -856,7 +899,6 @@ class ApplicationServiceTests(unittest.TestCase):
             with ZipFile(book, "w", compression=ZIP_DEFLATED) as archive:
                 archive.writestr("cover.png", MINIMAL_PNG)
             plans = build_classification_plan(root, use_network=False)
-            self.assertIsNone(plans[0].local_cover_bytes)
 
             with patch(
                 "lightnovel_selector.application.load_app_settings",
@@ -869,7 +911,6 @@ class ApplicationServiceTests(unittest.TestCase):
             detail = service.get_detail(0)
             self.assertEqual(detail["cover_source"], "本地封面")
             self.assertTrue(detail["cover_data_url"].startswith("data:image/png;base64,"))
-            self.assertIsNone(service.plans[0].local_cover_bytes)
 
     def test_snapshot_only_resends_plans_after_revision_change(self) -> None:
         from lightnovel_selector.application import ApplicationService

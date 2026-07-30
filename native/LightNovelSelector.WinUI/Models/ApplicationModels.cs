@@ -59,7 +59,6 @@ public sealed class PlanCounts
 {
     public int Ready { get; init; }
     public int Duplicate { get; init; }
-    public int Conflict { get; init; }
     public int Error { get; init; }
     public int Unchanged { get; init; }
     public int Moved { get; init; }

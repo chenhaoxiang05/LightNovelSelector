@@ -16,11 +16,7 @@ public sealed partial class MainPage
 
         if (snapshot.Plans is not null)
         {
-            Plans.Clear();
-            foreach (var plan in snapshot.Plans)
-            {
-                Plans.Add(plan);
-            }
+            Plans = snapshot.Plans.ToArray();
             RebuildPlanFilters();
             ApplyPlanFilters(selectedIndex);
         }
@@ -50,7 +46,7 @@ public sealed partial class MainPage
         SetCount(ReadyCountText, snapshot.Counts.Ready);
         SetCount(SeriesCountText, snapshot.Counts.Series);
         SetCount(DuplicateCountText, snapshot.Counts.Duplicate);
-        SetCount(AttentionCountText, snapshot.Counts.Conflict + snapshot.Counts.Error);
+        SetCount(AttentionCountText, snapshot.Counts.Error);
         UpdateOperation(snapshot.Operation);
         UpdateWorkflowRail(snapshot);
         UpdateReportAvailability();
