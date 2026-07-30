@@ -26,6 +26,7 @@ public sealed partial class MainPage
             ShowDetailEmpty();
             return;
         }
+        var plansRevision = _plansRevision;
 
         DetailEmptyState.Visibility = Visibility.Collapsed;
         DetailContent.Visibility = Visibility.Collapsed;
@@ -37,7 +38,7 @@ public sealed partial class MainPage
             await _detailRequestLock.WaitAsync(cancellation.Token);
             lockTaken = true;
             _isDetailRequestActive = true;
-            var detail = await _sidecar.GetDetailAsync(plan.Index);
+            var detail = await _sidecar.GetDetailAsync(plan.Index, plansRevision);
             if (cancellation.IsCancellationRequested || (ResultsList.SelectedItem as PlanItem)?.Index != detail.Index)
             {
                 return;
@@ -89,6 +90,17 @@ public sealed partial class MainPage
         DetailStatusText.Foreground = StatusBrush(detail.Status, background: false);
         DetailStatusIcon.Foreground = StatusBrush(detail.Status, background: false);
         SeriesEditBox.Text = detail.SeriesName;
+        RenderCandidates(detail.Candidates);
+        ApplySeriesGroupCheckBox.IsChecked = false;
+        ApplySeriesGroupCheckBox.Content = $"同时修正当前系列的 {detail.MatchingSeriesCount} 个条目";
+        ApplySeriesGroupCheckBox.Visibility = detail.MatchingSeriesCount > 1
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        LoadCandidatesButton.Visibility = detail.CanLoadCandidates
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        UpdateCandidateLookupState();
+        UpdateCorrectionButtonState();
         DetailWarningBar.IsOpen = !string.IsNullOrWhiteSpace(detail.Warning);
         DetailWarningBar.Message = detail.Warning ?? string.Empty;
         OpenSubjectButton.IsEnabled = UriSafety.TryCreatePublicHttpsUri(detail.SubjectUrl, out _);
@@ -103,6 +115,94 @@ public sealed partial class MainPage
         }
     }
 
+    private void RenderCandidates(IReadOnlyList<SeriesCandidate> candidates)
+    {
+        CandidateList.ItemsSource = candidates;
+        CandidateList.SelectedItem = candidates.FirstOrDefault(candidate => candidate.IsCurrent)
+            ?? candidates.FirstOrDefault();
+    }
+
+    private void OnCandidateSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CandidateList.SelectedItem is SeriesCandidate candidate)
+        {
+            SeriesEditBox.Text = candidate.SeriesName;
+        }
+    }
+
+    private async void OnLoadCandidatesClick(object sender, RoutedEventArgs e)
+    {
+        if (_detail is null || _isCandidateLookupActive || _isSavingCorrection)
+        {
+            return;
+        }
+
+        var detailIndex = _detail.Index;
+        var plansRevision = _detail.PlansRevision;
+        _isCandidateLookupActive = true;
+        UpdateCandidateLookupState();
+        UpdateCorrectionButtonState();
+        try
+        {
+            var result = await _sidecar.LoadCandidatesAsync(detailIndex, plansRevision);
+            if (_detail?.Index != result.Index)
+            {
+                return;
+            }
+            RenderCandidates(result.Candidates);
+            if (!string.IsNullOrWhiteSpace(result.Warning))
+            {
+                ShowToast(result.Warning, ToastKind.Warning);
+            }
+            else
+            {
+                ShowToast($"已找到 {result.Candidates.Count} 个可比较结果。", ToastKind.Success);
+            }
+        }
+        catch (Exception exc)
+        {
+            ShowToast(exc.Message, ToastKind.Error);
+        }
+        finally
+        {
+            _isCandidateLookupActive = false;
+            UpdateCandidateLookupState();
+            UpdateCorrectionButtonState();
+        }
+    }
+
+    private void UpdateCandidateLookupState()
+    {
+        CandidateLookupProgress.IsActive = _isCandidateLookupActive;
+        CandidateLookupProgress.Visibility = _isCandidateLookupActive
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        LoadCandidatesButton.IsEnabled = !_isCandidateLookupActive
+            && !_isSavingCorrection
+            && _connectionState == ConnectionState.Ready
+            && _detail is { CanLoadCandidates: true }
+            && _snapshot.Operation.State != "running";
+    }
+
+    private void OnBatchScopeChanged(object sender, RoutedEventArgs e)
+    {
+        UpdateCorrectionButtonState();
+    }
+
+    private void UpdateCorrectionButtonState()
+    {
+        var useBatch = ApplySeriesGroupCheckBox.IsChecked == true
+            && _detail is { MatchingSeriesCount: > 1 };
+        SaveCorrectionText.Text = useBatch
+            ? $"批量修正 {_detail!.MatchingSeriesCount} 项"
+            : "保存修正";
+        SaveCorrectionButton.IsEnabled = !_isSavingCorrection
+            && !_isCandidateLookupActive
+            && _connectionState == ConnectionState.Ready
+            && _snapshot.Operation.State != "running"
+            && _detail is not null;
+    }
+
     private async Task ShowCompactDetailDialogAsync(BookDetail detail)
     {
         var editor = new TextBox
@@ -110,6 +210,70 @@ public sealed partial class MainPage
             Header = "系列文件夹名称",
             Text = detail.SeriesName,
             MaxLength = 120,
+        };
+        var candidates = new ComboBox
+        {
+            Header = "候选系列",
+            DisplayMemberPath = nameof(SeriesCandidate.DisplayLabel),
+            ItemsSource = detail.Candidates,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        candidates.SelectedItem = detail.Candidates.FirstOrDefault(candidate => candidate.IsCurrent)
+            ?? detail.Candidates.FirstOrDefault();
+        candidates.SelectionChanged += (_, _) =>
+        {
+            if (candidates.SelectedItem is SeriesCandidate candidate)
+            {
+                editor.Text = candidate.SeriesName;
+            }
+        };
+        var batchScope = new CheckBox
+        {
+            Content = $"同时修正当前系列的 {detail.MatchingSeriesCount} 个条目",
+            Visibility = detail.MatchingSeriesCount > 1
+                ? Visibility.Visible
+                : Visibility.Collapsed,
+        };
+        var lookupButton = new Button
+        {
+            Content = "联网查找更多候选",
+            IsEnabled = detail.CanLoadCandidates,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        lookupButton.Click += async (_, _) =>
+        {
+            if (_isCandidateLookupActive || _isSavingCorrection)
+            {
+                return;
+            }
+            _isCandidateLookupActive = true;
+            lookupButton.IsEnabled = false;
+            UpdateCandidateLookupState();
+            UpdateCorrectionButtonState();
+            try
+            {
+                var result = await _sidecar.LoadCandidatesAsync(detail.Index, detail.PlansRevision);
+                candidates.ItemsSource = result.Candidates;
+                candidates.SelectedItem = result.Candidates.FirstOrDefault(candidate => candidate.IsCurrent)
+                    ?? result.Candidates.FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(result.Warning))
+                {
+                    ShowToast(result.Warning, ToastKind.Warning);
+                }
+            }
+            catch (Exception exc)
+            {
+                ShowToast(exc.Message, ToastKind.Error);
+            }
+            finally
+            {
+                _isCandidateLookupActive = false;
+                lookupButton.IsEnabled = detail.CanLoadCandidates
+                    && _connectionState == ConnectionState.Ready
+                    && _snapshot.Operation.State != "running";
+                UpdateCandidateLookupState();
+                UpdateCorrectionButtonState();
+            }
         };
         var panel = new StackPanel { Spacing = 12, MaxWidth = 460 };
         panel.Children.Add(new TextBlock
@@ -136,7 +300,10 @@ public sealed partial class MainPage
             TextWrapping = TextWrapping.Wrap,
             Foreground = ResourceBrush("TextFillColorSecondaryBrush"),
         });
+        panel.Children.Add(candidates);
+        panel.Children.Add(lookupButton);
         panel.Children.Add(editor);
+        panel.Children.Add(batchScope);
         panel.Children.Add(new TextBlock
         {
             Text = detail.TargetPath,
@@ -156,7 +323,13 @@ public sealed partial class MainPage
         };
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
         {
-            await SaveCorrectionAsync(detail.Index, editor.Text);
+            await SaveCorrectionAsync(
+                detail.Index,
+                editor.Text,
+                batchScope.IsChecked == true,
+                detail.MatchingSeriesCount,
+                detail.PlansRevision
+            );
         }
     }
 
@@ -205,6 +378,10 @@ public sealed partial class MainPage
     private void ShowDetailEmpty()
     {
         _detail = null;
+        CandidateList.ItemsSource = null;
+        ApplySeriesGroupCheckBox.IsChecked = false;
+        ApplySeriesGroupCheckBox.Visibility = Visibility.Collapsed;
+        LoadCandidatesButton.Visibility = Visibility.Collapsed;
         CoverImage.Source = null;
         DetailLoadingState.Visibility = Visibility.Collapsed;
         DetailContent.Visibility = Visibility.Collapsed;
@@ -215,12 +392,34 @@ public sealed partial class MainPage
     {
         if (_detail is not null)
         {
-            await SaveCorrectionAsync(_detail.Index, SeriesEditBox.Text);
+            await SaveCorrectionAsync(
+                _detail.Index,
+                SeriesEditBox.Text,
+                ApplySeriesGroupCheckBox.IsChecked == true,
+                _detail.MatchingSeriesCount,
+                _detail.PlansRevision
+            );
         }
     }
 
-    private async Task SaveCorrectionAsync(int index, string value)
+    private async Task SaveCorrectionAsync(
+        int index,
+        string value,
+        bool useBatch,
+        int matchingSeriesCount,
+        int plansRevision
+    )
     {
+        if (_isSavingCorrection)
+        {
+            return;
+        }
+        if (_isCandidateLookupActive)
+        {
+            ShowToast("候选仍在加载，请稍候再保存修正。", ToastKind.Warning);
+            return;
+        }
+
         var seriesName = value.Trim();
         if (string.IsNullOrWhiteSpace(seriesName))
         {
@@ -229,16 +428,52 @@ public sealed partial class MainPage
             return;
         }
 
+        if (useBatch && matchingSeriesCount > 1)
+        {
+            var confirmation = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = $"批量修正 {matchingSeriesCount} 个条目？",
+                Content = $"这只会更新当前分类预览，不会立即移动文件。确认后，这些条目会统一归入「{seriesName}」。",
+                PrimaryButtonText = $"修正 {matchingSeriesCount} 项",
+                CloseButtonText = "取消",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+            {
+                return;
+            }
+        }
+
+        _isSavingCorrection = true;
+        UpdateCandidateLookupState();
+        UpdateCorrectionButtonState();
         try
         {
-            var snapshot = await _sidecar.EditPlanAsync(index, seriesName);
-            ApplySnapshot(snapshot);
+            var result = await _sidecar.EditPlansAsync(
+                index,
+                seriesName,
+                useBatch ? "same_series" : "single",
+                plansRevision
+            );
+            ApplySnapshot(result.Snapshot);
             ResultsList.SelectedItem = VisiblePlans.FirstOrDefault(item => item.Index == index);
-            ShowToast("分类结果已手动修正。", ToastKind.Success);
+            ShowToast(
+                result.UpdatedCount > 1
+                    ? $"已批量修正 {result.UpdatedCount} 个条目。"
+                    : "分类结果已手动修正。",
+                ToastKind.Success
+            );
         }
         catch (Exception exc)
         {
             ShowToast(exc.Message, ToastKind.Error);
+        }
+        finally
+        {
+            _isSavingCorrection = false;
+            UpdateCandidateLookupState();
+            UpdateCorrectionButtonState();
         }
     }
 

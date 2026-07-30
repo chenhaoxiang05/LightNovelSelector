@@ -1,5 +1,6 @@
 using LightNovelSelector.WinUI.Appearance;
 using LightNovelSelector.WinUI.Helpers;
+using LightNovelSelector.WinUI.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -16,6 +17,68 @@ public sealed partial class MainPage
         {
             throw new InvalidOperationException("外观冒烟测试无法访问主窗口。");
         }
+
+        var smokeDetail = new BookDetail
+        {
+            Index = 0,
+            PlansRevision = 1,
+            Identity = new BookIdentity
+            {
+                Title = "青春物语 第03卷",
+                SeriesName = "青春物语",
+                Authors = ["示例作者"],
+                VolumeNumber = 3,
+                Language = "zh-Hans",
+                Tags = ["校园", "青春"],
+            },
+            Title = "青春物语 第03卷",
+            Summary = "用于验证候选比较、批量修正和玻璃主题下文字层级的本地测试详情。",
+            CoverSource = "无封面",
+            FileName = "青春物语 第03卷.epub",
+            SourcePath = @"D:\Books\青春物语 第03卷.epub",
+            TargetPath = @"D:\Books\青春物语\青春物语 第03卷.epub",
+            SeriesName = "青春物语",
+            Authors = ["示例作者"],
+            AuthorsLabel = "示例作者",
+            VolumeNumber = 3,
+            VolumeLabel = "第 3 卷",
+            Language = "zh-Hans",
+            LanguageLabel = "简体中文",
+            Tags = ["校园", "青春"],
+            TagsLabel = "校园 · 青春",
+            ResolverSource = "Bangumi",
+            ConfidenceLabel = "86%",
+            Status = "ready",
+            StatusLabel = "准备整理",
+            Candidates =
+            [
+                new SeriesCandidate
+                {
+                    Title = "青春物语 第03卷",
+                    SeriesName = "青春物语",
+                    Source = "Bangumi",
+                    Confidence = 0.86,
+                    ConfidenceLabel = "86%",
+                    IsCurrent = true,
+                    CurrentLabel = "当前",
+                },
+                new SeriesCandidate
+                {
+                    Title = "我的青春恋爱物语果然有问题 第03卷",
+                    SeriesName = "我的青春恋爱物语果然有问题",
+                    Source = "本地识别",
+                    Confidence = 0.62,
+                    ConfidenceLabel = "62%",
+                },
+            ],
+            MatchingSeriesCount = 3,
+            CanLoadCandidates = true,
+        };
+        _detail = smokeDetail;
+        await RenderDetailAsync(smokeDetail);
+        ApplySeriesGroupCheckBox.IsChecked = true;
+        await Task.Delay(180);
+        ApplySeriesGroupCheckBox.IsChecked = false;
 
         foreach (var theme in new[] { "light", "dark", "system", "dark" })
         {

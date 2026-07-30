@@ -631,8 +631,67 @@
                                             </StackPanel>
 
                                             <StackPanel Spacing="6">
+                                                <Grid ColumnSpacing="8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Text="候选系列" />
+                                                    <ProgressRing
+                                                        x:Name="CandidateLookupProgress"
+                                                        Grid.Column="1"
+                                                        Width="16"
+                                                        Height="16"
+                                                        IsActive="False"
+                                                        Visibility="Collapsed" />
+                                                    <Button
+                                                        x:Name="LoadCandidatesButton"
+                                                        Grid.Column="2"
+                                                        MinWidth="104"
+                                                        Click="OnLoadCandidatesClick"
+                                                        Content="联网查找更多"
+                                                        Style="{StaticResource ToolbarButtonStyle}" />
+                                                </Grid>
+                                                <ListView
+                                                    x:Name="CandidateList"
+                                                    MaxHeight="184"
+                                                    ItemContainerStyle="{StaticResource ResultItemContainerStyle}"
+                                                    SelectionChanged="OnCandidateSelectionChanged"
+                                                    Style="{StaticResource ResultListViewStyle}">
+                                                    <ListView.ItemTemplate>
+                                                        <DataTemplate x:DataType="models:SeriesCandidate">
+                                                            <Grid Padding="9,6" ColumnSpacing="8">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <StackPanel Spacing="2">
+                                                                    <TextBlock FontSize="12" FontWeight="SemiBold" Text="{x:Bind SeriesName}" TextTrimming="CharacterEllipsis" />
+                                                                    <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="{x:Bind SourceLabel}" TextTrimming="CharacterEllipsis" />
+                                                                </StackPanel>
+                                                                <TextBlock
+                                                                    Grid.Column="1"
+                                                                    VerticalAlignment="Center"
+                                                                    FontSize="11"
+                                                                    FontWeight="SemiBold"
+                                                                    Foreground="{ThemeResource AppAccentBrush}"
+                                                                    Text="{x:Bind CurrentLabel}" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ListView.ItemTemplate>
+                                                </ListView>
+                                            </StackPanel>
+
+                                            <StackPanel Spacing="6">
                                                 <TextBlock FontSize="12" FontWeight="SemiBold" Text="手动修正系列" />
                                                 <TextBox x:Name="SeriesEditBox" MaxLength="120" PlaceholderText="系列文件夹名称" />
+                                                <CheckBox
+                                                    x:Name="ApplySeriesGroupCheckBox"
+                                                    Checked="OnBatchScopeChanged"
+                                                    Content="同时修正当前系列"
+                                                    Unchecked="OnBatchScopeChanged"
+                                                    Visibility="Collapsed" />
                                                 <Button
                                                     x:Name="SaveCorrectionButton"
                                                     HorizontalAlignment="Stretch"
@@ -640,7 +699,7 @@
                                                     Style="{StaticResource ToolbarButtonStyle}">
                                                     <StackPanel HorizontalAlignment="Center" Orientation="Horizontal" Spacing="7">
                                                         <FontIcon FontSize="14" Glyph="&#xE73E;" />
-                                                        <TextBlock Text="保存修正" />
+                                                        <TextBlock x:Name="SaveCorrectionText" Text="保存修正" />
                                                     </StackPanel>
                                                 </Button>
                                             </StackPanel>

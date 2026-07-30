@@ -118,9 +118,28 @@ public sealed class LogEntry
     public string Message { get; set; } = string.Empty;
 }
 
+public sealed class SeriesCandidate
+{
+    public BookIdentity Identity { get; init; } = new();
+    public string Title { get; init; } = string.Empty;
+    public string SeriesName { get; init; } = string.Empty;
+    public string AuthorsLabel { get; init; } = string.Empty;
+    public string VolumeLabel { get; init; } = string.Empty;
+    public string LanguageLabel { get; init; } = string.Empty;
+    public string TagsLabel { get; init; } = string.Empty;
+    public string Source { get; init; } = string.Empty;
+    public double Confidence { get; init; }
+    public string ConfidenceLabel { get; init; } = string.Empty;
+    public bool IsCurrent { get; init; }
+    public string CurrentLabel { get; init; } = string.Empty;
+    public string DisplayLabel => $"{SeriesName} · {Source} {ConfidenceLabel}";
+    public string SourceLabel => $"{Source} · 置信度 {ConfidenceLabel}";
+}
+
 public sealed class BookDetail
 {
     public int Index { get; init; }
+    public int PlansRevision { get; init; }
     public BookIdentity Identity { get; init; } = new();
     public string Title { get; init; } = string.Empty;
     public string Summary { get; init; } = string.Empty;
@@ -145,6 +164,23 @@ public sealed class BookDetail
     public string StatusLabel { get; init; } = string.Empty;
     public string Note { get; init; } = string.Empty;
     public string? Warning { get; init; }
+    public IReadOnlyList<SeriesCandidate> Candidates { get; init; } = [];
+    public int MatchingSeriesCount { get; init; } = 1;
+    public bool CanLoadCandidates { get; init; }
+}
+
+public sealed class CandidateLookupResult
+{
+    public int Index { get; init; }
+    public IReadOnlyList<SeriesCandidate> Candidates { get; init; } = [];
+    public string? Warning { get; init; }
+}
+
+public sealed class EditPlansResult
+{
+    public int UpdatedCount { get; init; }
+    public IReadOnlyList<int> UpdatedIndices { get; init; } = [];
+    public AppSnapshot Snapshot { get; init; } = new();
 }
 
 public sealed class SaveSettingsResult

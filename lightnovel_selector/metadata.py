@@ -324,6 +324,37 @@ class SeriesResolver:
         self._cache[cache_key] = result
         return result
 
+    def resolve_candidates(self, query: str) -> tuple[ResolveResult, ...]:
+        query = collapse_spaces(query)
+        if not self.use_network or not query:
+            return ()
+
+        self.last_network_error = None
+        results: list[ResolveResult] = []
+        errors: list[str] = []
+        for provider in (self._search_bangumi, self._search_anilist, self._search_jikan):
+            provider_name = getattr(provider, "__name__", provider.__class__.__name__)
+            try:
+                result = provider(query)
+            except (
+                urllib.error.URLError,
+                TimeoutError,
+                OSError,
+                RuntimeError,
+                json.JSONDecodeError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                errors.append(f"{provider_name}: {exc}")
+                continue
+            if result is not None:
+                results.append(result)
+
+        if errors:
+            self.last_network_error = "；".join(errors)
+        return tuple(results)
+
     def resolve_book_metadata(self, file_name: str, series_name: str = "") -> BookMetadata | None:
         return self.resolve_book_metadata_for_query(extract_book_lookup_query(file_name), series_name=series_name)
 
@@ -420,6 +451,7 @@ class SeriesResolver:
 
     def _resolve_with_network(self, query: str) -> ResolveResult | None:
         for provider in (self._search_bangumi, self._search_anilist, self._search_jikan):
+            provider_name = getattr(provider, "__name__", provider.__class__.__name__)
             try:
                 result = provider(query)
             except (
@@ -432,7 +464,7 @@ class SeriesResolver:
                 TypeError,
                 ValueError,
             ) as exc:
-                self.last_network_error = f"{provider.__name__}: {exc}"
+                self.last_network_error = f"{provider_name}: {exc}"
                 result = None
             if result is not None:
                 return result

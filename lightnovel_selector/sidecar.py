@@ -47,7 +47,9 @@ class SidecarServer:
             "start_apply": lambda params: self._service.start_apply(),
             "start_undo": lambda params: self._service.start_undo(),
             "edit_plan": self._edit_plan,
+            "edit_plans": self._edit_plans,
             "get_detail": self._get_detail,
+            "load_candidates": self._load_candidates,
             "get_report": lambda params: self._service.report_summary(),
         }
 
@@ -92,7 +94,28 @@ class SidecarServer:
         )
 
     def _get_detail(self, params: dict[str, Any]) -> dict[str, Any]:
-        return self._service.get_detail(self._integer(params, "index"))
+        return self._service.get_detail(
+            self._integer(params, "index"),
+            expected_plans_revision=self._optional_integer(params, "plans_revision"),
+        )
+
+    def _edit_plans(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self._service.edit_plans(
+            self._integer(params, "index"),
+            self._string(
+                params,
+                "series_name",
+                max_chars=SERIES_NAME_MAX_CHARS,
+            ),
+            scope=self._string(params, "scope", max_chars=32),
+            expected_plans_revision=self._optional_integer(params, "plans_revision"),
+        )
+
+    def _load_candidates(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self._service.load_candidates(
+            self._integer(params, "index"),
+            expected_plans_revision=self._optional_integer(params, "plans_revision"),
+        )
 
     @staticmethod
     def _integer(params: dict[str, Any], name: str, *, default: int | None = None) -> int:
@@ -100,6 +123,15 @@ class SidecarServer:
             if default is not None:
                 return default
             raise ProtocolError(f"缺少参数：{name}")
+        value = params[name]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ProtocolError(f"参数 {name} 必须是整数。")
+        return value
+
+    @staticmethod
+    def _optional_integer(params: dict[str, Any], name: str) -> int | None:
+        if name not in params:
+            return None
         value = params[name]
         if isinstance(value, bool) or not isinstance(value, int):
             raise ProtocolError(f"参数 {name} 必须是整数。")

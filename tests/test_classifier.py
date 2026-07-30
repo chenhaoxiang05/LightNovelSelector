@@ -2,6 +2,7 @@ import json
 import threading
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -9,6 +10,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import lightnovel_classifier
 from lightnovel_classifier import (
+    CLASSIFICATION_CANDIDATE_MAX_COUNT,
     COVER_MAX_BYTES,
     FILE_FINGERPRINT_CHUNK_SIZE,
     IDENTITY_MAX_AUTHORS,
@@ -19,6 +21,7 @@ from lightnovel_classifier import (
     AppSettings,
     BookIdentity,
     BookMetadata,
+    ClassificationCandidate,
     CustomRule,
     PersistentMetadataCache,
     ResolveResult,
@@ -30,6 +33,7 @@ from lightnovel_classifier import (
     book_metadata_from_dict,
     book_metadata_to_dict,
     build_classification_plan,
+    classification_plan_group_indices,
     classification_plan_to_report_item,
     clean_summary,
     count_plan_statuses,
@@ -45,6 +49,7 @@ from lightnovel_classifier import (
     item_matches_volume,
     load_app_settings,
     load_classification_report,
+    merge_classification_candidates,
     normalize_for_match,
     parse_volume_number,
     plan_status_label,
@@ -52,6 +57,7 @@ from lightnovel_classifier import (
     read_epub_book_identity,
     read_local_cover_bytes,
     revise_classification_plan,
+    revise_classification_plans,
     safe_folder_name,
     save_app_settings,
     suggest_renamed_filename,
@@ -174,6 +180,55 @@ class FilenameParsingTests(unittest.TestCase):
             ),
             "Demo 第00卷.epub",
         )
+
+
+class CandidateTests(unittest.TestCase):
+    def test_candidate_merge_deduplicates_series_and_enforces_limit(self) -> None:
+        candidates = tuple(
+            ClassificationCandidate(
+                identity=BookIdentity(title=f"Book {index}", series_name=f"Series {index}"),
+                source=f"Source {index}",
+                confidence=0.5,
+            )
+            for index in range(CLASSIFICATION_CANDIDATE_MAX_COUNT + 2)
+        )
+        preferred_duplicate = ClassificationCandidate(
+            identity=BookIdentity(title="Preferred", series_name="Series 0"),
+            source="Preferred Source",
+            confidence=0.95,
+        )
+
+        merged = merge_classification_candidates(
+            candidates,
+            (preferred_duplicate,),
+        )
+
+        self.assertEqual(len(merged), CLASSIFICATION_CANDIDATE_MAX_COUNT)
+        self.assertEqual(merged[0], preferred_duplicate)
+
+    def test_resolver_collects_available_providers_and_keeps_partial_error(self) -> None:
+        resolver = lightnovel_classifier.SeriesResolver(use_network=True)
+        bangumi = ResolveResult(
+            identity=BookIdentity(title="Demo", series_name="Demo"),
+            source="Bangumi",
+            confidence=0.9,
+            local_guess="Demo",
+        )
+        jikan = ResolveResult(
+            identity=BookIdentity(title="Demo Novel", series_name="Demo Novel"),
+            source="Jikan",
+            confidence=0.82,
+            local_guess="Demo",
+        )
+        with (
+            patch.object(resolver, "_search_bangumi", return_value=bangumi),
+            patch.object(resolver, "_search_anilist", side_effect=OSError("offline")),
+            patch.object(resolver, "_search_jikan", return_value=jikan),
+        ):
+            results = resolver.resolve_candidates("Demo")
+
+        self.assertEqual(results, (bangumi, jikan))
+        self.assertIn("offline", resolver.last_network_error or "")
 
 
 class MovePlanTests(unittest.TestCase):
@@ -581,6 +636,51 @@ class MovePlanTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "不能超过 120"):
                 revise_classification_plan(plans, 0, "x" * 121)
+
+    def test_batch_revision_updates_only_the_original_series_group(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "Demo Vol.01.txt").write_text("one", encoding="utf-8")
+            (root / "Demo Vol.02.txt").write_text("two", encoding="utf-8")
+            (root / "Other Vol.01.txt").write_text("other", encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+            demo_index = next(index for index, plan in enumerate(plans) if plan.series_name == "Demo")
+
+            related = classification_plan_group_indices(plans, demo_index, "same_series")
+            revised = revise_classification_plans(
+                plans,
+                demo_index,
+                "Demo Corrected",
+                scope="same_series",
+            )
+
+            self.assertEqual(revised, related)
+            self.assertEqual(len(revised), 2)
+            self.assertEqual({plans[index].series_name for index in revised}, {"Demo Corrected"})
+            self.assertEqual(len({plans[index].target_path for index in revised}), 2)
+            self.assertEqual(
+                next(plan.series_name for plan in plans if plan.source_path.name.startswith("Other")),
+                "Other",
+            )
+
+    def test_batch_revision_is_atomic_when_one_plan_cannot_be_edited(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "Demo Vol.01.txt").write_text("one", encoding="utf-8")
+            (root / "Demo Vol.02.txt").write_text("two", encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+            plans[1] = replace(plans[1], status="moved")
+            before = list(plans)
+
+            with self.assertRaisesRegex(ValueError, "已移动"):
+                revise_classification_plans(
+                    plans,
+                    0,
+                    "Demo Corrected",
+                    scope="same_series",
+                )
+
+            self.assertEqual(plans, before)
 
     def test_custom_rule_overrides_local_guess(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -1296,6 +1396,149 @@ class ApplicationServiceTests(unittest.TestCase):
                 undone = self.wait_for_operation(service)
                 self.assertEqual(undone["operation"]["state"], "success")
                 self.assertTrue(book.exists())
+
+    def test_service_bulk_edit_returns_count_and_snapshot(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "Demo Vol.01.txt").write_text("one", encoding="utf-8")
+            (root / "Demo Vol.02.txt").write_text("two", encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+            with patch(
+                "lightnovel_selector.application.load_app_settings",
+                return_value=AppSettings(use_network=False),
+            ):
+                service = ApplicationService()
+            service.folder = root
+            service.plans = plans
+
+            result = service.edit_plans(
+                0,
+                "Demo Corrected",
+                scope="same_series",
+            )
+
+            self.assertEqual(result["updated_count"], 2)
+            self.assertEqual(len(result["updated_indices"]), 2)
+            self.assertEqual(
+                {item["series_name"] for item in result["snapshot"]["plans"]},
+                {"Demo Corrected"},
+            )
+
+    def test_candidate_lookup_is_cached_without_changing_plan_revision(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "Demo Vol.01.txt").write_text("one", encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+            with patch(
+                "lightnovel_selector.application.load_app_settings",
+                return_value=AppSettings(use_network=True),
+            ):
+                service = ApplicationService()
+            service.folder = root
+            service.plans = plans
+            remote = ResolveResult(
+                identity=BookIdentity(
+                    title="Demo Alternative",
+                    series_name="Demo Alternative",
+                ),
+                source="Test Provider",
+                confidence=0.88,
+                local_guess="Demo",
+            )
+            revision = service.plans_revision
+
+            with patch(
+                "lightnovel_selector.application.SeriesResolver.resolve_candidates",
+                return_value=(remote,),
+            ):
+                result = service.load_candidates(0)
+
+            self.assertIsNone(result["warning"])
+            self.assertEqual(service.plans_revision, revision)
+            self.assertTrue(result["candidates"][0]["is_current"])
+            self.assertEqual(
+                [candidate["series_name"] for candidate in result["candidates"]],
+                ["Demo", "Demo Alternative"],
+            )
+            with patch(
+                "lightnovel_selector.application.SeriesResolver.resolve_book_metadata_for_query",
+                return_value=None,
+            ):
+                detail = service.get_detail(0)
+            self.assertEqual(detail["matching_series_count"], 1)
+            self.assertTrue(detail["can_load_candidates"])
+            self.assertEqual(len(detail["candidates"]), 2)
+
+    def test_candidate_lookup_rejects_results_for_a_replaced_preview(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "Demo Vol.01.txt").write_text("one", encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+            with patch(
+                "lightnovel_selector.application.load_app_settings",
+                return_value=AppSettings(use_network=True),
+            ):
+                service = ApplicationService()
+            service.folder = root
+            service.plans = plans
+            original_candidates = service.plans[0].candidates
+            remote = ResolveResult(
+                identity=BookIdentity(
+                    title="Stale Alternative",
+                    series_name="Stale Alternative",
+                ),
+                source="Test Provider",
+                confidence=0.88,
+                local_guess="Demo",
+            )
+
+            def replace_preview(_: str) -> tuple[ResolveResult, ...]:
+                service.plans_revision += 1
+                return (remote,)
+
+            with (
+                patch(
+                    "lightnovel_selector.application.SeriesResolver.resolve_candidates",
+                    side_effect=replace_preview,
+                ),
+                self.assertRaisesRegex(RuntimeError, "预览已变化"),
+            ):
+                service.load_candidates(0)
+
+            self.assertEqual(service.plans[0].candidates, original_candidates)
+
+    def test_stale_detail_revision_cannot_edit_a_replaced_preview(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "Demo Vol.01.txt").write_text("one", encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+            with patch(
+                "lightnovel_selector.application.load_app_settings",
+                return_value=AppSettings(use_network=False),
+            ):
+                service = ApplicationService()
+            service.folder = root
+            service.plans = plans
+            stale_revision = service.plans_revision
+            service.plans_revision += 1
+
+            with self.assertRaisesRegex(RuntimeError, "预览已变化"):
+                service.edit_plans(
+                    0,
+                    "Wrong Target",
+                    scope="single",
+                    expected_plans_revision=stale_revision,
+                )
+
+            self.assertEqual(service.plans[0].series_name, "Demo")
 
     def test_restored_folder_starts_ready_for_scan(self) -> None:
         from lightnovel_selector.application import ApplicationService

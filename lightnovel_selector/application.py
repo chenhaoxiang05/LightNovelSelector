@@ -7,21 +7,23 @@ from collections import deque
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from .classification import (
     build_classification_plan,
+    classification_plan_group_indices,
     count_plan_statuses,
     execute_classification_plan,
     load_classification_report,
     plan_status_label,
-    revise_classification_plan,
+    revise_classification_plans,
     undo_classification_report,
     validate_classification_root,
 )
 from .constants import (
     APP_NAME,
     APP_VERSION,
+    CLASSIFICATION_CANDIDATE_MAX_COUNT,
     COVER_MAX_BYTES,
     CUSTOM_RULE_MAX_COUNT,
     CUSTOM_RULE_PATTERN_MAX_CHARS,
@@ -33,11 +35,12 @@ from .files import http_bytes, read_local_cover_bytes
 from .identity import (
     language_display_name,
     merge_book_identities,
+    merge_classification_candidates,
     volume_display_name,
 )
 from .metadata import SeriesResolver
-from .models import AppSettings, ClassificationPlan, CustomRule
-from .parsing import collapse_spaces
+from .models import AppSettings, ClassificationCandidate, ClassificationPlan, CustomRule
+from .parsing import collapse_spaces, normalize_for_match
 from .storage import (
     app_settings_to_dict,
     book_identity_from_dict,
@@ -86,6 +89,47 @@ def plan_to_dict(plan: ClassificationPlan, index: int) -> dict[str, Any]:
         "has_local_cover": plan.source_path.suffix.casefold() in {".epub", ".cbz", ".zip"},
         "will_move": plan.will_move,
     }
+
+
+def classification_candidate_to_dict(
+    candidate: ClassificationCandidate,
+    *,
+    current_series: str,
+) -> dict[str, Any]:
+    identity = candidate.identity
+    is_current = normalize_for_match(identity.series_name) == normalize_for_match(current_series)
+    return {
+        "identity": book_identity_to_dict(identity),
+        "title": identity.title,
+        "series_name": identity.series_name,
+        "authors_label": "、".join(identity.authors) or "未识别",
+        "volume_label": volume_display_name(identity.volume_number),
+        "language_label": language_display_name(identity.language),
+        "tags_label": " · ".join(identity.tags) or "未识别",
+        "source": candidate.source,
+        "confidence": round(candidate.confidence, 4),
+        "confidence_label": f"{candidate.confidence:.0%}",
+        "is_current": is_current,
+        "current_label": "当前" if is_current else "",
+    }
+
+
+def classification_candidate_payloads(plan: ClassificationPlan) -> list[dict[str, Any]]:
+    current = ClassificationCandidate(
+        identity=plan.identity,
+        source=plan.resolver_source,
+        confidence=plan.confidence,
+    )
+    current_key = normalize_for_match(plan.series_name)
+    alternatives = [
+        candidate
+        for candidate in merge_classification_candidates(plan.candidates)
+        if normalize_for_match(candidate.identity.series_name) != current_key
+    ][: CLASSIFICATION_CANDIDATE_MAX_COUNT - 1]
+    return [
+        classification_candidate_to_dict(candidate, current_series=plan.series_name)
+        for candidate in (current, *alternatives)
+    ]
 
 
 def _image_mime(data: bytes) -> str:
@@ -596,22 +640,132 @@ class ApplicationService:
         return self.snapshot()
 
     def edit_plan(self, index: int, series_name: str) -> dict[str, Any]:
+        return self.edit_plans(index, series_name, scope="single")["snapshot"]
+
+    def edit_plans(
+        self,
+        index: int,
+        series_name: str,
+        *,
+        scope: str,
+        expected_plans_revision: int | None = None,
+    ) -> dict[str, Any]:
         if len(series_name) > SERIES_NAME_MAX_CHARS:
             raise ValueError(f"系列名称不能超过 {SERIES_NAME_MAX_CHARS} 个字符。")
+        if scope not in {"single", "same_series"}:
+            raise ValueError("批量修正范围无效。")
+        validated_scope = cast(Literal["single", "same_series"], scope)
         with self._lock:
             self._assert_idle_locked()
-            revised = revise_classification_plan(self.plans, int(index), series_name)
-            self.plans[int(index)] = revised
+            if expected_plans_revision is not None and expected_plans_revision != self.plans_revision:
+                raise RuntimeError("分类预览已变化，请重新选择文件后再修正。")
+            revised_indices = revise_classification_plans(
+                self.plans,
+                int(index),
+                series_name,
+                scope=validated_scope,
+            )
             self.plans_revision += 1
-            self._append_log(f"已将 {revised.source_path.name} 修正为「{revised.series_name}」。", "success")
-        return self.snapshot()
+            revised = self.plans[int(index)]
+            if len(revised_indices) == 1:
+                message = f"已将 {revised.source_path.name} 修正为「{revised.series_name}」。"
+            else:
+                message = f"已将同系列的 {len(revised_indices)} 个条目批量修正为「{revised.series_name}」。"
+            self._append_log(message, "success")
+        return {
+            "updated_count": len(revised_indices),
+            "updated_indices": list(revised_indices),
+            "snapshot": self.snapshot(),
+        }
 
-    def get_detail(self, index: int) -> dict[str, Any]:
+    def load_candidates(
+        self,
+        index: int,
+        *,
+        expected_plans_revision: int | None = None,
+    ) -> dict[str, Any]:
         with self._lock:
+            self._assert_idle_locked()
+            if expected_plans_revision is not None and expected_plans_revision != self.plans_revision:
+                raise RuntimeError("分类预览已变化，请重新选择文件后再查找候选。")
             if index < 0 or index >= len(self.plans):
                 raise IndexError("分类计划索引超出范围。")
             plan = self.plans[index]
+            plans_revision = self.plans_revision
             use_network = self.settings.use_network
+
+        if not use_network:
+            return {
+                "index": index,
+                "candidates": classification_candidate_payloads(plan),
+                "warning": "在线识别已关闭，当前只显示本地候选。",
+            }
+        if not plan.network_query:
+            return {
+                "index": index,
+                "candidates": classification_candidate_payloads(plan),
+                "warning": "当前文件没有可安全联网的文件名查询，只显示本地候选。",
+            }
+
+        resolver = SeriesResolver(use_network=True)
+        results = resolver.resolve_candidates(plan.network_query)
+        remote_candidates = tuple(
+            ClassificationCandidate(
+                identity=result.identity,
+                source=result.source,
+                confidence=result.confidence,
+            )
+            for result in results
+        )
+        with self._lock:
+            self._assert_idle_locked()
+            if (
+                self.plans_revision != plans_revision
+                or index >= len(self.plans)
+                or self.plans[index].source_path != plan.source_path
+            ):
+                raise RuntimeError("分类预览已变化，请重新选择文件后再查找候选。")
+            updated = replace(
+                self.plans[index],
+                candidates=merge_classification_candidates(
+                    self.plans[index].candidates,
+                    remote_candidates,
+                ),
+            )
+            self.plans[index] = updated
+
+        warning = None
+        if resolver.last_network_error:
+            warning = "部分在线来源暂时不可用，已显示成功返回的候选。"
+        elif not results:
+            warning = "没有找到更多可靠候选。"
+        return {
+            "index": index,
+            "candidates": classification_candidate_payloads(updated),
+            "warning": warning,
+        }
+
+    def get_detail(
+        self,
+        index: int,
+        *,
+        expected_plans_revision: int | None = None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            if expected_plans_revision is not None and expected_plans_revision != self.plans_revision:
+                raise RuntimeError("分类预览已变化，请重新选择文件。")
+            if index < 0 or index >= len(self.plans):
+                raise IndexError("分类计划索引超出范围。")
+            plan = self.plans[index]
+            plans_revision = self.plans_revision
+            use_network = self.settings.use_network
+            matching_series_count = len(
+                classification_plan_group_indices(
+                    self.plans,
+                    index,
+                    "same_series",
+                )
+            )
 
         metadata = None
         warning = None
@@ -642,9 +796,22 @@ class ApplicationService:
                 cover_bytes = None
 
         cover_data_url = _data_uri(cover_bytes)
+        detail_candidates = plan.candidates
+        if metadata is not None:
+            detail_candidates = merge_classification_candidates(
+                plan.candidates,
+                (
+                    ClassificationCandidate(
+                        identity=metadata.identity,
+                        source=metadata.source,
+                        confidence=metadata.confidence,
+                    ),
+                ),
+            )
 
-        return {
+        result = {
             "index": index,
+            "plans_revision": plans_revision,
             "identity": book_identity_to_dict(identity),
             "title": title,
             "summary": summary,
@@ -673,7 +840,26 @@ class ApplicationService:
             "status_label": plan_status_label(plan.status),
             "note": plan.note,
             "warning": warning,
+            "matching_series_count": matching_series_count,
+            "can_load_candidates": bool(use_network and plan.network_query),
         }
+        with self._lock:
+            if (
+                self.plans_revision != plans_revision
+                or index >= len(self.plans)
+                or self.plans[index].source_path != plan.source_path
+            ):
+                raise RuntimeError("分类预览已变化，请重新选择文件。")
+            current_plan = self.plans[index]
+            merged_candidates = merge_classification_candidates(
+                current_plan.candidates,
+                detail_candidates,
+            )
+            if merged_candidates != current_plan.candidates:
+                current_plan = replace(current_plan, candidates=merged_candidates)
+                self.plans[index] = current_plan
+            result["candidates"] = classification_candidate_payloads(current_plan)
+        return result
 
     def report_summary(self) -> dict[str, Any]:
         with self._lock:

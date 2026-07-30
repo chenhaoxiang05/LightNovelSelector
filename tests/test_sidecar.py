@@ -19,6 +19,33 @@ class FakeService:
     def edit_plan(self, index: int, series_name: str) -> dict:
         return {"index": index, "series_name": series_name}
 
+    def edit_plans(
+        self,
+        index: int,
+        series_name: str,
+        *,
+        scope: str,
+        expected_plans_revision: int | None = None,
+    ) -> dict:
+        return {
+            "index": index,
+            "series_name": series_name,
+            "scope": scope,
+            "plans_revision": expected_plans_revision,
+        }
+
+    def load_candidates(
+        self,
+        index: int,
+        *,
+        expected_plans_revision: int | None = None,
+    ) -> dict:
+        return {
+            "index": index,
+            "candidates": [],
+            "plans_revision": expected_plans_revision,
+        }
+
 
 class SidecarProtocolTests(unittest.TestCase):
     def run_server(self, *requests: str) -> list[dict]:
@@ -85,6 +112,34 @@ class SidecarProtocolTests(unittest.TestCase):
         self.assertEqual(responses[0]["id"], 1)
         self.assertEqual(responses[0]["error"]["type"], "ProtocolError")
         self.assertIn("不能超过 120", responses[0]["error"]["message"])
+
+    def test_dispatches_candidate_lookup_and_scoped_edit(self) -> None:
+        responses = self.run_server(
+            '{"id":1,"method":"load_candidates","params":{"index":4,"plans_revision":7}}',
+            (
+                '{"id":2,"method":"edit_plans","params":'
+                '{"index":4,"series_name":"Demo","scope":"same_series","plans_revision":7}}'
+            ),
+            '{"id":3,"method":"shutdown"}',
+        )
+
+        self.assertEqual(
+            responses[0]["result"],
+            {
+                "index": 4,
+                "candidates": [],
+                "plans_revision": 7,
+            },
+        )
+        self.assertEqual(
+            responses[1]["result"],
+            {
+                "index": 4,
+                "series_name": "Demo",
+                "scope": "same_series",
+                "plans_revision": 7,
+            },
+        )
 
     def test_sidecar_module_has_clean_process_protocol(self) -> None:
         payload = '{"id":1,"method":"ping"}\n{"id":2,"method":"shutdown"}\n'
