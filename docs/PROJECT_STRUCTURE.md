@@ -8,6 +8,7 @@ LightNovelSelector/
 │  ├─ application.py             应用状态、后台任务与快照
 │  ├─ classification.py          分类计划、执行、恢复日志、报告与撤销
 │  ├─ report_history.py          报告历史、指定批次解析与撤销状态
+│  ├─ scan_cache.py              增量扫描、可靠文件快照与哈希缓存
 │  ├─ cli.py                     命令行入口
 │  ├─ constants.py               版本与公共常量
 │  ├─ files.py                   文件扫描、完整哈希、内容提示与封面读取

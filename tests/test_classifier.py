@@ -1,4 +1,6 @@
+import argparse
 import json
+import os
 import threading
 import time
 import unittest
@@ -23,7 +25,9 @@ from lightnovel_classifier import (
     BookMetadata,
     ClassificationCandidate,
     CustomRule,
+    FileSnapshot,
     PersistentMetadataCache,
+    PersistentScanCache,
     ResolveResult,
     archive_classification_report,
     bangumi_cover_url,
@@ -34,6 +38,7 @@ from lightnovel_classifier import (
     book_metadata_from_dict,
     book_metadata_to_dict,
     build_classification_plan,
+    capture_file_snapshot,
     classification_plan_group_indices,
     classification_plan_to_report_item,
     classification_report_history_directory,
@@ -63,8 +68,10 @@ from lightnovel_classifier import (
     resolve_classification_report,
     revise_classification_plan,
     revise_classification_plans,
+    run_cli,
     safe_folder_name,
     save_app_settings,
+    scan_cache_path,
     suggest_renamed_filename,
     try_save_app_settings,
     undo_classification_report,
@@ -520,6 +527,225 @@ class MovePlanTests(unittest.TestCase):
             self.assertEqual(duplicates, {})
             self.assertEqual(full_hash.call_count, 0)
 
+    def test_incremental_scan_cache_reuses_complete_hashes_and_local_analysis(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            root = base / "library"
+            root.mkdir()
+            cache_path = base / "scan-cache.json"
+            chunk = b"h" * 64
+            payload = chunk + b"same-middle" + (b"t" * 64)
+            first = root / "A Shared.Series.Vol.01.txt"
+            second = root / "B Shared.Series.Vol.02.txt"
+            first.write_bytes(payload)
+            second.write_bytes(payload)
+
+            with (
+                patch("lightnovel_selector.files.FILE_FINGERPRINT_CHUNK_SIZE", 64),
+                PersistentScanCache(cache_path) as first_cache,
+            ):
+                first_plans = build_classification_plan(
+                    root,
+                    use_network=False,
+                    scan_cache=first_cache,
+                )
+
+            with (
+                patch("lightnovel_selector.files.FILE_FINGERPRINT_CHUNK_SIZE", 64),
+                PersistentScanCache(cache_path) as second_cache,
+            ):
+                second_plans = build_classification_plan(
+                    root,
+                    use_network=False,
+                    scan_cache=second_cache,
+                )
+
+            self.assertEqual([plan.status for plan in first_plans], ["ready", "duplicate"])
+            self.assertEqual([plan.status for plan in second_plans], ["ready", "duplicate"])
+            self.assertEqual(second_cache.stats.reused_files, 2)
+            self.assertEqual(second_cache.stats.quick_signature_hits, 2)
+            self.assertEqual(second_cache.stats.fingerprint_hits, 2)
+            self.assertEqual(second_cache.stats.local_analysis_hits, 1)
+            self.assertIsNone(second_cache.stats.write_warning)
+
+    def test_scan_cache_invalidates_middle_change_even_when_mtime_is_restored(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            root = base / "library"
+            root.mkdir()
+            cache_path = base / "scan-cache.json"
+            head = b"h" * 64
+            tail = b"t" * 64
+            first = root / "A Shared.Series.Vol.01.txt"
+            second = root / "B Shared.Series.Vol.02.txt"
+            first.write_bytes(head + b"111111" + tail)
+            second.write_bytes(head + b"111111" + tail)
+
+            with (
+                patch("lightnovel_selector.files.FILE_FINGERPRINT_CHUNK_SIZE", 64),
+                PersistentScanCache(cache_path) as initial_cache,
+            ):
+                initial_plans = build_classification_plan(
+                    root,
+                    use_network=False,
+                    scan_cache=initial_cache,
+                )
+            self.assertEqual([plan.status for plan in initial_plans], ["ready", "duplicate"])
+
+            original_stat = second.stat()
+            time.sleep(0.01)
+            second.write_bytes(head + b"222222" + tail)
+            os.utime(
+                second,
+                ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+            )
+
+            with (
+                patch("lightnovel_selector.files.FILE_FINGERPRINT_CHUNK_SIZE", 64),
+                PersistentScanCache(cache_path) as changed_cache,
+            ):
+                changed_plans = build_classification_plan(
+                    root,
+                    use_network=False,
+                    scan_cache=changed_cache,
+                )
+
+            self.assertEqual([plan.status for plan in changed_plans], ["ready", "ready"])
+            self.assertEqual(changed_cache.stats.invalidated_files, 1)
+            self.assertEqual(changed_cache.stats.updated_files, 1)
+
+    def test_scan_cache_corruption_and_write_failure_do_not_block_scan(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            root = base / "library"
+            root.mkdir()
+            book = root / "Reliable.Series.Vol.01.txt"
+            book.write_text("Reliable Series 第一卷", encoding="utf-8")
+            cache_path = base / "scan-cache.json"
+            snapshot = capture_file_snapshot(book)
+            cache_path.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "entries": {
+                            f"file:{snapshot.device:x}:{snapshot.inode:x}": {
+                                "snapshot": snapshot.to_dict(),
+                                "last_used_at": time.time(),
+                                "fingerprint": f"{snapshot.size}:not-a-sha256",
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            cache = PersistentScanCache(cache_path)
+            self.assertEqual(cache.stats.entries, 0)
+            with (
+                patch(
+                    "lightnovel_selector.scan_cache.write_json_atomic",
+                    side_effect=OSError("cache is locked"),
+                ),
+                cache,
+            ):
+                plans = build_classification_plan(
+                    root,
+                    use_network=False,
+                    scan_cache=cache,
+                )
+
+            self.assertEqual(len(plans), 1)
+            self.assertIn("cache is locked", cache.stats.write_warning or "")
+
+    def test_scan_cache_file_is_bounded_and_uses_local_app_data(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            cache_path = base / "scan-cache.json"
+            with patch("lightnovel_selector.scan_cache.SCAN_CACHE_MAX_BYTES", 1100):
+                cache = PersistentScanCache(cache_path)
+                for index in range(20):
+                    book = base / f"book-{index}.txt"
+                    book.write_text(f"content-{index}", encoding="utf-8")
+                    snapshot = capture_file_snapshot(book)
+                    cache.remember_quick_signature(
+                        book,
+                        snapshot,
+                        f"{snapshot.size}:{index:064x}",
+                    )
+                cache.flush()
+
+            self.assertLessEqual(cache_path.stat().st_size, 1100)
+            self.assertLess(cache.stats.entries, 20)
+            with patch.dict(os.environ, {"LOCALAPPDATA": str(base)}):
+                self.assertEqual(
+                    scan_cache_path(),
+                    base / "LightNovelSelector" / "scan_cache.json",
+                )
+
+    def test_scan_cache_disables_reuse_without_reliable_change_token(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            book = base / "book.txt"
+            book.write_text("content", encoding="utf-8")
+            snapshot = FileSnapshot(
+                size=book.stat().st_size,
+                mtime_ns=book.stat().st_mtime_ns,
+                change_token=None,
+                device=book.stat().st_dev,
+                inode=book.stat().st_ino,
+            )
+            cache = PersistentScanCache(base / "scan-cache.json")
+
+            with (
+                patch(
+                    "lightnovel_selector.files.capture_file_snapshot",
+                    return_value=snapshot,
+                ),
+                patch(
+                    "lightnovel_selector.classification.capture_file_snapshot",
+                    return_value=snapshot,
+                ),
+                cache,
+            ):
+                plans = build_classification_plan(
+                    base,
+                    use_network=False,
+                    scan_cache=cache,
+                )
+
+            self.assertEqual(len(plans), 1)
+            self.assertEqual(plans[0].status, "ready")
+            self.assertEqual(cache.stats.entries, 0)
+            self.assertEqual(cache.stats.uncacheable_files, 1)
+            self.assertFalse((base / "scan-cache.json").exists())
+
+    def test_cli_scan_continues_when_cache_initialization_fails(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "Demo.Vol.01.txt"
+            book.write_text("content", encoding="utf-8")
+            args = argparse.Namespace(
+                folder=str(root),
+                recursive=False,
+                no_network=True,
+                auto_rename=False,
+                quiet=True,
+                dry_run=True,
+            )
+
+            with (
+                patch(
+                    "lightnovel_selector.cli.PersistentScanCache",
+                    side_effect=OSError("cache unavailable"),
+                ),
+                patch("builtins.print") as output,
+            ):
+                exit_code = run_cli(args)
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(book.exists())
+            self.assertTrue(any("扫描缓存不可用" in str(call.args[0]) for call in output.call_args_list if call.args))
+
     def test_http_bytes_rejects_oversized_response(self) -> None:
         response = unittest.mock.MagicMock()
         opened_response = response.__enter__.return_value
@@ -631,6 +857,33 @@ class MovePlanTests(unittest.TestCase):
             self.assertEqual(revised.series_name, "手动系列")
             self.assertEqual(revised.resolver_source, "手动修正")
             self.assertIsNone(revised.duplicate_of)
+
+    def test_manual_revision_preserves_unified_book_identity_fields(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            book = root / "Original.Series.Vol.03.txt"
+            book.write_text("content", encoding="utf-8")
+            plans = build_classification_plan(root, use_network=False)
+            plans[0] = replace(
+                plans[0],
+                identity=BookIdentity(
+                    title="Original Series Volume 3",
+                    series_name=plans[0].series_name,
+                    authors=("Author",),
+                    volume_number=3,
+                    language="en",
+                    tags=("Fantasy",),
+                ),
+            )
+
+            revised = revise_classification_plan(plans, 0, "Corrected Series")
+
+            self.assertEqual(revised.identity.title, "Original Series Volume 3")
+            self.assertEqual(revised.identity.series_name, "Corrected Series")
+            self.assertEqual(revised.identity.authors, ("Author",))
+            self.assertEqual(revised.identity.volume_number, 3)
+            self.assertEqual(revised.identity.language, "en")
+            self.assertEqual(revised.identity.tags, ("Fantasy",))
 
     def test_manual_revision_rejects_oversized_series(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -1613,6 +1866,71 @@ class ApplicationServiceTests(unittest.TestCase):
                     service.current_report(),
                     root / "classification_report.json",
                 )
+
+    def test_application_scan_exposes_incremental_cache_reuse(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        with TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            root = base / "library"
+            root.mkdir()
+            cache_path = base / "scan-cache.json"
+            (root / "Cached.Series.Vol.01.txt").write_text(
+                "Cached Series 第一卷",
+                encoding="utf-8",
+            )
+            with (
+                patch(
+                    "lightnovel_selector.application.load_app_settings",
+                    return_value=AppSettings(use_network=False),
+                ),
+                patch("lightnovel_selector.application.try_save_app_settings", return_value=None),
+                patch(
+                    "lightnovel_selector.application.PersistentScanCache",
+                    side_effect=lambda: PersistentScanCache(cache_path),
+                ),
+            ):
+                service = ApplicationService()
+                service.set_folder(str(root))
+                service.start_scan()
+                first_scan = self.wait_for_operation(service)
+                service.start_scan()
+                second_scan = self.wait_for_operation(service)
+
+            self.assertEqual(first_scan["operation"]["state"], "success")
+            self.assertEqual(second_scan["operation"]["state"], "success")
+            self.assertEqual(second_scan["scan_cache"]["reused_files"], 1)
+            self.assertEqual(second_scan["scan_cache"]["quick_signature_hits"], 1)
+            self.assertEqual(second_scan["scan_cache"]["local_analysis_hits"], 1)
+            self.assertIn("复用了 1 个未变化文件的缓存", second_scan["operation"]["message"])
+
+    def test_scan_cache_initialization_failure_does_not_block_scan(self) -> None:
+        from lightnovel_selector.application import ApplicationService
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "Demo.Vol.01.txt").write_text("content", encoding="utf-8")
+            with (
+                patch(
+                    "lightnovel_selector.application.load_app_settings",
+                    return_value=AppSettings(use_network=False),
+                ),
+                patch("lightnovel_selector.application.try_save_app_settings", return_value=None),
+                patch(
+                    "lightnovel_selector.application.PersistentScanCache",
+                    side_effect=OSError("cache unavailable"),
+                ),
+            ):
+                service = ApplicationService()
+                service.set_folder(str(root))
+                service.start_scan()
+                snapshot = self.wait_for_operation(service)
+
+            self.assertEqual(snapshot["operation"]["state"], "success")
+            self.assertEqual(snapshot["counts"]["ready"], 1)
+            self.assertEqual(snapshot["scan_cache"]["write_warning"], "cache unavailable")
+            self.assertIsNone(snapshot["operation"]["error"])
+            self.assertFalse(snapshot["operation"]["can_cancel"])
 
     def test_partial_apply_failure_is_archived_for_selected_undo(self) -> None:
         from shutil import move as real_move

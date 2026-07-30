@@ -14,6 +14,36 @@ public sealed class ReportModelTests
     };
 
     [TestMethod]
+    public void AppSnapshotDeserializesIncrementalScanCacheStats()
+    {
+        const string payload = """
+            {
+              "scan_cache": {
+                "entries": 120,
+                "reused_files": 95,
+                "updated_files": 4,
+                "invalidated_files": 1,
+                "quick_signature_hits": 95,
+                "fingerprint_hits": 8,
+                "local_analysis_hits": 70,
+                "uncacheable_files": 2,
+                "write_warning": null
+              }
+            }
+            """;
+
+        var snapshot = JsonSerializer.Deserialize<AppSnapshot>(payload, JsonOptions);
+
+        Assert.IsNotNull(snapshot);
+        Assert.AreEqual(120, snapshot.ScanCache.Entries);
+        Assert.AreEqual(95, snapshot.ScanCache.ReusedFiles);
+        Assert.AreEqual(8, snapshot.ScanCache.FingerprintHits);
+        Assert.AreEqual(70, snapshot.ScanCache.LocalAnalysisHits);
+        Assert.AreEqual(2, snapshot.ScanCache.UncacheableFiles);
+        Assert.IsNull(snapshot.ScanCache.WriteWarning);
+    }
+
+    [TestMethod]
     public void CurrentReportPayloadDeserializesToTypedModels()
     {
         const string payload = """
@@ -97,7 +127,7 @@ public sealed class ReportModelTests
                   "path": "D:\\books\\.lightnovel-selector\\history\\classification_report.json",
                   "file_name": "classification_report.json",
                   "created_at": "2026-07-20T12:00:00+08:00",
-                  "version": "2.1.0-dev.3",
+                  "version": "2.1.0-dev.4",
                   "is_latest": true,
                   "undo_completed": false,
                   "can_undo": true,

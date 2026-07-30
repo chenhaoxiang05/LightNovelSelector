@@ -105,6 +105,15 @@ from .report_history import (
     mark_classification_report_undone,
     resolve_classification_report,
 )
+from .scan_cache import (
+    FileSnapshot,
+    LocalFileAnalysis,
+    PersistentScanCache,
+    ScanCacheStats,
+    capture_file_snapshot,
+    capture_open_file_snapshot,
+    scan_cache_path,
+)
 from .storage import (
     PersistentMetadataCache,
     app_data_dir,

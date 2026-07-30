@@ -49,6 +49,11 @@ from .parsing import (
     safe_folder_name,
     weak_file_name_query,
 )
+from .scan_cache import (
+    LocalFileAnalysis,
+    PersistentScanCache,
+    capture_file_snapshot,
+)
 from .storage import (
     append_json_line_durable,
     book_identity_to_dict,
@@ -750,6 +755,7 @@ def build_classification_plan(
     progress: Callable[[str], None] | None = None,
     progress_count: Callable[[int, int], None] | None = None,
     checkpoint: Callable[[], None] | None = None,
+    scan_cache: PersistentScanCache | None = None,
 ) -> list[ClassificationPlan]:
     root = validate_classification_root(root)
 
@@ -766,6 +772,7 @@ def build_classification_plan(
     duplicates = find_duplicate_files(
         files,
         checkpoint=checkpoint,
+        scan_cache=scan_cache,
     )
     rules = tuple(custom_rules or ())
     resolver = SeriesResolver(use_network=use_network)
@@ -779,6 +786,7 @@ def build_classification_plan(
                 duplicate_fingerprints[path] = file_fingerprint(
                     path,
                     checkpoint=checkpoint,
+                    scan_cache=scan_cache,
                 )
             except OSError:
                 duplicate_fingerprints[path] = None
@@ -789,6 +797,8 @@ def build_classification_plan(
             source_stat = path.stat()
         except OSError:
             source_stat = None
+        source_size = source_stat.st_size if source_stat else None
+        source_mtime_ns = source_stat.st_mtime_ns if source_stat else None
         if progress:
             progress(f"[{index}/{len(files)}] 识别：{path.name}")
         duplicate_of = duplicates.get(path)
@@ -810,8 +820,8 @@ def build_classification_plan(
                     resolver_source="重复文件检测",
                     confidence=1.0,
                     local_guess=local_guess,
-                    source_size=source_stat.st_size if source_stat else None,
-                    source_mtime_ns=source_stat.st_mtime_ns if source_stat else None,
+                    source_size=source_size,
+                    source_mtime_ns=source_mtime_ns,
                     identity_query=extract_book_lookup_query(path.name),
                     series_key=folder_name,
                     status="duplicate",
@@ -824,10 +834,50 @@ def build_classification_plan(
             continue
 
         try:
-            identity_hint = read_identity_hint(path)
-            identity_query = identity_query_for_path(path, identity_hint)
             file_query = extract_book_lookup_query(path.name)
-            local_identity = read_book_identity(path, identity_hint)
+            identity_hint: str | None = None
+            cached_local_analysis = None
+            initial_snapshot = None
+            if scan_cache is not None:
+                if checkpoint:
+                    checkpoint()
+                initial_snapshot = capture_file_snapshot(path)
+                source_size = initial_snapshot.size
+                source_mtime_ns = initial_snapshot.mtime_ns
+                cached_local_analysis = scan_cache.get_local_analysis(path, initial_snapshot)
+                if cached_local_analysis is not None:
+                    if checkpoint:
+                        checkpoint()
+                    if capture_file_snapshot(path) != initial_snapshot:
+                        raise OSError(f"文件在读取缓存识别结果时发生变化：{path}")
+
+            if cached_local_analysis is not None:
+                identity_query = cached_local_analysis.identity_query
+                local_identity = cached_local_analysis.identity
+                used_content_hint = cached_local_analysis.used_content_hint
+            else:
+                identity_hint = read_identity_hint(path)
+                identity_query = identity_query_for_path(path, identity_hint)
+                local_identity = read_book_identity(path, identity_hint)
+                used_content_hint = bool(identity_hint and identity_query != file_query)
+                if (
+                    scan_cache is not None
+                    and identity_hint
+                    and initial_snapshot is not None
+                    and initial_snapshot.cacheable
+                ):
+                    final_snapshot = capture_file_snapshot(path)
+                    if final_snapshot != initial_snapshot:
+                        raise OSError(f"文件在读取本地识别信息时发生变化：{path}")
+                    scan_cache.remember_local_analysis(
+                        path,
+                        final_snapshot,
+                        LocalFileAnalysis(
+                            identity=local_identity,
+                            identity_query=identity_query,
+                            used_content_hint=used_content_hint,
+                        ),
+                    )
             network_query = None if weak_file_name_query(path.name) else file_query
             custom_rule = match_custom_rule(path.name, identity_query, rules)
             if custom_rule is not None:
@@ -839,7 +889,6 @@ def build_classification_plan(
                     local_guess=identity_query,
                 )
             elif network_query is None:
-                used_content_hint = bool(identity_hint and identity_query != file_query)
                 result = ResolveResult(
                     identity=with_series_name(
                         local_identity,
@@ -922,8 +971,8 @@ def build_classification_plan(
                     resolver_source=result.source,
                     confidence=result.confidence,
                     local_guess=result.local_guess,
-                    source_size=source_stat.st_size if source_stat else None,
-                    source_mtime_ns=source_stat.st_mtime_ns if source_stat else None,
+                    source_size=source_size,
+                    source_mtime_ns=source_mtime_ns,
                     metadata_summary=(metadata.summary if metadata else result.metadata_summary),
                     metadata_cover_url=(metadata.cover_url if metadata else result.metadata_cover_url),
                     metadata_url=(metadata.url if metadata else result.metadata_url),
@@ -950,8 +999,8 @@ def build_classification_plan(
                     resolver_source="文件读取失败",
                     confidence=0.0,
                     local_guess=local_guess,
-                    source_size=source_stat.st_size if source_stat else None,
-                    source_mtime_ns=source_stat.st_mtime_ns if source_stat else None,
+                    source_size=source_size,
+                    source_mtime_ns=source_mtime_ns,
                     identity_query=extract_book_lookup_query(path.name),
                     series_key=folder_name,
                     status="error",
@@ -1005,10 +1054,7 @@ def revise_classification_plan(
 
     return replace(
         plan,
-        identity=with_series_name(
-            read_book_identity(plan.source_path, plan.identity_hint),
-            folder_name,
-        ),
+        identity=with_series_name(plan.identity, folder_name),
         target_dir=target_dir,
         target_path=target_path,
         resolver_source="手动修正",
