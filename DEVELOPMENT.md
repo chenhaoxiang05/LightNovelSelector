@@ -34,6 +34,8 @@ py -3 -m venv .venv-build
 ### Python 核心
 
 - `classification.py`：分类计划、完整哈希重复检测、线性恢复日志、报告和撤销。
+- `corrections.py`：人工修正形成的有界本地系列别名与原子持久化。
+- `recognition.py`：跨来源置信度校准、等级与可读分类依据。
 - `report_history.py`：报告归档、受限历史列表、执行编号解析和撤销状态。
 - `parsing.py`：文件名清洗、卷号与系列名解析。
 - `files.py`：文件扫描、内容提示、封面和网络字节读取。

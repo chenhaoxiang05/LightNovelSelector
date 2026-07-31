@@ -16,20 +16,29 @@ from .parsing import (
     extract_book_lookup_query,
     extract_series_guess,
     infer_language,
+    normalize_author_key,
+    normalize_author_name,
     normalize_for_match,
     parse_volume_number,
     safe_folder_name,
 )
 
 
-def normalize_identity_values(values: Iterable[object], *, limit: int) -> tuple[str, ...]:
+def normalize_identity_values(
+    values: Iterable[object],
+    *,
+    limit: int,
+    kind: str = "generic",
+) -> tuple[str, ...]:
     seen: set[str] = set()
     result: list[str] = []
     for value in values:
         if not isinstance(value, str):
             continue
-        clean = collapse_spaces(value)[:IDENTITY_VALUE_MAX_CHARS]
-        key = clean.casefold()
+        clean = (normalize_author_name(value) if kind == "author" else collapse_spaces(value))[
+            :IDENTITY_VALUE_MAX_CHARS
+        ]
+        key = normalize_author_key(clean) if kind == "author" else clean.casefold()
         if not clean or key in seen:
             continue
         seen.add(key)
@@ -69,6 +78,7 @@ def merge_book_identities(
         authors = normalize_identity_values(
             (*candidate.authors, *authors),
             limit=IDENTITY_MAX_AUTHORS,
+            kind="author",
         )
         volume_number = candidate.volume_number if candidate.volume_number is not None else volume_number
         language = language or candidate.language

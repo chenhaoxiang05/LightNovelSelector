@@ -86,7 +86,12 @@ public sealed partial class MainPage
         DetailTagsText.Text = detail.TagsLabel;
         DetailSummaryText.Text = detail.Summary;
         DetailTargetText.Text = detail.TargetPath;
-        DetailConfidenceText.Text = $"{detail.ResolverSource} · 置信度 {detail.ConfidenceLabel}";
+        DetailConfidenceText.Text =
+            $"{detail.ResolverSource} · 置信度 {detail.ConfidenceLabel} · {detail.ConfidenceLevel}";
+        DetailReasonText.Text = detail.ClassificationReason;
+        DetailEvidenceText.Text = detail.ClassificationEvidence.Count > 0
+            ? string.Join(" · ", detail.ClassificationEvidence)
+            : "当前结果没有额外证据。";
         DetailCoverSourceText.Text = detail.CoverSource;
         DetailStatusText.Text = detail.StatusLabel;
         DetailStatusIcon.Text = StatusGlyph(detail.Status);
@@ -308,9 +313,27 @@ public sealed partial class MainPage
         var panel = new StackPanel { Spacing = 12, MaxWidth = 460 };
         panel.Children.Add(new TextBlock
         {
-            Text = $"{detail.StatusLabel} · {detail.ResolverSource} · 置信度 {detail.ConfidenceLabel}",
+            Text =
+                $"{detail.StatusLabel} · {detail.ResolverSource} · "
+                + $"置信度 {detail.ConfidenceLabel} · {detail.ConfidenceLevel}",
             Foreground = ResourceBrush("TextFillColorSecondaryBrush"),
         });
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"分类依据：{detail.ClassificationReason}",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = ResourceBrush("TextFillColorSecondaryBrush"),
+        });
+        if (detail.ClassificationEvidence.Count > 0)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = string.Join(" · ", detail.ClassificationEvidence),
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 12,
+                Foreground = ResourceBrush("TextFillColorTertiaryBrush"),
+            });
+        }
         panel.Children.Add(new TextBlock
         {
             Text = $"作者：{detail.AuthorsLabel}　卷号：{detail.VolumeLabel}　语言：{detail.LanguageLabel}",

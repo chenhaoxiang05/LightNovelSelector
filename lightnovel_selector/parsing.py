@@ -11,12 +11,80 @@ from .constants import (
     NOISE_TAG_WORDS,
     SERIES_NAME_MAX_CHARS,
     SUPPORTED_EXTENSIONS,
+    VOLUME_MARKERS,
     VOLUME_TOKEN,
 )
+
+_ROMAN_NUMERAL_PATTERN = r"[IVXLCDMivxlcdm]{1,8}"
+_DISPLAY_PUNCTUATION_TRANSLATION = str.maketrans(
+    {
+        "‐": "-",
+        "‑": "-",
+        "‒": "-",
+        "–": "-",
+        "—": "-",
+        "―": "-",
+        "〜": "~",
+        "～": "~",
+        "﹏": "~",
+        "：": ":",
+        "，": ",",
+        "．": ".",
+        "／": "/",
+        "＇": "'",
+        "｀": "'",
+        "“": '"',
+        "”": '"',
+        "‘": "'",
+        "’": "'",
+    }
+)
+_CHINESE_DIGITS = {
+    "零": 0,
+    "〇": 0,
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
+_CHINESE_UNITS = {"十": 10, "百": 100, "千": 1000}
 
 
 def collapse_spaces(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
+
+
+def normalize_title_text(value: str) -> str:
+    text = unicodedata.normalize("NFKC", value).translate(_DISPLAY_PUNCTUATION_TRANSLATION)
+    text = text.replace("\u3000", " ")
+    return collapse_spaces(text).strip(" \t\r\n\"'「」『』《》")
+
+
+def normalize_author_name(value: str) -> str:
+    text = normalize_title_text(value)
+    text = re.sub(
+        r"^(?:作者|著者|原作|故事|author|writer|story)\s*[:：]\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"\s*[\[(（【]\s*(?:著|作者|著者|原作|作|author|writer|story)\s*[\])）】]\s*$",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return collapse_spaces(text)
+
+
+def normalize_author_key(value: str) -> str:
+    return re.sub(r"[\W_]+", "", normalize_author_name(value).casefold(), flags=re.UNICODE)
 
 
 class TextExtractor(HTMLParser):
@@ -49,7 +117,7 @@ def contains_cjk(value: str) -> bool:
 
 
 def normalize_for_match(value: str) -> str:
-    value = unicodedata.normalize("NFKC", value).casefold()
+    value = normalize_title_text(value).casefold()
     value = re.sub(r"[\s\-_.,:;~!！?？\"“”‘’'`·・/\\|()[\]{}【】《》（）「」『』]+", "", value)
     return value
 
@@ -64,7 +132,7 @@ def is_noise_tag(value: str, *, position: str) -> bool:
         return True
     if re.fullmatch(r"(v|vol|volume|book)?\s*[0-9０-９]{1,3}", tag, re.IGNORECASE):
         return position == "trailing"
-    return re.fullmatch(rf"第?\s*{VOLUME_TOKEN}\s*[卷册集部].*", tag) is not None
+    return re.fullmatch(rf"第?\s*{VOLUME_TOKEN}\s*[{VOLUME_MARKERS}].*", tag) is not None
 
 
 def strip_bracket_noise(value: str) -> str:
@@ -112,7 +180,7 @@ def strip_release_words(value: str) -> str:
 
 def clean_file_stem(file_name: str) -> str:
     stem = Path(file_name).stem
-    text = unicodedata.normalize("NFKC", stem)
+    text = normalize_title_text(stem)
     text = text.replace("\u3000", " ").replace("_", " ")
     text = re.sub(r"\bNo\.(?=\d)", "No<<DOT>>", text, flags=re.IGNORECASE)
     text = re.sub(r"(?<=\w)\.(?=\w)", " ", text)
@@ -205,7 +273,7 @@ def infer_language(*values: str | None) -> str | None:
         r"(?<![a-z])(?:zh[-_](?:tw|hk|mo|hant)|cht)(?![a-z])",
         r"繁體中文|繁体中文|繁體|繁体|繁中",
         r"(?<![a-z])(?:ja[-_]jp|jpn|jp)(?![a-z])|日本語|日语|日語|日文",
-        r"(?<![a-z])(?:en[-_](?:us|gb)|eng)(?![a-z])|英语|英語|英文",
+        r"(?<![a-z])(?:en[-_](?:us|gb)|eng|english)(?![a-z])|英语|英語|英文",
         r"(?<![a-z])(?:ko[-_]kr|kor|kr)(?![a-z])|韩语|韓語|韩文|韓文",
     )
     for pattern in explicit_patterns:
@@ -217,7 +285,7 @@ def infer_language(*values: str | None) -> str | None:
     hangul_count = sum("\uac00" <= char <= "\ud7af" for char in normalized)
     han_chars = [char for char in normalized if "\u3400" <= char <= "\u9fff"]
     latin_count = sum(char.isascii() and char.isalpha() for char in normalized)
-    if kana_count >= 2:
+    if kana_count >= 2 or (kana_count >= 1 and "巻" in normalized):
         return "ja"
     if hangul_count >= 2:
         return "ko"
@@ -236,23 +304,93 @@ def infer_language(*values: str | None) -> str | None:
     return None
 
 
+def _parse_chinese_integer(value: str) -> int | None:
+    if not value or any(char not in _CHINESE_DIGITS and char not in _CHINESE_UNITS for char in value):
+        return None
+    if not any(char in _CHINESE_UNITS for char in value):
+        digits = "".join(str(_CHINESE_DIGITS[char]) for char in value)
+        return int(digits)
+
+    total = 0
+    pending = 0
+    for char in value:
+        if char in _CHINESE_DIGITS:
+            pending = _CHINESE_DIGITS[char]
+            continue
+        unit = _CHINESE_UNITS[char]
+        total += (pending or 1) * unit
+        pending = 0
+    return total + pending
+
+
+def _roman_integer(value: str) -> int | None:
+    text = value.upper()
+    if not text or re.fullmatch(r"[IVXLCDM]+", text) is None:
+        return None
+    values = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
+    result = 0
+    previous = 0
+    for char in reversed(text):
+        current = values[char]
+        if current < previous:
+            result -= current
+        else:
+            result += current
+            previous = current
+    canonical_parts = (
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    )
+    remaining = result
+    canonical = []
+    for number, token in canonical_parts:
+        while remaining >= number:
+            canonical.append(token)
+            remaining -= number
+    return result if 0 < result <= 999 and "".join(canonical) == text else None
+
+
+def _volume_token_integer(value: str) -> int | None:
+    normalized = unicodedata.normalize("NFKC", value).strip()
+    if normalized.isdecimal():
+        return int(normalized.lstrip("0") or "0")
+    chinese = _parse_chinese_integer(normalized)
+    if chinese is not None:
+        return chinese
+    return _roman_integer(normalized)
+
+
+def _volume_token_patterns() -> tuple[str, ...]:
+    explicit_token = rf"(?:{VOLUME_TOKEN}|{_ROMAN_NUMERAL_PATTERN})"
+    return (
+        rf"(?:第\s*)?({explicit_token})\s*[{VOLUME_MARKERS}]",
+        rf"(?:vol(?:ume)?|book|v)\.?\s*({explicit_token})",
+        rf"[\(（]\s*({explicit_token})\s*[\)）]",
+        rf"(?<!No\.)[\s._\-–—~～]+({VOLUME_TOKEN})(?:\s+.+)?$",
+    )
+
+
 def parse_volume_number(value: str) -> int | None:
     path_value = Path(value)
     raw_text = path_value.stem if path_value.suffix.casefold() in SUPPORTED_EXTENSIONS else value
     text = unicodedata.normalize("NFKC", raw_text)
-    patterns = [
-        r"(?:第\s*)?([0-9]{1,3})\s*[卷册集部]",
-        r"(?:vol(?:ume)?|book|v)\.?\s*([0-9]{1,3})",
-        r"[\(（]\s*([0-9]{1,3})\s*[\)）]",
-        r"(?<!No\.)[\s._\-–—~～]+([0-9]{1,3})(?:\s+.+)?$",
-    ]
-    for pattern in patterns:
+    for pattern in _volume_token_patterns():
         match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
-            try:
-                return int(match.group(1).lstrip("0") or "0")
-            except ValueError:
-                return None
+            number = _volume_token_integer(match.group(1))
+            if number is not None and number <= 999:
+                return number
     return None
 
 
@@ -260,15 +398,11 @@ def title_has_volume(value: str, volume_number: int | None) -> bool:
     if volume_number is None:
         return False
     text = unicodedata.normalize("NFKC", value)
-    number = str(volume_number)
-    padded = f"{volume_number:02d}"
-    patterns = [
-        rf"(?:第\s*)0*{number}\s*[卷册集部]",
-        rf"(?:vol(?:ume)?|book|v)\.?\s*0*{number}\b",
-        rf"[\(（]\s*0*{number}\s*[\)）]",
-        rf"[\s._\-–—~～]+(?:{number}|{padded})(?:\s|$)",
-    ]
-    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
+    return any(
+        _volume_token_integer(match.group(1)) == volume_number
+        for pattern in _volume_token_patterns()
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE)
+    )
 
 
 def extract_series_guess(file_name: str) -> str:
@@ -276,10 +410,10 @@ def extract_series_guess(file_name: str) -> str:
     text = extract_book_lookup_query(file_name)
 
     volume_patterns = [
-        rf"^(?P<title>.+?)[\s._\-–—~～]*(?:第\s*{VOLUME_TOKEN}\s*[卷册集部].*)$",
-        rf"^(?P<title>.+?)[\s._\-–—~～]*(?:[卷册集部]\s*{VOLUME_TOKEN}.*)$",
-        r"^(?P<title>.+?)[\s._\-–—~～]*(?:(?:vol(?:ume)?|book|v)\.?\s*[0-9０-９]{1,3}.*)$",
-        r"^(?P<title>.+?)[\s._\-–—~～]*[\(（]\s*[0-9０-９]{1,3}\s*[\)）].*$",
+        rf"^(?P<title>.+?)[\s._\-–—~～]*(?:(?:第\s*)?(?:{VOLUME_TOKEN}|{_ROMAN_NUMERAL_PATTERN})\s*[{VOLUME_MARKERS}].*)$",
+        rf"^(?P<title>.+?)[\s._\-–—~～]*(?:[{VOLUME_MARKERS}]\s*{VOLUME_TOKEN}.*)$",
+        rf"^(?P<title>.+?)[\s._\-–—~～]*(?:(?:vol(?:ume)?|book|v)\.?\s*(?:{VOLUME_TOKEN}|{_ROMAN_NUMERAL_PATTERN}).*)$",
+        rf"^(?P<title>.+?)[\s._\-–—~～]*[\(（]\s*(?:{VOLUME_TOKEN}|{_ROMAN_NUMERAL_PATTERN})\s*[\)）].*$",
         r"^(?P<title>.+?)[\s._\-–—~～]+(?:[0-9０-９]{1,3})(?:\s+.+)?$",
     ]
 
@@ -318,19 +452,54 @@ def safe_folder_name(value: str) -> str:
 
 
 def score_title(query: str, candidate: str) -> float:
-    normalized_query = normalize_for_match(query)
-    normalized_candidate = normalize_for_match(candidate)
-    if not normalized_query or not normalized_candidate:
+    query_keys = _title_match_keys(query)
+    candidate_keys = _title_match_keys(candidate)
+    if not query_keys or not candidate_keys:
         return 0.0
-    if normalized_query == normalized_candidate:
-        return 1.0
-    ratio = SequenceMatcher(None, normalized_query, normalized_candidate).ratio()
-    if normalized_query in normalized_candidate or normalized_candidate in normalized_query:
-        containment = min(len(normalized_query), len(normalized_candidate)) / max(
-            len(normalized_query), len(normalized_candidate)
-        )
-        ratio = max(ratio, 0.78 + containment * 0.2)
-    return min(ratio, 1.0)
+
+    best = 0.0
+    for query_index, normalized_query in enumerate(query_keys):
+        for candidate_index, normalized_candidate in enumerate(candidate_keys):
+            if normalized_query == normalized_candidate:
+                if query_index == candidate_index == 0:
+                    ratio = 1.0
+                elif query_index and candidate_index and query_keys[0] != candidate_keys[0]:
+                    ratio = 0.86
+                else:
+                    ratio = 0.94
+            else:
+                ratio = SequenceMatcher(None, normalized_query, normalized_candidate).ratio()
+                if normalized_query in normalized_candidate or normalized_candidate in normalized_query:
+                    containment = min(len(normalized_query), len(normalized_candidate)) / max(
+                        len(normalized_query), len(normalized_candidate)
+                    )
+                    ratio = max(ratio, 0.78 + containment * 0.2)
+                if query_index and candidate_index:
+                    ratio = min(ratio, 0.86)
+                elif query_index or candidate_index:
+                    ratio = min(ratio, 0.94)
+            best = max(best, ratio)
+    if query_keys[0] != candidate_keys[0] and set(query_keys[1:]).intersection(candidate_keys[1:]):
+        best = min(best, 0.86)
+    return min(best, 1.0)
+
+
+def _title_match_keys(value: str) -> tuple[str, ...]:
+    text = normalize_title_text(value)
+    variants = [text, extract_series_guess(text)]
+    series = variants[-1]
+    subtitle_variants = (
+        re.sub(r"\s+-\s+.+$", "", series),
+        re.sub(r"\s*~[^~]+~?\s*$", "", series),
+        re.sub(r"\s*[\[(（【][^\])）】]{2,80}[\])）】]\s*$", "", series),
+    )
+    variants.extend(subtitle_variants)
+    result: list[str] = []
+    for variant in variants:
+        key = normalize_for_match(variant)
+        if key and key not in result:
+            result.append(key)
+    return tuple(result)
 
 
 def acceptance_threshold(query: str) -> float:

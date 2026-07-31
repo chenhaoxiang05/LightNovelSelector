@@ -614,7 +614,7 @@
                                                             <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="{x:Bind Note}" TextTrimming="CharacterEllipsis" />
                                                         </StackPanel>
                                                         <StackPanel Grid.Column="3" VerticalAlignment="Center" Spacing="5">
-                                                            <TextBlock FontSize="12" Text="{x:Bind ConfidenceLabel}" />
+                                                            <TextBlock FontSize="12" Text="{x:Bind ConfidenceDisplayLabel}" />
                                                             <ProgressBar Width="76" Height="3" Maximum="1" Value="{x:Bind Confidence}" />
                                                         </StackPanel>
                                                         <TextBlock
@@ -714,6 +714,14 @@
                                                     <TextBlock x:Name="DetailTagsText" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" />
                                                 </StackPanel>
                                             </StackPanel>
+
+                                            <Border Background="{ThemeResource SubtleSurfaceBrush}" CornerRadius="8" Padding="10">
+                                                <StackPanel Spacing="5">
+                                                    <TextBlock FontSize="12" FontWeight="SemiBold" Text="分类依据" />
+                                                    <TextBlock x:Name="DetailReasonText" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" />
+                                                    <TextBlock x:Name="DetailEvidenceText" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Border>
 
                                             <StackPanel Spacing="5">
                                                 <TextBlock FontSize="12" FontWeight="SemiBold" Text="简介" />

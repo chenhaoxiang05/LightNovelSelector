@@ -148,6 +148,9 @@ class ClassificationPlan:
     target_path: Path
     resolver_source: str
     confidence: float
+    confidence_level: str
+    classification_reason: str
+    classification_evidence: tuple[str, ...]
     local_guess: str
     source_size: int | None = None
     source_mtime_ns: int | None = None
@@ -172,6 +175,9 @@ class ClassificationPlan:
         target_path: Path | None = None,
         resolver_source: str = "",
         confidence: float = 0.0,
+        confidence_level: str = "需复核",
+        classification_reason: str = "",
+        classification_evidence: tuple[str, ...] = (),
         local_guess: str = "",
         source_size: int | None = None,
         source_mtime_ns: int | None = None,
@@ -215,6 +221,9 @@ class ClassificationPlan:
         object.__setattr__(self, "target_path", target_path)
         object.__setattr__(self, "resolver_source", resolver_source)
         object.__setattr__(self, "confidence", confidence)
+        object.__setattr__(self, "confidence_level", confidence_level)
+        object.__setattr__(self, "classification_reason", classification_reason)
+        object.__setattr__(self, "classification_evidence", classification_evidence)
         object.__setattr__(self, "local_guess", local_guess)
         object.__setattr__(self, "source_size", source_size)
         object.__setattr__(self, "source_mtime_ns", source_mtime_ns)

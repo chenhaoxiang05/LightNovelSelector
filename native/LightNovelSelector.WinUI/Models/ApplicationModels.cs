@@ -121,6 +121,9 @@ public sealed class PlanItem
     public string ResolverSource { get; set; } = string.Empty;
     public double Confidence { get; set; }
     public string ConfidenceLabel { get; set; } = string.Empty;
+    public string ConfidenceLevel { get; set; } = string.Empty;
+    public string ClassificationReason { get; set; } = string.Empty;
+    public IReadOnlyList<string> ClassificationEvidence { get; set; } = [];
     public string Status { get; set; } = string.Empty;
     public string StatusLabel { get; set; } = string.Empty;
     public string Note { get; set; } = string.Empty;
@@ -130,10 +133,17 @@ public sealed class PlanItem
     public string? MetadataUrl { get; set; }
     public bool HasLocalCover { get; set; }
     public bool WillMove { get; set; }
+    public string ConfidenceDisplayLabel =>
+        string.IsNullOrWhiteSpace(ConfidenceLevel)
+            ? ConfidenceLabel
+            : $"{ConfidenceLabel} · {ConfidenceLevel}";
 
     public string AccessibilityLabel =>
         $"{StatusLabel}，{SeriesName}，文件 {FileName}，目标 {TargetName}，"
-        + $"置信度 {ConfidenceLabel}，来源 {ResolverSource}";
+        + $"置信度 {ConfidenceDisplayLabel}，来源 {ResolverSource}"
+        + (string.IsNullOrWhiteSpace(ClassificationReason)
+            ? string.Empty
+            : $"，分类依据：{ClassificationReason}");
 }
 
 public sealed class LogEntry
@@ -198,6 +208,9 @@ public sealed class BookDetail
     public string TagsLabel { get; init; } = string.Empty;
     public string ResolverSource { get; init; } = string.Empty;
     public string ConfidenceLabel { get; init; } = string.Empty;
+    public string ConfidenceLevel { get; init; } = string.Empty;
+    public string ClassificationReason { get; init; } = string.Empty;
+    public IReadOnlyList<string> ClassificationEvidence { get; init; } = [];
     public string Status { get; init; } = string.Empty;
     public string StatusLabel { get; init; } = string.Empty;
     public string Note { get; init; } = string.Empty;
