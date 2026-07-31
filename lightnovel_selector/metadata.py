@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from urllib.parse import quote, quote_plus
 
 from .identity import identity_from_filename
 from .models import BookMetadata, ResolveResult
@@ -13,6 +14,7 @@ from .parsing import (
     parse_volume_number,
     safe_folder_name,
 )
+from .provider_reliability import ProviderReliabilityController
 from .providers import (
     MetadataProvider,
     MetadataProviderRegistry,
@@ -67,6 +69,8 @@ class SeriesResolver:
         timeout: float = 10.0,
         persistent_cache: PersistentMetadataCache | None = None,
         providers: Iterable[MetadataProvider] | MetadataProviderRegistry | None = None,
+        reliability: ProviderReliabilityController | None = None,
+        checkpoint: Callable[[], None] | None = None,
     ) -> None:
         self.use_network = use_network
         self.timeout = timeout
@@ -77,6 +81,8 @@ class SeriesResolver:
             if isinstance(providers, MetadataProviderRegistry)
             else MetadataProviderRegistry(builtin_metadata_providers() if providers is None else providers)
         )
+        self.reliability = reliability or ProviderReliabilityController()
+        self.checkpoint = checkpoint
         self.last_network_error: str | None = None
 
     @property
@@ -128,21 +134,26 @@ class SeriesResolver:
         results: list[ResolveResult] = []
         errors: list[str] = []
         for provider in self.provider_registry:
+            if not self._provider_call_allowed(provider, "series", query, errors):
+                continue
             try:
                 raw_result = provider.resolve_series(query, timeout=self.timeout)
-                if raw_result is not None:
-                    results.append(
-                        normalize_provider_resolve_result(
-                            provider,
-                            raw_result,
-                            query=query,
-                        )
+                if raw_result is None:
+                    self.reliability.record_no_result(provider.provider_id, "series", query)
+                    continue
+                results.append(
+                    normalize_provider_resolve_result(
+                        provider,
+                        raw_result,
+                        query=query,
                     )
+                )
+                self.reliability.record_success(provider.provider_id)
             except MemoryError:
                 raise
             # Third-party providers are an explicit isolation boundary.
             except Exception as exc:  # noqa: BLE001
-                errors.append(provider_error_message(provider, exc))
+                self._record_provider_failure(provider, query, exc, errors)
 
         if errors:
             self.last_network_error = "；".join(errors)
@@ -190,6 +201,8 @@ class SeriesResolver:
 
         errors: list[str] = []
         for provider in self.provider_registry:
+            if not self._provider_call_allowed(provider, "book", query, errors):
+                continue
             try:
                 raw_metadata = provider.resolve_book(
                     query,
@@ -197,17 +210,19 @@ class SeriesResolver:
                     timeout=self.timeout,
                 )
                 if raw_metadata is None:
+                    self.reliability.record_no_result(provider.provider_id, "book", query)
                     continue
                 metadata = normalize_provider_book_metadata(
                     provider,
                     raw_metadata,
                     query=query,
                 )
+                self.reliability.record_success(provider.provider_id)
             except MemoryError:
                 raise
             # A broken optional provider must not block later providers.
             except Exception as exc:  # noqa: BLE001
-                errors.append(provider_error_message(provider, exc))
+                self._record_provider_failure(provider, query, exc, errors)
                 continue
 
             if errors:
@@ -232,20 +247,24 @@ class SeriesResolver:
     ) -> tuple[MetadataProvider, ResolveResult] | None:
         errors: list[str] = []
         for provider in self.provider_registry:
+            if not self._provider_call_allowed(provider, "series", query, errors):
+                continue
             try:
                 raw_result = provider.resolve_series(query, timeout=self.timeout)
                 if raw_result is None:
+                    self.reliability.record_no_result(provider.provider_id, "series", query)
                     continue
                 result = normalize_provider_resolve_result(
                     provider,
                     raw_result,
                     query=query,
                 )
+                self.reliability.record_success(provider.provider_id)
             except MemoryError:
                 raise
             # A broken optional provider must not block local classification.
             except Exception as exc:  # noqa: BLE001
-                errors.append(provider_error_message(provider, exc))
+                self._record_provider_failure(provider, query, exc, errors)
                 continue
 
             if errors:
@@ -255,6 +274,38 @@ class SeriesResolver:
         if errors:
             self.last_network_error = "；".join(errors)
         return None
+
+    def _provider_call_allowed(
+        self,
+        provider: MetadataProvider,
+        operation: str,
+        query: str,
+        errors: list[str],
+    ) -> bool:
+        permit = self.reliability.before_call(
+            provider.provider_id,
+            operation,
+            query,
+            checkpoint=self.checkpoint,
+        )
+        if permit.availability == "cooldown":
+            errors.append(f"{provider.display_name}: 暂时冷却，已跳过本次请求")
+        return permit.allowed
+
+    def _record_provider_failure(
+        self,
+        provider: MetadataProvider,
+        query: str,
+        exc: Exception,
+        errors: list[str],
+    ) -> None:
+        message = provider_error_message(provider, exc)
+        errors.append(message)
+        health_message = message
+        for query_variant in {query, quote(query), quote_plus(query)}:
+            if query_variant:
+                health_message = health_message.replace(query_variant, "<当前查询>")
+        self.reliability.record_failure(provider.provider_id, health_message)
 
     def _cache_key(self, kind: str, query: str) -> str:
         normalized_query = normalize_for_match(query)

@@ -29,6 +29,19 @@ public sealed class MetadataProviderInfo
     public string Id { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public int Priority { get; init; }
+    public int DefaultPriority { get; init; }
+    public bool Enabled { get; init; } = true;
+    public string Status { get; init; } = "idle";
+    public string StatusLabel { get; init; } = "尚未请求";
+    public int Attempts { get; init; }
+    public int Successes { get; init; }
+    public int Failures { get; init; }
+    public int ConsecutiveFailures { get; init; }
+    public int CooldownSkips { get; init; }
+    public int NegativeCacheHits { get; init; }
+    public int RateLimitWaits { get; init; }
+    public int CooldownRemainingSeconds { get; init; }
+    public string? LastError { get; init; }
 }
 
 public sealed class ScanCacheStats
@@ -56,7 +69,15 @@ public sealed class AppSettings
     public bool Recursive { get; init; }
     public bool AutoRename { get; init; }
     public IReadOnlyList<CustomRule> CustomRules { get; init; } = [];
+    public IReadOnlyList<MetadataProviderSetting> ProviderSettings { get; init; } = [];
     public string LastFolder { get; init; } = string.Empty;
+}
+
+public sealed class MetadataProviderSetting
+{
+    public string ProviderId { get; init; } = string.Empty;
+    public bool Enabled { get; init; } = true;
+    public int Priority { get; init; } = 100;
 }
 
 public sealed class CustomRule

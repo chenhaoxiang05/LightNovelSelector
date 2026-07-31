@@ -69,6 +69,7 @@ from .models import (
     ClassificationCandidate,
     ClassificationPlan,
     CustomRule,
+    MetadataProviderSetting,
     ResolveResult,
 )
 from .parsing import (
@@ -94,6 +95,12 @@ from .parsing import (
     strip_release_words,
     title_has_volume,
     weak_file_name_query,
+)
+from .provider_reliability import (
+    ProviderCallPermit,
+    ProviderHealth,
+    ProviderReliabilityController,
+    ProviderReliabilityPolicy,
 )
 from .providers import (
     AniListProvider,

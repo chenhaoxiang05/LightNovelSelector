@@ -140,9 +140,28 @@ public sealed class BookIdentityModelTests
         const string payload = """
             {
               "metadata_providers": [
-                { "id": "bangumi", "name": "Bangumi", "priority": 10 },
-                { "id": "community", "name": "社区书库", "priority": 40 }
-              ]
+                {
+                  "id": "bangumi",
+                  "name": "Bangumi",
+                  "priority": 10,
+                  "enabled": false,
+                  "status": "disabled",
+                  "status_label": "已禁用"
+                },
+                {
+                  "id": "community",
+                  "name": "社区书库",
+                  "priority": 40,
+                  "status": "cooldown",
+                  "status_label": "暂时冷却",
+                  "cooldown_remaining_seconds": 18
+                }
+              ],
+              "settings": {
+                "provider_settings": [
+                  { "provider_id": "community", "enabled": true, "priority": 40 }
+                ]
+              }
             }
             """;
 
@@ -153,5 +172,34 @@ public sealed class BookIdentityModelTests
         Assert.AreEqual("community", snapshot.MetadataProviders[1].Id);
         Assert.AreEqual("社区书库", snapshot.MetadataProviders[1].Name);
         Assert.AreEqual(40, snapshot.MetadataProviders[1].Priority);
+        Assert.AreEqual("cooldown", snapshot.MetadataProviders[1].Status);
+        Assert.AreEqual(18, snapshot.MetadataProviders[1].CooldownRemainingSeconds);
+        Assert.IsFalse(snapshot.MetadataProviders[0].Enabled);
+        Assert.AreEqual("community", snapshot.Settings.ProviderSettings[0].ProviderId);
+    }
+
+    [TestMethod]
+    public void SettingsSerializeProviderControlsWithSnakeCaseContract()
+    {
+        var settings = new AppSettings
+        {
+            ProviderSettings =
+            [
+                new MetadataProviderSetting
+                {
+                    ProviderId = "bangumi",
+                    Enabled = false,
+                    Priority = 25,
+                },
+            ],
+        };
+
+        var payload = JsonSerializer.Serialize(settings, JsonOptions);
+        using var document = JsonDocument.Parse(payload);
+        var provider = document.RootElement.GetProperty("provider_settings")[0];
+
+        Assert.AreEqual("bangumi", provider.GetProperty("provider_id").GetString());
+        Assert.IsFalse(provider.GetProperty("enabled").GetBoolean());
+        Assert.AreEqual(25, provider.GetProperty("priority").GetInt32());
     }
 }

@@ -45,6 +45,7 @@ py -3 -m venv .venv-build
 - `files.py`：文件扫描、内容提示、封面和网络字节读取。
 - `metadata.py`：提供器协调、错误隔离和按注册表分区的元数据缓存。
 - `providers/`：公开提供器接口、注册表和 Bangumi、AniList、Jikan 独立实现。
+- `provider_reliability.py`：来源级限流、失败冷却、短期负缓存与健康状态。
 - `scan_cache.py`：可靠文件快照、增量扫描和完整哈希缓存。
 - `scan_session.py`：一次可取消扫描的缓存生命周期、进度回调与结果，不持有线程或 UI 状态。
 - `storage.py`：设置、缓存、原子 JSON 和持久化 JSON Lines。

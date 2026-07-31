@@ -28,6 +28,9 @@ from .constants import (
     COVER_MAX_BYTES,
     CUSTOM_RULE_MAX_COUNT,
     CUSTOM_RULE_PATTERN_MAX_CHARS,
+    METADATA_PROVIDER_MAX_COUNT,
+    METADATA_PROVIDER_PRIORITY_MAX,
+    METADATA_PROVIDER_PRIORITY_MIN,
     REPORT_FILE_NAME,
     REPORT_UI_MAX_ITEMS,
     SERIES_NAME_MAX_CHARS,
@@ -41,8 +44,15 @@ from .identity import (
     volume_display_name,
 )
 from .metadata import SeriesResolver
-from .models import AppSettings, ClassificationCandidate, ClassificationPlan, CustomRule
+from .models import (
+    AppSettings,
+    ClassificationCandidate,
+    ClassificationPlan,
+    CustomRule,
+    MetadataProviderSetting,
+)
 from .parsing import collapse_spaces, normalize_for_match
+from .provider_reliability import ProviderReliabilityController
 from .providers import (
     MetadataProvider,
     MetadataProviderRegistry,
@@ -231,6 +241,7 @@ class ApplicationService:
             )
         )
         self.settings = load_app_settings()
+        self.provider_reliability = ProviderReliabilityController()
         self.correction_memory = correction_memory or RecognitionCorrectionMemory()
         self.folder = self._existing_folder(self.settings.last_folder)
         self.plans: list[ClassificationPlan] = []
@@ -426,17 +437,104 @@ class ApplicationService:
             raise ValueError(f"设置 {name} 必须是布尔值。")
         return value
 
+    def _provider_settings_from_payload(
+        self,
+        payload: dict[str, Any],
+    ) -> tuple[MetadataProviderSetting, ...]:
+        raw_settings = payload.get("provider_settings")
+        if raw_settings is None:
+            return self.settings.provider_settings
+        if not isinstance(raw_settings, list):
+            raise ValueError("元数据来源设置必须是数组。")
+        if len(raw_settings) > METADATA_PROVIDER_MAX_COUNT:
+            raise ValueError(f"元数据来源设置不能超过 {METADATA_PROVIDER_MAX_COUNT} 条。")
+
+        known_ids = {provider.provider_id for provider in self.metadata_provider_registry}
+        seen_ids: set[str] = set()
+        settings: list[MetadataProviderSetting] = []
+        for position, item in enumerate(raw_settings, start=1):
+            if not isinstance(item, dict):
+                raise ValueError(f"第 {position} 条元数据来源设置格式无效。")
+            provider_id = item.get("provider_id")
+            enabled = item.get("enabled")
+            priority = item.get("priority")
+            if not isinstance(provider_id, str) or provider_id not in known_ids:
+                raise ValueError(f"第 {position} 条元数据来源设置包含未知来源。")
+            if provider_id in seen_ids:
+                raise ValueError(f"元数据来源设置 ID 重复：{provider_id}")
+            if not isinstance(enabled, bool):
+                raise ValueError(f"元数据来源 {provider_id} 的启用状态必须是布尔值。")
+            if (
+                isinstance(priority, bool)
+                or not isinstance(priority, int)
+                or not METADATA_PROVIDER_PRIORITY_MIN <= priority <= METADATA_PROVIDER_PRIORITY_MAX
+            ):
+                raise ValueError(
+                    f"元数据来源 {provider_id} 的优先级必须在 "
+                    f"{METADATA_PROVIDER_PRIORITY_MIN} 到 {METADATA_PROVIDER_PRIORITY_MAX} 之间。"
+                )
+            seen_ids.add(provider_id)
+            settings.append(
+                MetadataProviderSetting(
+                    provider_id=provider_id,
+                    enabled=enabled,
+                    priority=priority,
+                )
+            )
+        return tuple(settings)
+
+    def _configured_provider_registry(
+        self,
+        settings: AppSettings,
+    ) -> MetadataProviderRegistry:
+        return self.metadata_provider_registry.configured(settings.provider_settings)
+
+    def _provider_snapshot(self) -> list[dict[str, Any]]:
+        settings_by_id = {setting.provider_id: setting for setting in self.settings.provider_settings}
+        providers: list[dict[str, Any]] = []
+        for provider in self.metadata_provider_registry:
+            setting = settings_by_id.get(provider.provider_id)
+            enabled = setting.enabled if setting is not None else True
+            priority = setting.priority if setting is not None else provider.priority
+            health = self.provider_reliability.health(provider.provider_id).to_dict()
+            if not enabled:
+                health = {
+                    **health,
+                    "status": "disabled",
+                    "status_label": "已禁用",
+                    "cooldown_remaining_seconds": 0,
+                }
+            providers.append(
+                {
+                    "id": provider.provider_id,
+                    "name": provider.display_name,
+                    "priority": priority,
+                    "default_priority": provider.priority,
+                    "enabled": enabled,
+                    **health,
+                }
+            )
+        return sorted(
+            providers,
+            key=lambda item: (
+                int(item["priority"]),
+                str(item["id"]),
+            ),
+        )
+
     def save_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValueError("设置格式无效。")
         rules = self._rules_from_payload(payload)
         with self._lock:
             self._assert_idle_locked()
+            provider_settings = self._provider_settings_from_payload(payload)
             new_settings = AppSettings(
                 use_network=self._boolean_from_payload(payload, "use_network", default=True),
                 recursive=self._boolean_from_payload(payload, "recursive", default=False),
                 auto_rename=self._boolean_from_payload(payload, "auto_rename", default=False),
                 custom_rules=rules,
+                provider_settings=provider_settings,
                 last_folder=str(self.folder or ""),
             )
             changed = new_settings != self.settings
@@ -465,14 +563,7 @@ class ApplicationService:
             )
             return {
                 "app": {"name": APP_NAME, "version": APP_VERSION},
-                "metadata_providers": [
-                    {
-                        "id": provider.provider_id,
-                        "name": provider.display_name,
-                        "priority": provider.priority,
-                    }
-                    for provider in self.metadata_provider_registry
-                ],
+                "metadata_providers": self._provider_snapshot(),
                 "folder": str(self.folder) if self.folder else "",
                 "settings": app_settings_to_dict(self.settings),
                 "operation": dict(self.operation),
@@ -492,6 +583,7 @@ class ApplicationService:
             self._assert_idle_locked()
             folder = self.folder
             settings = self.settings
+            metadata_providers = self._configured_provider_registry(settings)
             self._invalidate_plans_locked()
             operation_id, cancel_event = self._start_operation_locked(
                 "scan",
@@ -506,9 +598,10 @@ class ApplicationService:
         session = ScanSession(
             folder,
             settings,
-            metadata_providers=self.metadata_provider_registry,
+            metadata_providers=metadata_providers,
             correction_memory=self.correction_memory,
             cancel_event=cancel_event,
+            provider_reliability=self.provider_reliability,
             on_message=report_message,
             on_progress=lambda done, total: self._update_operation(
                 operation_id,
@@ -795,6 +888,7 @@ class ApplicationService:
             plan = self.plans[index]
             plans_revision = self.plans_revision
             use_network = self.settings.use_network
+            metadata_providers = self._configured_provider_registry(self.settings)
 
         if not use_network:
             return {
@@ -811,7 +905,8 @@ class ApplicationService:
 
         resolver = SeriesResolver(
             use_network=True,
-            providers=self.metadata_provider_registry,
+            providers=metadata_providers,
+            reliability=self.provider_reliability,
         )
         results = resolver.resolve_candidates(plan.network_query)
         remote_candidates = tuple(
@@ -864,6 +959,7 @@ class ApplicationService:
             plan = self.plans[index]
             plans_revision = self.plans_revision
             use_network = self.settings.use_network
+            metadata_providers = self._configured_provider_registry(self.settings)
             matching_series_count = len(
                 classification_plan_group_indices(
                     self.plans,
@@ -878,7 +974,8 @@ class ApplicationService:
             try:
                 metadata = SeriesResolver(
                     use_network=True,
-                    providers=self.metadata_provider_registry,
+                    providers=metadata_providers,
+                    reliability=self.provider_reliability,
                 ).resolve_book_metadata_for_query(
                     plan.network_query,
                     series_name=plan.series_name,
