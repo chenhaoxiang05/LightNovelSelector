@@ -47,7 +47,10 @@ LightNovelSelector/
 │  ├─ build_winui.ps1            完整验证与安装器流水线
 │  └─ LightNovelSelector.iss     Inno Setup 安装脚本
 ├─ tests/                         Python 核心、脱敏识别语料与 Sidecar 测试
+├─ benchmarks/
+│  └─ performance_budget.json     1 万文件 CI 性能预算
 ├─ tools/
+│  ├─ benchmark_large_library.py  合成大型书库性能与取消基准
 │  ├─ generate_native_assets.py  生成原生应用图标
 │  └─ verify_sidecar.py          验证打包 Sidecar 协议
 ├─ docs/                          架构、截图与维护说明

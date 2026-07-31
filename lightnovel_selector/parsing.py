@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from difflib import SequenceMatcher
+from functools import lru_cache
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -116,6 +117,34 @@ def contains_cjk(value: str) -> bool:
     )
 
 
+_LIGHT_NOVEL_RELEASE_PATTERN = re.compile(
+    r"\b(?:ln|light\s*novel|lightnovel)\b(?=\s*(?:第|vol|volume|book|v|\d|$))",
+    re.IGNORECASE,
+)
+_CJK_RELEASE_ALTERNATIVES = "|".join(
+    re.escape(word)
+    for word in sorted(
+        (word for word in GLOBAL_RELEASE_WORDS if contains_cjk(word)),
+        key=lambda item: (-len(item), item.casefold(), item),
+    )
+)
+_CJK_RELEASE_PATTERN = re.compile(
+    _CJK_RELEASE_ALTERNATIVES,
+    re.IGNORECASE,
+)
+_LATIN_RELEASE_ALTERNATIVES = "|".join(
+    re.escape(word)
+    for word in sorted(
+        (word for word in GLOBAL_RELEASE_WORDS if not contains_cjk(word)),
+        key=lambda item: (-len(item), item.casefold(), item),
+    )
+)
+_LATIN_RELEASE_PATTERN = re.compile(
+    rf"\b(?:{_LATIN_RELEASE_ALTERNATIVES})\b",
+    re.IGNORECASE,
+)
+
+
 def normalize_for_match(value: str) -> str:
     value = normalize_title_text(value).casefold()
     value = re.sub(r"[\s\-_.,:;~!！?？\"“”‘’'`·・/\\|()[\]{}【】《》（）「」『』]+", "", value)
@@ -163,18 +192,9 @@ def strip_bracket_noise(value: str) -> str:
 
 
 def strip_release_words(value: str) -> str:
-    text = value
-    text = re.sub(
-        r"\b(?:ln|light\s*novel|lightnovel)\b(?=\s*(?:第|vol|volume|book|v|\d|$))",
-        " ",
-        text,
-        flags=re.IGNORECASE,
-    )
-    for word in sorted(GLOBAL_RELEASE_WORDS, key=len, reverse=True):
-        if contains_cjk(word):
-            text = re.sub(re.escape(word), " ", text, flags=re.IGNORECASE)
-        else:
-            text = re.sub(rf"\b{re.escape(word)}\b", " ", text, flags=re.IGNORECASE)
+    text = _LIGHT_NOVEL_RELEASE_PATTERN.sub(" ", value)
+    text = _CJK_RELEASE_PATTERN.sub(" ", text)
+    text = _LATIN_RELEASE_PATTERN.sub(" ", text)
     return collapse_spaces(text)
 
 
@@ -190,6 +210,7 @@ def clean_file_stem(file_name: str) -> str:
     return collapse_spaces(text.strip(" -_.~"))
 
 
+@lru_cache(maxsize=2048)
 def extract_book_lookup_query(file_name: str) -> str:
     stem = Path(file_name).stem
     return clean_file_stem(file_name) or collapse_spaces(stem.strip(" -_.~"))
@@ -405,6 +426,7 @@ def title_has_volume(value: str, volume_number: int | None) -> bool:
     )
 
 
+@lru_cache(maxsize=2048)
 def extract_series_guess(file_name: str) -> str:
     stem = Path(file_name).stem
     text = extract_book_lookup_query(file_name)

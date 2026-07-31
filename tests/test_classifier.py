@@ -730,6 +730,10 @@ class MovePlanTests(unittest.TestCase):
                     return_value=snapshot,
                 ),
                 patch(
+                    "lightnovel_selector.files.capture_open_file_snapshot",
+                    return_value=snapshot,
+                ),
+                patch(
                     "lightnovel_selector.classification_planning.capture_file_snapshot",
                     return_value=snapshot,
                 ),
