@@ -33,6 +33,7 @@ from .parsing import (
     safe_folder_name,
     weak_file_name_query,
 )
+from .provider_reliability import ProviderReliabilityController
 from .providers import MetadataProvider, MetadataProviderRegistry
 from .recognition import assess_recognition
 from .scan_cache import LocalFileAnalysis, PersistentScanCache, capture_file_snapshot
@@ -72,6 +73,7 @@ def build_classification_plan(
     scan_cache: PersistentScanCache | None = None,
     metadata_providers: Iterable[MetadataProvider] | MetadataProviderRegistry | None = None,
     correction_memory: RecognitionCorrectionMemory | None = None,
+    provider_reliability: ProviderReliabilityController | None = None,
 ) -> list[ClassificationPlan]:
     root = validate_classification_root(root)
 
@@ -94,6 +96,8 @@ def build_classification_plan(
     resolver = SeriesResolver(
         use_network=use_network,
         providers=metadata_providers,
+        reliability=provider_reliability,
+        checkpoint=checkpoint,
     )
     plans: list[ClassificationPlan] = []
     reserved_targets: set[Path] = set()

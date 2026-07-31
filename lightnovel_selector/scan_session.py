@@ -9,6 +9,7 @@ from pathlib import Path
 from .classification_planning import build_classification_plan
 from .corrections import RecognitionCorrectionMemory
 from .models import AppSettings, ClassificationPlan
+from .provider_reliability import ProviderReliabilityController
 from .providers import MetadataProvider, MetadataProviderRegistry
 from .scan_cache import PersistentScanCache, ScanCacheStats
 
@@ -37,6 +38,7 @@ class ScanSession:
         metadata_providers: Iterable[MetadataProvider] | MetadataProviderRegistry,
         correction_memory: RecognitionCorrectionMemory,
         cancel_event: threading.Event,
+        provider_reliability: ProviderReliabilityController | None = None,
         on_message: Callable[[str], None] | None = None,
         on_progress: Callable[[int, int], None] | None = None,
         plan_builder: PlanBuilder = build_classification_plan,
@@ -46,6 +48,7 @@ class ScanSession:
         self.settings = settings
         self.metadata_providers = metadata_providers
         self.correction_memory = correction_memory
+        self.provider_reliability = provider_reliability or ProviderReliabilityController()
         self.cancel_event = cancel_event
         self.on_message = on_message
         self.on_progress = on_progress
@@ -88,6 +91,7 @@ class ScanSession:
                     scan_cache=scan_cache,
                     metadata_providers=self.metadata_providers,
                     correction_memory=self.correction_memory,
+                    provider_reliability=self.provider_reliability,
                 )
             if scan_cache is not None:
                 self.cache_stats = scan_cache.stats

@@ -1313,6 +1313,85 @@
                             </Border>
 
                             <Border Style="{StaticResource CardBorderStyle}">
+                                <StackPanel Spacing="14">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="在线元数据来源" />
+                                        <TextBlock
+                                            Style="{StaticResource MutedTextStyle}"
+                                            Text="可单独停用不需要的来源；优先级数字越小越先查询。故障来源会自动冷却，不会反复拖慢整批扫描。"
+                                            TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Grid Padding="12,0" ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="116" />
+                                            <ColumnDefinition Width="72" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="来源与健康状态" />
+                                        <TextBlock Grid.Column="1" Style="{StaticResource EyebrowTextStyle}" Text="优先级" />
+                                        <TextBlock Grid.Column="2" HorizontalAlignment="Right" Style="{StaticResource EyebrowTextStyle}" Text="启用" />
+                                    </Grid>
+                                    <ListView
+                                        x:Name="ProviderSettingsList"
+                                        AutomationProperties.Name="在线元数据来源设置"
+                                        IsItemClickEnabled="False"
+                                        ItemsSource="{x:Bind Providers}"
+                                        SelectionMode="None">
+                                        <ListView.ItemContainerStyle>
+                                            <Style TargetType="ListViewItem">
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                <Setter Property="Padding" Value="8,8" />
+                                            </Style>
+                                        </ListView.ItemContainerStyle>
+                                        <ListView.ItemTemplate>
+                                            <DataTemplate x:DataType="models:EditableMetadataProvider">
+                                                <Grid ColumnSpacing="12">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="116" />
+                                                        <ColumnDefinition Width="72" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel VerticalAlignment="Center" Spacing="2">
+                                                        <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" />
+                                                        <Grid ColumnSpacing="6">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Foreground="{ThemeResource AppAccentBrush}" Text="{x:Bind StatusLabel, Mode=OneWay}" />
+                                                            <TextBlock
+                                                                Grid.Column="1"
+                                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                MaxLines="2"
+                                                                Text="{x:Bind StatusDetail, Mode=OneWay}"
+                                                                TextTrimming="CharacterEllipsis"
+                                                                TextWrapping="WrapWholeWords" />
+                                                        </Grid>
+                                                    </StackPanel>
+                                                    <NumberBox
+                                                        Grid.Column="1"
+                                                        AutomationProperties.Name="{x:Bind Name}"
+                                                        LargeChange="10"
+                                                        Maximum="1000"
+                                                        Minimum="0"
+                                                        SmallChange="1"
+                                                        SpinButtonPlacementMode="Compact"
+                                                        Value="{x:Bind Priority, Mode=TwoWay}"
+                                                        ValueChanged="OnProviderPriorityChanged" />
+                                                    <ToggleSwitch
+                                                        Grid.Column="2"
+                                                        HorizontalAlignment="Right"
+                                                        AutomationProperties.Name="{x:Bind Name}"
+                                                        IsOn="{x:Bind Enabled, Mode=TwoWay}"
+                                                        Toggled="OnProviderEnabledToggled" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardBorderStyle}">
                                 <StackPanel Spacing="18">
                                     <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="外观与动态效果" />
                                     <Grid ColumnSpacing="20">

@@ -32,8 +32,57 @@ public sealed class MetadataProviderDisplayTests
         var description = MetadataProviderDisplay.BuildDescription([]);
 
         Assert.AreEqual(
-            "当前没有可用的联网元数据来源，本地识别仍可正常使用。",
+            "当前没有启用的联网元数据来源，本地识别仍可正常使用。",
             description
         );
+    }
+
+    [TestMethod]
+    public void DescriptionReportsCoolingWithoutHidingHealthySources()
+    {
+        var description = MetadataProviderDisplay.BuildDescription(
+            [
+                new MetadataProviderInfo
+                {
+                    Name = "Bangumi",
+                    Status = "cooldown",
+                },
+                new MetadataProviderInfo
+                {
+                    Name = "AniList",
+                    Status = "healthy",
+                },
+                new MetadataProviderInfo
+                {
+                    Name = "Jikan",
+                    Enabled = false,
+                    Status = "disabled",
+                },
+            ]
+        );
+
+        Assert.AreEqual(
+            "当前来源：Bangumi、AniList。当前有 1 个来源正在冷却，其余来源和本地识别继续工作。",
+            description
+        );
+    }
+
+    [TestMethod]
+    public void EditableProviderBuildsReadableHealthDetail()
+    {
+        var provider = new EditableMetadataProvider(
+            new MetadataProviderInfo
+            {
+                Id = "demo",
+                Name = "示例来源",
+                Status = "cooldown",
+                StatusLabel = "暂时冷却",
+                CooldownRemainingSeconds = 12,
+                LastError = "请求超时",
+            }
+        );
+
+        Assert.AreEqual("暂时冷却", provider.StatusLabel);
+        Assert.AreEqual("12 秒后可重试 · 请求超时", provider.StatusDetail);
     }
 }

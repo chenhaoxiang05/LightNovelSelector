@@ -25,6 +25,7 @@ LightNovelSelector/
 │  ├─ identity.py                书籍身份归一化、合并与显示标签
 │  ├─ metadata.py                提供器协调、异常隔离与元数据缓存
 │  ├─ providers/                 公开扩展接口及独立在线书库实现
+│  ├─ provider_reliability.py    来源限流、冷却、负缓存与健康状态
 │  ├─ models.py                  Python 数据模型
 │  ├─ parsing.py                 文件名与卷号解析
 │  ├─ sidecar.py                 JSON Lines Sidecar 服务

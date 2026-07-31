@@ -35,8 +35,12 @@ public sealed partial class MainPage
 
         if (!_settingsInitialized)
         {
-            LoadSettings(snapshot.Settings);
+            LoadSettings(snapshot.Settings, snapshot.MetadataProviders);
             _settingsInitialized = true;
+        }
+        else
+        {
+            UpdateProviderHealth(snapshot.MetadataProviders);
         }
 
         FolderPathText.Text = string.IsNullOrWhiteSpace(snapshot.Folder)

@@ -132,11 +132,19 @@ class CustomRule:
 
 
 @dataclass(frozen=True)
+class MetadataProviderSetting:
+    provider_id: str
+    enabled: bool = True
+    priority: int = 100
+
+
+@dataclass(frozen=True)
 class AppSettings:
     use_network: bool = True
     recursive: bool = False
     auto_rename: bool = False
     custom_rules: tuple[CustomRule, ...] = ()
+    provider_settings: tuple[MetadataProviderSetting, ...] = ()
     last_folder: str = ""
 
 

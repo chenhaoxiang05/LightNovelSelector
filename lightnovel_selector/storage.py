@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import tempfile
 import threading
 import time
@@ -20,6 +21,10 @@ from .constants import (
     METADATA_CACHE_MAX_ENTRIES,
     METADATA_CACHE_TTL_SECONDS,
     METADATA_CACHE_VERSION,
+    METADATA_PROVIDER_ID_PATTERN,
+    METADATA_PROVIDER_MAX_COUNT,
+    METADATA_PROVIDER_PRIORITY_MAX,
+    METADATA_PROVIDER_PRIORITY_MIN,
     METADATA_SUMMARY_MAX_CHARS,
     METADATA_TEXT_MAX_CHARS,
     REMOTE_URL_MAX_CHARS,
@@ -28,7 +33,14 @@ from .constants import (
     SETTINGS_MAX_BYTES,
     VOLUME_NUMBER_MAX,
 )
-from .models import AppSettings, BookIdentity, BookMetadata, CustomRule, ResolveResult
+from .models import (
+    AppSettings,
+    BookIdentity,
+    BookMetadata,
+    CustomRule,
+    MetadataProviderSetting,
+    ResolveResult,
+)
 from .parsing import (
     collapse_spaces,
     extract_series_guess,
@@ -380,6 +392,34 @@ def app_settings_from_dict(data: dict) -> AppSettings:
         ):
             rules.append(CustomRule(pattern=pattern, series=series))
     last_folder = data.get("last_folder")
+    provider_settings: list[MetadataProviderSetting] = []
+    provider_ids: set[str] = set()
+    raw_provider_settings = data.get("provider_settings")
+    if isinstance(raw_provider_settings, list):
+        for item in raw_provider_settings[:METADATA_PROVIDER_MAX_COUNT]:
+            if not isinstance(item, dict):
+                continue
+            provider_id = item.get("provider_id")
+            enabled = item.get("enabled")
+            priority = item.get("priority")
+            if (
+                not isinstance(provider_id, str)
+                or re.fullmatch(METADATA_PROVIDER_ID_PATTERN, provider_id) is None
+                or provider_id in provider_ids
+                or not isinstance(enabled, bool)
+                or isinstance(priority, bool)
+                or not isinstance(priority, int)
+                or not METADATA_PROVIDER_PRIORITY_MIN <= priority <= METADATA_PROVIDER_PRIORITY_MAX
+            ):
+                continue
+            provider_ids.add(provider_id)
+            provider_settings.append(
+                MetadataProviderSetting(
+                    provider_id=provider_id,
+                    enabled=enabled,
+                    priority=priority,
+                )
+            )
     use_network = data.get("use_network")
     recursive = data.get("recursive")
     auto_rename = data.get("auto_rename")
@@ -388,6 +428,7 @@ def app_settings_from_dict(data: dict) -> AppSettings:
         recursive=recursive if isinstance(recursive, bool) else False,
         auto_rename=auto_rename if isinstance(auto_rename, bool) else False,
         custom_rules=tuple(rules),
+        provider_settings=tuple(provider_settings),
         last_folder=(last_folder if isinstance(last_folder, str) and len(last_folder) <= LOCAL_PATH_MAX_CHARS else ""),
     )
 
@@ -399,6 +440,14 @@ def app_settings_to_dict(settings: AppSettings) -> dict:
         "auto_rename": settings.auto_rename,
         "last_folder": settings.last_folder,
         "custom_rules": [{"pattern": rule.pattern, "series": rule.series} for rule in settings.custom_rules],
+        "provider_settings": [
+            {
+                "provider_id": setting.provider_id,
+                "enabled": setting.enabled,
+                "priority": setting.priority,
+            }
+            for setting in settings.provider_settings
+        ],
     }
 
 

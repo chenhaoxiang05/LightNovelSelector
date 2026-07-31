@@ -10,12 +10,15 @@ from dataclasses import dataclass
 from ..constants import (
     IDENTITY_MAX_AUTHORS,
     IDENTITY_MAX_TAGS,
+    METADATA_PROVIDER_ID_PATTERN,
+    METADATA_PROVIDER_PRIORITY_MAX,
+    METADATA_PROVIDER_PRIORITY_MIN,
     METADATA_TEXT_MAX_CHARS,
     VOLUME_NUMBER_MAX,
 )
 from ..files import validate_https_url
 from ..identity import normalize_identity_values
-from ..models import BookIdentity, BookMetadata, ResolveResult
+from ..models import BookIdentity, BookMetadata, MetadataProviderSetting, ResolveResult
 from ..parsing import (
     collapse_spaces,
     normalize_language_code,
@@ -23,7 +26,7 @@ from ..parsing import (
 )
 from .common import clean_summary
 
-PROVIDER_ID_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,47}")
+PROVIDER_ID_PATTERN = re.compile(METADATA_PROVIDER_ID_PATTERN)
 PROVIDER_VERSION_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,31}")
 PROVIDER_DISPLAY_NAME_MAX_CHARS = 80
 PROVIDER_ERROR_MAX_CHARS = 400
@@ -57,10 +60,35 @@ class MetadataProvider(ABC):
 
 @dataclass(frozen=True, slots=True, init=False)
 class MetadataProviderRegistry:
+    _all_providers: tuple[MetadataProvider, ...]
     _providers: tuple[MetadataProvider, ...]
+    _effective_priorities: tuple[tuple[str, int], ...]
     cache_namespace: str
 
-    def __init__(self, providers: Iterable[MetadataProvider]) -> None:
+    def __init__(
+        self,
+        providers: Iterable[MetadataProvider],
+        *,
+        settings: Iterable[MetadataProviderSetting] = (),
+    ) -> None:
+        configured: dict[str, MetadataProviderSetting] = {}
+        for setting in settings:
+            if not isinstance(setting, MetadataProviderSetting):
+                raise TypeError("元数据提供器设置必须是 MetadataProviderSetting。")
+            if PROVIDER_ID_PATTERN.fullmatch(setting.provider_id) is None:
+                raise ValueError("元数据提供器设置包含无效 ID。")
+            if setting.provider_id in configured:
+                raise ValueError(f"元数据提供器设置 ID 重复：{setting.provider_id}")
+            if not isinstance(setting.enabled, bool):
+                raise ValueError(f"元数据提供器 {setting.provider_id} 的启用状态必须是布尔值。")
+            if (
+                isinstance(setting.priority, bool)
+                or not isinstance(setting.priority, int)
+                or not METADATA_PROVIDER_PRIORITY_MIN <= setting.priority <= METADATA_PROVIDER_PRIORITY_MAX
+            ):
+                raise ValueError(f"元数据提供器 {setting.provider_id} 的优先级超出有效范围。")
+            configured[setting.provider_id] = setting
+        all_providers: list[MetadataProvider] = []
         collected: list[tuple[int, int, MetadataProvider]] = []
         provider_ids: set[str] = set()
         for position, provider in enumerate(providers):
@@ -70,12 +98,23 @@ class MetadataProviderRegistry:
             if provider.provider_id in provider_ids:
                 raise ValueError(f"元数据提供器 ID 重复：{provider.provider_id}")
             provider_ids.add(provider.provider_id)
-            collected.append((provider.priority, position, provider))
+            all_providers.append(provider)
+            provider_setting = configured.get(provider.provider_id)
+            if provider_setting is not None and not provider_setting.enabled:
+                continue
+            effective_priority = provider_setting.priority if provider_setting is not None else provider.priority
+            collected.append((effective_priority, position, provider))
 
-        ordered = tuple(item[2] for item in sorted(collected))
-        signature = ";".join(f"{provider.provider_id}@{provider.cache_version}" for provider in ordered)
+        ordered_items = sorted(collected)
+        ordered = tuple(item[2] for item in ordered_items)
+        effective_priorities = tuple((item[2].provider_id, item[0]) for item in ordered_items)
+        signature = ";".join(
+            f"{provider.provider_id}@{provider.cache_version}:{priority}" for priority, _, provider in ordered_items
+        )
         namespace = hashlib.sha256(signature.encode("utf-8")).hexdigest()[:16]
+        object.__setattr__(self, "_all_providers", tuple(all_providers))
         object.__setattr__(self, "_providers", ordered)
+        object.__setattr__(self, "_effective_priorities", effective_priorities)
         object.__setattr__(self, "cache_namespace", namespace)
 
     @property
@@ -95,6 +134,15 @@ class MetadataProviderRegistry:
             (provider for provider in self._providers if provider.provider_id == provider_id),
             None,
         )
+
+    def effective_priority(self, provider_id: str) -> int | None:
+        return dict(self._effective_priorities).get(provider_id)
+
+    def configured(
+        self,
+        settings: Iterable[MetadataProviderSetting],
+    ) -> MetadataProviderRegistry:
+        return MetadataProviderRegistry(self._all_providers, settings=settings)
 
 
 def provider_error_message(provider: MetadataProvider, exc: Exception) -> str:

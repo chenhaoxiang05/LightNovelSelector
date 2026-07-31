@@ -41,6 +41,7 @@ public sealed partial class MainPage : Page
     public IReadOnlyList<PlanItem> VisiblePlans { get; private set; } = [];
     public ObservableCollection<LogEntry> Logs { get; } = [];
     public ObservableCollection<EditableRule> Rules { get; } = [];
+    public ObservableCollection<EditableMetadataProvider> Providers { get; } = [];
     public ObservableCollection<ReportItem> ReportItems { get; } = [];
     public ObservableCollection<ReportHistoryEntry> ReportHistory { get; } = [];
 
