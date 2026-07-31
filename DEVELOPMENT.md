@@ -33,7 +33,11 @@ py -3 -m venv .venv-build
 
 ### Python 核心
 
-- `classification.py`：分类计划、完整哈希重复检测、线性恢复日志、报告和撤销。
+- `classification.py`：保持历史公开导入路径的轻量兼容门面。
+- `classification_discovery.py` / `classification_planning.py`：文件发现、分类计划生成与人工修正。
+- `classification_reporting.py` / `classification_recovery.py`：报告序列化、有界读取与崩溃恢复日志。
+- `classification_execution.py` / `classification_undo.py`：文件移动事务与撤销执行。
+- `classification_safety.py`：执行、报告和撤销共用的路径与文件状态校验。
 - `corrections.py`：人工修正形成的有界本地系列别名与原子持久化。
 - `recognition.py`：跨来源置信度校准、等级与可读分类依据。
 - `report_history.py`：报告归档、受限历史列表、执行编号解析和撤销状态。
@@ -42,8 +46,9 @@ py -3 -m venv .venv-build
 - `metadata.py`：提供器协调、错误隔离和按注册表分区的元数据缓存。
 - `providers/`：公开提供器接口、注册表和 Bangumi、AniList、Jikan 独立实现。
 - `scan_cache.py`：可靠文件快照、增量扫描和完整哈希缓存。
+- `scan_session.py`：一次可取消扫描的缓存生命周期、进度回调与结果，不持有线程或 UI 状态。
 - `storage.py`：设置、缓存、原子 JSON 和持久化 JSON Lines。
-- `application.py`：线程安全应用状态、异步任务和快照。
+- `application.py`：线程安全应用状态、后台线程和 Sidecar 快照。
 - `sidecar.py`：JSON Lines 请求分发。
 - `cli.py`：自动化命令行；不再启动桌面界面。
 

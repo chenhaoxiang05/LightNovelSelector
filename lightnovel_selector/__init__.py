@@ -141,6 +141,7 @@ from .scan_cache import (
     capture_open_file_snapshot,
     scan_cache_path,
 )
+from .scan_session import OperationCancelled, ScanSession, ScanSessionResult
 from .storage import (
     PersistentMetadataCache,
     app_data_dir,

@@ -276,7 +276,7 @@ class ReportSafetyTests(unittest.TestCase):
             report_path = Path(temp_dir) / "classification_report.json"
             report_path.write_text('{"payload":"too large"}', encoding="utf-8")
             with (
-                patch("lightnovel_selector.classification.REPORT_MAX_BYTES", 8),
+                patch("lightnovel_selector.classification_reporting.REPORT_MAX_BYTES", 8),
                 self.assertRaisesRegex(ValueError, "超过允许大小"),
             ):
                 load_classification_report(report_path)
@@ -287,7 +287,10 @@ class ReportSafetyTests(unittest.TestCase):
             report_path.write_text("{}", encoding="utf-8")
 
             with (
-                patch("lightnovel_selector.classification.json.loads", side_effect=RecursionError),
+                patch(
+                    "lightnovel_selector.classification_reporting.json.loads",
+                    side_effect=RecursionError,
+                ),
                 self.assertRaisesRegex(ValueError, "格式无效"),
             ):
                 load_classification_report(report_path)
@@ -365,7 +368,7 @@ class UndoReportSafetyTests(unittest.TestCase):
 
             with (
                 patch(
-                    "lightnovel_selector.classification.shutil.move",
+                    "lightnovel_selector.classification_execution.shutil.move",
                     side_effect=KeyboardInterrupt,
                 ),
                 self.assertRaises(KeyboardInterrupt),
@@ -401,7 +404,7 @@ class UndoReportSafetyTests(unittest.TestCase):
 
                 with (
                     patch(
-                        "lightnovel_selector.classification.shutil.move",
+                        "lightnovel_selector.classification_execution.shutil.move",
                         side_effect=KeyboardInterrupt,
                     ),
                     self.assertRaises(KeyboardInterrupt),
@@ -571,7 +574,7 @@ class UndoReportSafetyTests(unittest.TestCase):
 
             with (
                 patch(
-                    "lightnovel_selector.classification.shutil.move",
+                    "lightnovel_selector.classification_undo.shutil.move",
                     side_effect=interrupt_second_restore,
                 ),
                 self.assertRaises(KeyboardInterrupt),
@@ -601,7 +604,7 @@ class UndoReportSafetyTests(unittest.TestCase):
 
             with (
                 patch(
-                    "lightnovel_selector.classification.shutil.move",
+                    "lightnovel_selector.classification_undo.shutil.move",
                     side_effect=copy_then_fail,
                 ),
                 self.assertRaisesRegex(OSError, "cross-volume"),
@@ -625,7 +628,10 @@ class UndoReportSafetyTests(unittest.TestCase):
             target = Path(report["items"][0]["actual_target_path"])
 
             with (
-                patch("lightnovel_selector.classification.shutil.move", return_value=None),
+                patch(
+                    "lightnovel_selector.classification_undo.shutil.move",
+                    return_value=None,
+                ),
                 self.assertRaisesRegex(RuntimeError, "文件状态未达到预期"),
             ):
                 undo_classification_report(report_path)
@@ -686,7 +692,7 @@ class UndoReportSafetyTests(unittest.TestCase):
 
             with (
                 patch(
-                    "lightnovel_selector.classification.shutil.move",
+                    "lightnovel_selector.classification_undo.shutil.move",
                     side_effect=change_next_target_after_first_restore,
                 ),
                 self.assertRaisesRegex(ValueError, "已发生变化"),

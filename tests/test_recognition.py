@@ -200,7 +200,7 @@ class CorrectionMemoryTests(unittest.TestCase):
             )
 
             with patch(
-                "lightnovel_selector.classification.SeriesResolver.resolve",
+                "lightnovel_selector.classification_planning.SeriesResolver.resolve",
                 return_value=provider_result,
             ):
                 plan = build_classification_plan(
