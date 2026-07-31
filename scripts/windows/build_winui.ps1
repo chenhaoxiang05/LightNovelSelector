@@ -299,9 +299,9 @@ if (-not $SkipTests) {
     Invoke-External -FilePath $python -Arguments @("-m", "pytest", "-q")
     Invoke-External -FilePath $python -Arguments @("-m", "ruff", "check", ".")
     Invoke-External -FilePath $python -Arguments @("-m", "ruff", "format", "--check", ".")
-    Invoke-External -FilePath $python -Arguments @("-m", "mypy", "lightnovel_classifier.py", "lightnovel_sidecar.py", "lightnovel_selector", "tests")
-    Invoke-External -FilePath $python -Arguments @("-m", "bandit", "-q", "-r", "lightnovel_selector", "lightnovel_classifier.py", "lightnovel_sidecar.py")
-    Invoke-External -FilePath $python -Arguments @("-m", "vulture", "lightnovel_classifier.py", "lightnovel_selector", "tests", "--min-confidence", "80")
+    Invoke-External -FilePath $python -Arguments @("-m", "mypy", "lightnovel_classifier.py", "lightnovel_sidecar.py", "lightnovel_selector", "tests", "tools")
+    Invoke-External -FilePath $python -Arguments @("-m", "bandit", "-q", "-r", "lightnovel_selector", "lightnovel_classifier.py", "lightnovel_sidecar.py", "tools")
+    Invoke-External -FilePath $python -Arguments @("-m", "vulture", "lightnovel_classifier.py", "lightnovel_selector", "tests", "tools", "--min-confidence", "80")
     Invoke-External -FilePath $python -Arguments @("-m", "pip_audit", "-r", "requirements-dev.txt", "--strict")
 
     Write-Host "[6/9] Running C# tests..."

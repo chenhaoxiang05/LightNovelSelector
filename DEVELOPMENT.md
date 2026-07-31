@@ -103,6 +103,23 @@ git diff --check
 
 测试数量会随回归覆盖增长，不在文档中固定；以命令输出和 GitHub Actions 为准。
 
+### 大型书库性能基准
+
+性能基准只生成临时合成文件，不读取真实书库，也不访问网络：
+
+```powershell
+.\.venv-build\Scripts\python.exe -m tools.benchmark_large_library `
+  --files 10000 `
+  --budget benchmarks\performance_budget.json `
+  --output build\performance\large-library.json `
+  --enforce
+```
+
+它依次验证快速取消、取消后的完整重扫、热缓存重扫、缓存复用率和峰值工作集。JSON
+报告写入被 Git 忽略的 `build\performance`；GitHub Actions 同时把摘要写入任务页面。
+预算修改必须附带同一机器上的修改前后报告，不能为了让退化通过而单独放宽阈值。详细方法见
+[性能基准说明](docs/PERFORMANCE.md)。
+
 ## UI 与动效约束
 
 - 默认跟随 Windows 深浅色，首次材质为 Acrylic；透明效果关闭或高对比度时回退实色。

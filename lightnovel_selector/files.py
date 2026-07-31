@@ -4,6 +4,7 @@ import fnmatch
 import hashlib
 import ipaddress
 import json
+import os
 import posixpath
 import socket
 import urllib.error
@@ -46,7 +47,11 @@ from .parsing import (
     normalize_language_code,
     parse_volume_number,
 )
-from .scan_cache import PersistentScanCache, capture_file_snapshot
+from .scan_cache import (
+    PersistentScanCache,
+    capture_file_snapshot,
+    capture_open_file_snapshot,
+)
 
 _PROXY_SYNTHETIC_NETWORKS = (ipaddress.ip_network("198.18.0.0/15"),)
 _PROXY_SYNTHETIC_DOMAIN_SUFFIXES = (
@@ -520,21 +525,25 @@ def file_fingerprint(
     scan_cache: PersistentScanCache | None = None,
 ) -> str:
     cached_snapshot = None
-    if scan_cache is not None:
-        if checkpoint:
-            checkpoint()
-        cached_snapshot = capture_file_snapshot(path)
-        cached = scan_cache.get_fingerprint(path, cached_snapshot)
-        if cached is not None:
-            if checkpoint:
-                checkpoint()
-            if capture_file_snapshot(path) != cached_snapshot:
-                raise OSError(f"文件在读取缓存指纹时发生变化：{path}")
-            return cached
-
-    initial_stat = path.stat()
     digest = hashlib.sha256()
     with path.open("rb") as handle:
+        if scan_cache is not None:
+            if checkpoint:
+                checkpoint()
+            cached_snapshot = capture_open_file_snapshot(handle)
+            cached = scan_cache.get_fingerprint(path, cached_snapshot)
+            if cached is not None:
+                if checkpoint:
+                    checkpoint()
+                if capture_file_snapshot(path) != cached_snapshot:
+                    raise OSError(f"文件在读取缓存指纹时发生变化：{path}")
+                return cached
+            initial_size = cached_snapshot.size
+            initial_mtime_ns = cached_snapshot.mtime_ns
+        else:
+            initial_stat = os.fstat(handle.fileno())
+            initial_size = initial_stat.st_size
+            initial_mtime_ns = initial_stat.st_mtime_ns
         while True:
             if checkpoint:
                 checkpoint()
@@ -542,14 +551,19 @@ def file_fingerprint(
             if not chunk:
                 break
             digest.update(chunk)
-    final_stat = path.stat()
-    if initial_stat.st_size != final_stat.st_size or initial_stat.st_mtime_ns != final_stat.st_mtime_ns:
-        raise OSError(f"文件在计算指纹时发生变化：{path}")
-    fingerprint = f"{final_stat.st_size}:{digest.hexdigest()}"
-    if scan_cache is not None and cached_snapshot is not None and cached_snapshot.cacheable:
+    if scan_cache is not None and cached_snapshot is not None:
         final_snapshot = capture_file_snapshot(path)
         if cached_snapshot != final_snapshot:
             raise OSError(f"文件在计算指纹时发生变化：{path}")
+        final_size = final_snapshot.size
+    else:
+        final_stat = path.stat()
+        if initial_size != final_stat.st_size or initial_mtime_ns != final_stat.st_mtime_ns:
+            raise OSError(f"文件在计算指纹时发生变化：{path}")
+        final_size = final_stat.st_size
+        final_snapshot = None
+    fingerprint = f"{final_size}:{digest.hexdigest()}"
+    if scan_cache is not None and final_snapshot is not None and final_snapshot.cacheable:
         scan_cache.remember_fingerprint(path, final_snapshot, fingerprint)
     return fingerprint
 
@@ -561,38 +575,47 @@ def file_quick_signature(
     scan_cache: PersistentScanCache | None = None,
 ) -> str:
     cached_snapshot = None
-    if scan_cache is not None:
-        if checkpoint:
-            checkpoint()
-        cached_snapshot = capture_file_snapshot(path)
-        cached = scan_cache.get_quick_signature(path, cached_snapshot)
-        if cached is not None:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        if scan_cache is not None:
             if checkpoint:
                 checkpoint()
-            if capture_file_snapshot(path) != cached_snapshot:
-                raise OSError(f"文件在读取缓存快速签名时发生变化：{path}")
-            return cached
-
-    initial_stat = path.stat()
-    digest = hashlib.sha256()
-    digest.update(str(initial_stat.st_size).encode("ascii"))
-    with path.open("rb") as handle:
+            cached_snapshot = capture_open_file_snapshot(handle)
+            cached = scan_cache.get_quick_signature(path, cached_snapshot)
+            if cached is not None:
+                if checkpoint:
+                    checkpoint()
+                if capture_file_snapshot(path) != cached_snapshot:
+                    raise OSError(f"文件在读取缓存快速签名时发生变化：{path}")
+                return cached
+            initial_size = cached_snapshot.size
+            initial_mtime_ns = cached_snapshot.mtime_ns
+        else:
+            initial_stat = os.fstat(handle.fileno())
+            initial_size = initial_stat.st_size
+            initial_mtime_ns = initial_stat.st_mtime_ns
+        digest.update(str(initial_size).encode("ascii"))
         if checkpoint:
             checkpoint()
         digest.update(handle.read(FILE_FINGERPRINT_CHUNK_SIZE))
-        if initial_stat.st_size > FILE_FINGERPRINT_CHUNK_SIZE:
+        if initial_size > FILE_FINGERPRINT_CHUNK_SIZE:
             if checkpoint:
                 checkpoint()
-            handle.seek(max(0, initial_stat.st_size - FILE_FINGERPRINT_CHUNK_SIZE))
+            handle.seek(max(0, initial_size - FILE_FINGERPRINT_CHUNK_SIZE))
             digest.update(handle.read(FILE_FINGERPRINT_CHUNK_SIZE))
-    final_stat = path.stat()
-    if initial_stat.st_size != final_stat.st_size or initial_stat.st_mtime_ns != final_stat.st_mtime_ns:
-        raise OSError(f"文件在计算快速签名时发生变化：{path}")
-    signature = f"{final_stat.st_size}:{digest.hexdigest()}"
-    if scan_cache is not None and cached_snapshot is not None and cached_snapshot.cacheable:
+    if scan_cache is not None and cached_snapshot is not None:
         final_snapshot = capture_file_snapshot(path)
         if cached_snapshot != final_snapshot:
             raise OSError(f"文件在计算快速签名时发生变化：{path}")
+        final_size = final_snapshot.size
+    else:
+        final_stat = path.stat()
+        if initial_size != final_stat.st_size or initial_mtime_ns != final_stat.st_mtime_ns:
+            raise OSError(f"文件在计算快速签名时发生变化：{path}")
+        final_size = final_stat.st_size
+        final_snapshot = None
+    signature = f"{final_size}:{digest.hexdigest()}"
+    if scan_cache is not None and final_snapshot is not None and final_snapshot.cacheable:
         scan_cache.remember_quick_signature(path, final_snapshot, signature)
     return signature
 

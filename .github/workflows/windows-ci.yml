@@ -43,17 +43,28 @@ jobs:
         shell: pwsh
         run: |
           python -m py_compile lightnovel_classifier.py lightnovel_sidecar.py tools/verify_sidecar.py
-          foreach ($file in Get-ChildItem lightnovel_selector,tests -Recurse -Filter *.py) {
+          foreach ($file in Get-ChildItem lightnovel_selector,tests,tools -Recurse -Filter *.py) {
             python -m py_compile $file.FullName
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           python -m pytest -q
           python -m ruff check .
           python -m ruff format --check .
-          python -m mypy lightnovel_classifier.py lightnovel_sidecar.py lightnovel_selector tests
-          python -m bandit -q -r lightnovel_selector lightnovel_classifier.py lightnovel_sidecar.py
-          python -m vulture lightnovel_classifier.py lightnovel_selector tests --min-confidence 80
+          python -m mypy lightnovel_classifier.py lightnovel_sidecar.py lightnovel_selector tests tools
+          python -m bandit -q -r lightnovel_selector lightnovel_classifier.py lightnovel_sidecar.py tools
+          python -m vulture lightnovel_classifier.py lightnovel_selector tests tools --min-confidence 80
           python -m pip_audit -r requirements-dev.txt --strict
+
+      - name: 验证 1 万文件性能预算
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          python -m tools.benchmark_large_library `
+            --files 10000 `
+            --budget benchmarks/performance_budget.json `
+            --output build/performance/large-library.json `
+            --enforce
 
       - name: 配置 .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0

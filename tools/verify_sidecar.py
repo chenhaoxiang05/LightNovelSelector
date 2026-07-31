@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
-import subprocess
+
+# This protocol verifier intentionally starts a caller-supplied build artifact.
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
 
 def verify_sidecar(executable: Path) -> None:
     payload = '{"id":1,"method":"ping"}\n{"id":2,"method":"shutdown"}\n'
-    process = subprocess.run(
+    # The executable is passed as a list argument and never through a command shell.
+    process = subprocess.run(  # nosec B603
         [str(executable)],
         input=payload,
         text=True,
