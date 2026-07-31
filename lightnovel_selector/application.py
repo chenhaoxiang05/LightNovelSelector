@@ -5,7 +5,6 @@ import math
 import threading
 from collections import deque
 from collections.abc import Iterable
-from contextlib import nullcontext
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,6 +55,7 @@ from .report_history import (
     resolve_classification_report,
 )
 from .scan_cache import PersistentScanCache, ScanCacheStats
+from .scan_session import OperationCancelled, ScanSession
 from .storage import (
     app_settings_to_dict,
     book_identity_from_dict,
@@ -63,10 +63,6 @@ from .storage import (
     load_app_settings,
     try_save_app_settings,
 )
-
-
-class OperationCancelled(RuntimeError):
-    pass
 
 
 def plan_to_dict(plan: ClassificationPlan, index: int) -> dict[str, Any]:
@@ -503,48 +499,31 @@ class ApplicationService:
                 can_cancel=True,
             )
 
+        def report_message(message: str) -> None:
+            self._append_log(message, "info")
+            self._update_operation(operation_id, message=message)
+
+        session = ScanSession(
+            folder,
+            settings,
+            metadata_providers=self.metadata_provider_registry,
+            correction_memory=self.correction_memory,
+            cancel_event=cancel_event,
+            on_message=report_message,
+            on_progress=lambda done, total: self._update_operation(
+                operation_id,
+                done=done,
+                total=total,
+            ),
+            plan_builder=build_classification_plan,
+            scan_cache_factory=PersistentScanCache,
+        )
+
         def work() -> None:
-            scan_cache: PersistentScanCache | None = None
-            cache_stats = ScanCacheStats()
             try:
-                try:
-                    scan_cache = PersistentScanCache()
-                except OSError as exc:
-                    cache_stats = ScanCacheStats(write_warning=str(exc)[:2000])
-
-                def log(message: str) -> None:
-                    if cancel_event.is_set():
-                        raise OperationCancelled("扫描已取消。")
-                    self._append_log(message, "info")
-                    self._update_operation(operation_id, message=message)
-
-                def progress(done: int, total: int) -> None:
-                    if cancel_event.is_set():
-                        raise OperationCancelled("扫描已取消。")
-                    self._update_operation(operation_id, done=done, total=total)
-
-                def checkpoint() -> None:
-                    if cancel_event.is_set():
-                        raise OperationCancelled("扫描已取消。")
-
-                with scan_cache if scan_cache is not None else nullcontext():
-                    plans = build_classification_plan(
-                        folder,
-                        recursive=settings.recursive,
-                        use_network=settings.use_network,
-                        auto_rename=settings.auto_rename,
-                        custom_rules=settings.custom_rules,
-                        progress=log,
-                        progress_count=progress,
-                        checkpoint=checkpoint,
-                        scan_cache=scan_cache,
-                        metadata_providers=self.metadata_provider_registry,
-                        correction_memory=self.correction_memory,
-                    )
-                if cancel_event.is_set():
-                    raise OperationCancelled("扫描已取消。")
-                if scan_cache is not None:
-                    cache_stats = scan_cache.stats
+                result = session.run()
+                plans = result.plans
+                cache_stats = result.cache_stats
                 with self._lock:
                     if self.operation["id"] != operation_id:
                         return
@@ -568,14 +547,12 @@ class ApplicationService:
             except OperationCancelled:
                 with self._lock:
                     if self.operation["id"] == operation_id:
-                        stats = scan_cache.stats if scan_cache is not None else cache_stats
-                        self.scan_cache_stats = stats.to_dict()
+                        self.scan_cache_stats = session.cache_stats.to_dict()
                 self._finish_operation(operation_id, "cancelled", "扫描已取消，原文件未发生变化。")
             except Exception as exc:  # noqa: BLE001 - 后台任务边界需将未知错误转为可恢复状态。
                 with self._lock:
                     if self.operation["id"] == operation_id:
-                        stats = scan_cache.stats if scan_cache is not None else cache_stats
-                        self.scan_cache_stats = stats.to_dict()
+                        self.scan_cache_stats = session.cache_stats.to_dict()
                 self._finish_operation(operation_id, "error", "扫描失败", error=str(exc))
 
         threading.Thread(target=work, name="novel-scan", daemon=True).start()

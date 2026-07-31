@@ -6,11 +6,19 @@ LightNovelSelector 采用“WinUI 3 原生界面 + Python 分类核心”的双�
 LightNovelSelector/
 ├─ lightnovel_selector/
 │  ├─ application.py             应用状态、后台任务与快照
-│  ├─ classification.py          分类计划、执行、恢复日志、报告与撤销
+│  ├─ classification.py          历史分类 API 的稳定兼容门面
+│  ├─ classification_discovery.py 文件发现与扫描边界
+│  ├─ classification_planning.py 分类计划生成、分组与人工修正
+│  ├─ classification_reporting.py 报告序列化与有界读取
+│  ├─ classification_recovery.py 移动意图日志与中断恢复
+│  ├─ classification_execution.py 安全校验后的文件移动事务
+│  ├─ classification_undo.py     报告驱动的可恢复撤销
+│  ├─ classification_safety.py   路径、快照与报告安全校验
 │  ├─ corrections.py             本地人工修正别名与持久化
 │  ├─ recognition.py             置信度校准与分类依据
 │  ├─ report_history.py          报告历史、指定批次解析与撤销状态
 │  ├─ scan_cache.py              增量扫描、可靠文件快照与哈希缓存
+│  ├─ scan_session.py            单次扫描、取消、缓存与进度编排
 │  ├─ cli.py                     命令行入口
 │  ├─ constants.py               版本与公共常量
 │  ├─ files.py                   文件扫描、完整哈希、内容提示与封面读取

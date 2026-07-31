@@ -128,7 +128,9 @@ Python 核心使用不可变 `BookIdentity` 作为识别结果的唯一语义模
 
 ## 增量扫描与哈希缓存边界
 
-WinUI 发起扫描时，Python 为本次任务创建一个 `PersistentScanCache` 会话。缓存保存在 `%LOCALAPPDATA%\LightNovelSelector\scan_cache.json`，在任务成功、取消或失败退出上下文时最多原子写入一次。损坏缓存按空缓存处理；写入失败只进入日志和快照中的 `scan_cache.write_warning`，当前分类计划仍然有效。
+WinUI 发起扫描时，`ApplicationService` 只建立后台线程和界面操作状态，具体扫描由独立 `ScanSession` 执行。会话统一管理取消检查、进度回调和 `PersistentScanCache` 生命周期，但不持有 UI 状态，也不创建线程，因此可以脱离 Sidecar 单独测试。
+
+缓存保存在 `%LOCALAPPDATA%\LightNovelSelector\scan_cache.json`，在任务成功、取消或失败退出上下文时最多原子写入一次。损坏缓存按空缓存处理；写入失败只进入日志和快照中的 `scan_cache.write_warning`，当前分类计划仍然有效。
 
 每个可缓存文件都建立 `FileSnapshot`：
 

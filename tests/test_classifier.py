@@ -317,7 +317,7 @@ class MovePlanTests(unittest.TestCase):
                 (root / f"ignored-{index}.bin").write_bytes(b"not a novel")
 
             with (
-                patch("lightnovel_selector.classification.SCAN_MAX_ENTRIES", 2),
+                patch("lightnovel_selector.classification_discovery.SCAN_MAX_ENTRIES", 2),
                 self.assertRaisesRegex(ValueError, "最多检查 2 个目录项"),
             ):
                 find_novel_files(root)
@@ -409,7 +409,7 @@ class MovePlanTests(unittest.TestCase):
             )
 
             with patch(
-                "lightnovel_selector.classification.SeriesResolver.resolve",
+                "lightnovel_selector.classification_planning.SeriesResolver.resolve",
                 return_value=remote_result,
             ):
                 plans = build_classification_plan(root, use_network=True)
@@ -503,7 +503,7 @@ class MovePlanTests(unittest.TestCase):
                 (root / f"book-{index}.txt").write_text("content", encoding="utf-8")
 
             with (
-                patch("lightnovel_selector.classification.SCAN_MAX_FILES", 2),
+                patch("lightnovel_selector.classification_discovery.SCAN_MAX_FILES", 2),
                 self.assertRaisesRegex(ValueError, "单次扫描最多支持 2 个"),
             ):
                 build_classification_plan(root, use_network=False)
@@ -531,7 +531,7 @@ class MovePlanTests(unittest.TestCase):
             second.write_text("different content", encoding="utf-8")
 
             with patch(
-                "lightnovel_selector.classification.find_duplicate_files",
+                "lightnovel_selector.classification_planning.find_duplicate_files",
                 return_value={second: first},
             ):
                 plans = build_classification_plan(root, use_network=False)
@@ -730,7 +730,7 @@ class MovePlanTests(unittest.TestCase):
                     return_value=snapshot,
                 ),
                 patch(
-                    "lightnovel_selector.classification.capture_file_snapshot",
+                    "lightnovel_selector.classification_planning.capture_file_snapshot",
                     return_value=snapshot,
                 ),
                 cache,
@@ -1051,7 +1051,10 @@ class MovePlanTests(unittest.TestCase):
                 return real_move(source, target)
 
             with (
-                patch("lightnovel_selector.classification.shutil.move", side_effect=fail_second_move),
+                patch(
+                    "lightnovel_selector.classification_execution.shutil.move",
+                    side_effect=fail_second_move,
+                ),
                 self.assertRaises(FileNotFoundError),
             ):
                 execute_classification_plan(plans, report_path=report_path)
@@ -1085,7 +1088,7 @@ class MovePlanTests(unittest.TestCase):
             plans = build_classification_plan(root, use_network=False)
 
             with patch(
-                "lightnovel_selector.classification.write_classification_report",
+                "lightnovel_selector.classification_execution.write_classification_report",
                 wraps=real_write_report,
             ) as writer:
                 moved, skipped = execute_classification_plan(
@@ -1120,7 +1123,7 @@ class MovePlanTests(unittest.TestCase):
 
             with (
                 patch(
-                    "lightnovel_selector.classification.shutil.move",
+                    "lightnovel_selector.classification_execution.shutil.move",
                     side_effect=interrupt_second_move,
                 ),
                 self.assertRaises(KeyboardInterrupt),
@@ -1198,7 +1201,7 @@ class MovePlanTests(unittest.TestCase):
 
             with (
                 patch(
-                    "lightnovel_selector.classification.write_classification_report",
+                    "lightnovel_selector.classification_execution.write_classification_report",
                     side_effect=OSError("simulated report failure"),
                 ),
                 self.assertRaisesRegex(OSError, "simulated report failure"),
@@ -1219,7 +1222,7 @@ class MovePlanTests(unittest.TestCase):
 
             with (
                 patch(
-                    "lightnovel_selector.classification.shutil.move",
+                    "lightnovel_selector.classification_execution.shutil.move",
                     side_effect=KeyboardInterrupt,
                 ),
                 self.assertRaises(KeyboardInterrupt),
@@ -1280,7 +1283,7 @@ class MovePlanTests(unittest.TestCase):
 
             with (
                 patch(
-                    "lightnovel_selector.classification.shutil.move",
+                    "lightnovel_selector.classification_execution.shutil.move",
                     side_effect=change_second_after_first,
                 ),
                 self.assertRaisesRegex(ValueError, "扫描后发生变化"),
@@ -1302,7 +1305,7 @@ class MovePlanTests(unittest.TestCase):
 
             with (
                 patch(
-                    "lightnovel_selector.classification.write_json_atomic",
+                    "lightnovel_selector.classification_reporting.write_json_atomic",
                     side_effect=PermissionError("blocked"),
                 ),
                 self.assertRaises(OSError),
@@ -1997,7 +2000,7 @@ class ApplicationServiceTests(unittest.TestCase):
                     return real_move(source, target)
 
                 with patch(
-                    "lightnovel_selector.classification.shutil.move",
+                    "lightnovel_selector.classification_execution.shutil.move",
                     side_effect=fail_second_move,
                 ):
                     service.start_apply()
