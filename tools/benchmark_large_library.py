@@ -7,6 +7,7 @@ import json
 import math
 import os
 import platform
+import sys
 import tempfile
 import threading
 import time
@@ -395,6 +396,13 @@ def _write_github_summary(report: dict[str, Any]) -> None:
         summary.write("\n".join(lines))
 
 
+def _configure_console_utf8() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def run_benchmark(file_count: int, budget: PerformanceBudget) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="lightnovel-selector-benchmark-") as temp_dir:
         base = Path(temp_dir)
@@ -476,6 +484,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    _configure_console_utf8()
     args = parse_args()
     if args.files <= 0 or args.files > SCAN_MAX_FILES:
         raise ValueError(f"性能基准文件数必须在 1 到 {SCAN_MAX_FILES} 之间。")

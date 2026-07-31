@@ -57,6 +57,8 @@ jobs:
 
       - name: 验证 1 万文件性能预算
         shell: pwsh
+        env:
+          PYTHONUTF8: "1"
         run: |
           python -m tools.benchmark_large_library `
             --files 10000 `
