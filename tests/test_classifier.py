@@ -29,6 +29,7 @@ from lightnovel_classifier import (
     MetadataProvider,
     PersistentMetadataCache,
     PersistentScanCache,
+    RecognitionCorrectionMemory,
     ResolveResult,
     archive_classification_report,
     bangumi_cover_url,
@@ -764,6 +765,10 @@ class MovePlanTests(unittest.TestCase):
                 patch(
                     "lightnovel_selector.cli.PersistentScanCache",
                     side_effect=OSError("cache unavailable"),
+                ),
+                patch(
+                    "lightnovel_selector.cli.RecognitionCorrectionMemory",
+                    return_value=RecognitionCorrectionMemory(root / "aliases.json"),
                 ),
                 patch("builtins.print") as output,
             ):

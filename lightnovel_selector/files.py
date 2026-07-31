@@ -443,7 +443,11 @@ def read_epub_book_identity(path: Path, fallback: BookIdentity | None = None) ->
             epub_identity = BookIdentity(
                 title=title,
                 series_name=series_name,
-                authors=normalize_identity_values(creators, limit=IDENTITY_MAX_AUTHORS),
+                authors=normalize_identity_values(
+                    creators,
+                    limit=IDENTITY_MAX_AUTHORS,
+                    kind="author",
+                ),
                 volume_number=volume_number,
                 language=language,
                 tags=normalize_identity_values(subjects, limit=IDENTITY_MAX_TAGS),

@@ -132,7 +132,11 @@ def _identity_from_item(item: dict, *, query: str, canonical: str) -> BookIdenti
     return BookIdentity(
         title=canonical,
         series_name=safe_folder_name(extract_series_guess(canonical)),
-        authors=normalize_identity_values(author_values, limit=IDENTITY_MAX_AUTHORS),
+        authors=normalize_identity_values(
+            author_values,
+            limit=IDENTITY_MAX_AUTHORS,
+            kind="author",
+        ),
         volume_number=parse_volume_number(query),
         tags=normalize_identity_values(tag_values, limit=IDENTITY_MAX_TAGS),
     )

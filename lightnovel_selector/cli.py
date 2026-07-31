@@ -12,6 +12,7 @@ from .classification import (
     undo_classification_report,
 )
 from .constants import REPORT_FILE_NAME
+from .corrections import RecognitionCorrectionMemory
 from .models import ClassificationPlan
 from .scan_cache import PersistentScanCache
 from .storage import load_app_settings
@@ -26,7 +27,8 @@ def print_plan(plans: list[ClassificationPlan]) -> None:
         note = f"\t{plan.note}" if plan.note else ""
         print(
             f"{marker}\t{plan.source_path.name}\t=>\t{plan.target_dir.name}\\{plan.target_path.name}"
-            f"\t[{plan.resolver_source}, {plan.confidence:.0%}, {plan_status_label(plan.status)}]{note}"
+            f"\t[{plan.resolver_source}, {plan.confidence:.0%} {plan.confidence_level}, "
+            f"{plan_status_label(plan.status)}]\t{plan.classification_reason}{note}"
         )
 
 
@@ -34,6 +36,7 @@ def run_cli(args: argparse.Namespace) -> int:
     root = Path(args.folder)
     settings = load_app_settings()
     scan_cache: PersistentScanCache | None = None
+    correction_memory = RecognitionCorrectionMemory()
     cache_warning: str | None = None
     try:
         scan_cache = PersistentScanCache()
@@ -48,6 +51,7 @@ def run_cli(args: argparse.Namespace) -> int:
             custom_rules=settings.custom_rules,
             progress=None if args.quiet else print,
             scan_cache=scan_cache,
+            correction_memory=correction_memory,
         )
     if scan_cache is not None:
         cache_stats = scan_cache.stats

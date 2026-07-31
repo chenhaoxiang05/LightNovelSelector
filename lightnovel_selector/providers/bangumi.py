@@ -100,7 +100,11 @@ def bangumi_identity_from_item(item: dict, *, query: str) -> BookIdentity:
     return BookIdentity(
         title=title,
         series_name=safe_folder_name(extract_series_guess(title)),
-        authors=normalize_identity_values(author_values, limit=IDENTITY_MAX_AUTHORS),
+        authors=normalize_identity_values(
+            author_values,
+            limit=IDENTITY_MAX_AUTHORS,
+            kind="author",
+        ),
         volume_number=title_volume if title_volume is not None else query_volume,
         language=language,
         tags=bangumi_tags(item),

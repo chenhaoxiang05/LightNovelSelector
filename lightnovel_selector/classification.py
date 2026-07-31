@@ -25,6 +25,7 @@ from .constants import (
     SERIES_NAME_MAX_CHARS,
     SUPPORTED_EXTENSIONS,
 )
+from .corrections import RecognitionCorrectionMemory
 from .files import (
     file_fingerprint,
     find_duplicate_files,
@@ -50,6 +51,7 @@ from .parsing import (
     weak_file_name_query,
 )
 from .providers import MetadataProvider, MetadataProviderRegistry
+from .recognition import assess_recognition
 from .scan_cache import (
     LocalFileAnalysis,
     PersistentScanCache,
@@ -150,6 +152,9 @@ def classification_plan_to_report_item(
         "series_name": plan.series_name,
         "resolver_source": plan.resolver_source,
         "confidence": round(plan.confidence, 4),
+        "confidence_level": plan.confidence_level,
+        "classification_reason": plan.classification_reason,
+        "classification_evidence": list(plan.classification_evidence),
         "status": plan.status,
         "operation": "moved" if actual_target_path else "skipped",
         "note": plan.note,
@@ -758,6 +763,7 @@ def build_classification_plan(
     checkpoint: Callable[[], None] | None = None,
     scan_cache: PersistentScanCache | None = None,
     metadata_providers: Iterable[MetadataProvider] | MetadataProviderRegistry | None = None,
+    correction_memory: RecognitionCorrectionMemory | None = None,
 ) -> list[ClassificationPlan]:
     root = validate_classification_root(root)
 
@@ -824,6 +830,9 @@ def build_classification_plan(
                     target_path=path,
                     resolver_source="重复文件检测",
                     confidence=1.0,
+                    confidence_level="高",
+                    classification_reason="完整文件指纹与已扫描文件一致，因此标记为重复并默认跳过。",
+                    classification_evidence=("完整 SHA-256 内容一致",),
                     local_guess=local_guess,
                     source_size=source_size,
                     source_mtime_ns=source_mtime_ns,
@@ -885,12 +894,32 @@ def build_classification_plan(
                     )
             network_query = None if weak_file_name_query(path.name) else file_query
             custom_rule = match_custom_rule(path.name, identity_query, rules)
+            remembered_alias = (
+                correction_memory.lookup(
+                    local_identity.series_name,
+                    extract_series_guess(identity_query),
+                )
+                if correction_memory is not None
+                else None
+            )
             if custom_rule is not None:
                 network_query = custom_rule.series
                 result = ResolveResult(
                     identity=with_series_name(local_identity, custom_rule.series),
                     source="自定义规则",
                     confidence=1.0,
+                    local_guess=identity_query,
+                )
+            elif remembered_alias is not None:
+                if network_query is not None:
+                    network_query = remembered_alias.canonical_series
+                result = ResolveResult(
+                    identity=with_series_name(
+                        local_identity,
+                        remembered_alias.canonical_series,
+                    ),
+                    source="本地修正记忆",
+                    confidence=0.99,
                     local_guess=identity_query,
                 )
             elif network_query is None:
@@ -905,6 +934,21 @@ def build_classification_plan(
                 )
             else:
                 result = resolver.resolve(network_query)
+                if correction_memory is not None:
+                    resolved_alias = correction_memory.lookup(result.series_name)
+                    if resolved_alias is not None:
+                        result = ResolveResult(
+                            identity=with_series_name(
+                                result.identity,
+                                resolved_alias.canonical_series,
+                            ),
+                            source="本地修正记忆",
+                            confidence=0.99,
+                            local_guess=result.local_guess,
+                            metadata_summary=result.metadata_summary,
+                            metadata_cover_url=result.metadata_cover_url,
+                            metadata_url=result.metadata_url,
+                        )
             folder_name = safe_folder_name(result.series_name)
             target_dir = root / folder_name
             metadata = None
@@ -929,12 +973,21 @@ def build_classification_plan(
                 metadata.identity if metadata else None,
                 series_name=folder_name,
             )
+            assessment = assess_recognition(
+                raw_confidence=result.confidence,
+                source=result.source,
+                identity_query=identity_query,
+                chosen_identity=identity,
+                local_identity=local_identity,
+                used_content_hint=used_content_hint,
+                has_book_metadata=metadata is not None,
+            )
             candidates = merge_classification_candidates(
                 (
                     ClassificationCandidate(
                         identity=identity,
                         source=result.source,
-                        confidence=result.confidence,
+                        confidence=assessment.confidence,
                     ),
                 ),
                 (
@@ -974,7 +1027,10 @@ def build_classification_plan(
                     target_dir=target_dir,
                     target_path=target_path,
                     resolver_source=result.source,
-                    confidence=result.confidence,
+                    confidence=assessment.confidence,
+                    confidence_level=assessment.level,
+                    classification_reason=assessment.reason,
+                    classification_evidence=assessment.evidence,
                     local_guess=result.local_guess,
                     source_size=source_size,
                     source_mtime_ns=source_mtime_ns,
@@ -1003,6 +1059,9 @@ def build_classification_plan(
                     target_path=path,
                     resolver_source="文件读取失败",
                     confidence=0.0,
+                    confidence_level="需复核",
+                    classification_reason="文件读取失败，未执行自动分类。",
+                    classification_evidence=("读取文件或元数据时发生错误",),
                     local_guess=local_guess,
                     source_size=source_size,
                     source_mtime_ns=source_mtime_ns,
@@ -1064,6 +1123,9 @@ def revise_classification_plan(
         target_path=target_path,
         resolver_source="手动修正",
         confidence=1.0,
+        confidence_level="高",
+        classification_reason="你已在分类预览中手动确认此系列。",
+        classification_evidence=("用户手动修正",),
         metadata_summary=None,
         metadata_cover_url=None,
         metadata_url=None,

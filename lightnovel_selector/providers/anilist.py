@@ -177,6 +177,7 @@ def _identity_from_item(item: dict, *, query: str, canonical: str) -> BookIdenti
         authors=normalize_identity_values(
             _author_values(item),
             limit=IDENTITY_MAX_AUTHORS,
+            kind="author",
         ),
         volume_number=parse_volume_number(query),
         language=language,

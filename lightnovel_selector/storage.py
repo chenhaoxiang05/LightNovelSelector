@@ -32,6 +32,8 @@ from .models import AppSettings, BookIdentity, BookMetadata, CustomRule, Resolve
 from .parsing import (
     collapse_spaces,
     extract_series_guess,
+    normalize_author_key,
+    normalize_author_name,
     normalize_language_code,
     parse_volume_number,
 )
@@ -64,7 +66,12 @@ def _confidence(value: object) -> float:
     return max(0.0, min(result, 1.0))
 
 
-def _identity_values(value: object, *, max_count: int) -> tuple[str, ...]:
+def _identity_values(
+    value: object,
+    *,
+    max_count: int,
+    kind: str = "generic",
+) -> tuple[str, ...]:
     if value is None:
         return ()
     if not isinstance(value, (list, tuple)):
@@ -73,7 +80,13 @@ def _identity_values(value: object, *, max_count: int) -> tuple[str, ...]:
     result: list[str] = []
     for item in value[:max_count]:
         text = _required_text(item, max_chars=IDENTITY_VALUE_MAX_CHARS)
-        key = text.casefold()
+        if kind == "author":
+            text = normalize_author_name(text)
+            key = normalize_author_key(text)
+        else:
+            key = text.casefold()
+        if not text or not key:
+            continue
         if key in seen:
             continue
         seen.add(key)
@@ -119,7 +132,11 @@ def book_identity_from_dict(
         return BookIdentity(
             title=title,
             series_name=_required_text(series_value, max_chars=SERIES_NAME_MAX_CHARS),
-            authors=_identity_values(data.get("authors"), max_count=IDENTITY_MAX_AUTHORS),
+            authors=_identity_values(
+                data.get("authors"),
+                max_count=IDENTITY_MAX_AUTHORS,
+                kind="author",
+            ),
             volume_number=_volume_number(data.get("volume_number"))
             if "volume_number" in data
             else parse_volume_number(title),

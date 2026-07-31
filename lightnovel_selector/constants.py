@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 APP_NAME = "Light Novel Selector"
-APP_VERSION = "2.1.0-dev.7"
+APP_VERSION = "2.1.0-dev.8"
 USER_AGENT = f"LightNovelSelector/{APP_VERSION} (+local-file-classifier)"
 BANGUMI_SEARCH_URL = "https://api.bgm.tv/v0/search/subjects"
 BANGUMI_SUBJECT_WEB_URL = "https://bgm.tv/subject/{subject_id}"
@@ -51,6 +51,11 @@ FILE_FINGERPRINT_CHUNK_SIZE = 1024 * 1024
 REPORT_SCHEMA_VERSION = 2
 REPORT_FILE_NAME = "classification_report.json"
 SETTINGS_FILE_NAME = "settings.json"
+CORRECTION_MEMORY_FILE_NAME = "recognition_aliases.json"
+CORRECTION_MEMORY_VERSION = 1
+CORRECTION_MEMORY_MAX_ENTRIES = 1000
+CORRECTION_MEMORY_MAX_BYTES = 1024 * 1024
+CORRECTION_ALIAS_MAX_CHARS = 512
 
 SUPPORTED_EXTENSIONS = {
     ".txt",
@@ -84,6 +89,8 @@ NOISE_TAG_WORDS = {
     "ocr",
     "web",
     "raw",
+    "digital",
+    "ebook",
     "scan",
     "scans",
     "illustration",
@@ -104,6 +111,8 @@ NOISE_TAG_WORDS = {
     "日版",
     "大陆版",
     "轻小说",
+    "电子书",
+    "電子書籍",
     "文库",
     "插图",
     "扫图",
@@ -129,3 +138,4 @@ GLOBAL_RELEASE_WORDS = NOISE_TAG_WORDS - {
 
 CHINESE_NUMERAL = "零〇一二两三四五六七八九十百千"
 VOLUME_TOKEN = rf"[0-9０-９{CHINESE_NUMERAL}]+"
+VOLUME_MARKERS = "卷冊册集部巻"

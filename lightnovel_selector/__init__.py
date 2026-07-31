@@ -19,6 +19,13 @@ from .classification import (
     write_classification_report,
 )
 from .constants import *
+from .corrections import (
+    RecognitionCorrectionMemory,
+    SeriesAlias,
+    correction_aliases_for_plan,
+    correction_memory_path,
+    series_alias_key,
+)
 from .files import (
     decode_bytes,
     file_fingerprint,
@@ -75,8 +82,11 @@ from .parsing import (
     identity_query_for_path,
     infer_language,
     is_noise_tag,
+    normalize_author_key,
+    normalize_author_name,
     normalize_for_match,
     normalize_language_code,
+    normalize_title_text,
     parse_volume_number,
     safe_folder_name,
     score_title,
@@ -109,6 +119,11 @@ from .providers import (
     provider_error_message,
     score_bangumi_item_for_detail,
     unique_existing,
+)
+from .recognition import (
+    RecognitionAssessment,
+    assess_recognition,
+    confidence_level,
 )
 from .report_history import (
     archive_classification_report,

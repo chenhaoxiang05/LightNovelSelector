@@ -33,6 +33,7 @@ from .constants import (
     REPORT_UI_MAX_ITEMS,
     SERIES_NAME_MAX_CHARS,
 )
+from .corrections import RecognitionCorrectionMemory
 from .files import http_bytes, read_local_cover_bytes
 from .identity import (
     language_display_name,
@@ -93,6 +94,9 @@ def plan_to_dict(plan: ClassificationPlan, index: int) -> dict[str, Any]:
         "resolver_source": plan.resolver_source,
         "confidence": round(plan.confidence, 4),
         "confidence_label": f"{plan.confidence:.0%}",
+        "confidence_level": plan.confidence_level,
+        "classification_reason": plan.classification_reason,
+        "classification_evidence": list(plan.classification_evidence),
         "status": plan.status,
         "status_label": plan_status_label(plan.status),
         "note": plan.note,
@@ -220,6 +224,7 @@ class ApplicationService:
     def __init__(
         self,
         metadata_providers: Iterable[MetadataProvider] | MetadataProviderRegistry | None = None,
+        correction_memory: RecognitionCorrectionMemory | None = None,
     ) -> None:
         self._lock = threading.RLock()
         self.metadata_provider_registry = (
@@ -230,6 +235,7 @@ class ApplicationService:
             )
         )
         self.settings = load_app_settings()
+        self.correction_memory = correction_memory or RecognitionCorrectionMemory()
         self.folder = self._existing_folder(self.settings.last_folder)
         self.plans: list[ClassificationPlan] = []
         self.plans_revision = 0
@@ -533,6 +539,7 @@ class ApplicationService:
                         checkpoint=checkpoint,
                         scan_cache=scan_cache,
                         metadata_providers=self.metadata_provider_registry,
+                        correction_memory=self.correction_memory,
                     )
                 if cancel_event.is_set():
                     raise OperationCancelled("扫描已取消。")
@@ -755,6 +762,14 @@ class ApplicationService:
             self._assert_idle_locked()
             if expected_plans_revision is not None and expected_plans_revision != self.plans_revision:
                 raise RuntimeError("分类预览已变化，请重新选择文件后再修正。")
+            original_plans = tuple(
+                self.plans[plan_index]
+                for plan_index in classification_plan_group_indices(
+                    self.plans,
+                    int(index),
+                    validated_scope,
+                )
+            )
             revised_indices = revise_classification_plans(
                 self.plans,
                 int(index),
@@ -768,6 +783,20 @@ class ApplicationService:
             else:
                 message = f"已将同系列的 {len(revised_indices)} 个条目批量修正为「{revised.series_name}」。"
             self._append_log(message, "success")
+        learned_count, memory_error = self.correction_memory.try_remember_plans(
+            original_plans,
+            revised.series_name,
+        )
+        if memory_error is not None:
+            self._append_log(
+                f"修正已应用，但本地修正记忆未能保存：{memory_error}",
+                "warning",
+            )
+        elif learned_count:
+            self._append_log(
+                f"已记住 {learned_count} 个系列别名，后续扫描会优先复用。",
+                "info",
+            )
         return {
             "updated_count": len(revised_indices),
             "updated_indices": list(revised_indices),
@@ -938,6 +967,9 @@ class ApplicationService:
             "tags_label": " · ".join(identity.tags) or "未识别",
             "resolver_source": plan.resolver_source,
             "confidence_label": f"{plan.confidence:.0%}",
+            "confidence_level": plan.confidence_level,
+            "classification_reason": plan.classification_reason,
+            "classification_evidence": list(plan.classification_evidence),
             "status": plan.status,
             "status_label": plan_status_label(plan.status),
             "note": plan.note,

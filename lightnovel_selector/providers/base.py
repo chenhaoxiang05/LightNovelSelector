@@ -190,7 +190,11 @@ def _normalize_identity(identity: BookIdentity) -> BookIdentity:
     return BookIdentity(
         title=title,
         series_name=safe_folder_name(series_name),
-        authors=normalize_identity_values(identity.authors, limit=IDENTITY_MAX_AUTHORS),
+        authors=normalize_identity_values(
+            identity.authors,
+            limit=IDENTITY_MAX_AUTHORS,
+            kind="author",
+        ),
         volume_number=volume_number,
         language=language,
         tags=normalize_identity_values(identity.tags, limit=IDENTITY_MAX_TAGS),

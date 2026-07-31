@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "privacy_note": "全部标题、作者和系列均为虚构或泛化文本，仅保留真实世界常见命名结构，不含用户路径、账号或正文。",
+  "filename_cases": [
+    {
+      "file_name": "【简中】星界旅人 第十二卷 [EPUB].epub",
+      "series": "星界旅人",
+      "volume": 12,
+      "language": "zh-Hans"
+    },
+    {
+      "file_name": "星界の旅人 第十二巻【電子書籍】.epub",
+      "series": "星界の旅人",
+      "volume": 12,
+      "language": "ja"
+    },
+    {
+      "file_name": "Astral.Traveler.Vol.IV.Digital.epub",
+      "series": "Astral Traveler",
+      "volume": 4,
+      "language": null
+    },
+    {
+      "file_name": "Astra Trail Book XII Retail.epub",
+      "series": "Astra Trail",
+      "volume": 12,
+      "language": null
+    },
+    {
+      "file_name": "星海紀行 〇七巻 [繁中].epub",
+      "series": "星海紀行",
+      "volume": 7,
+      "language": "zh-Hant"
+    },
+    {
+      "file_name": "Project Aurora ~Afterglow~ Vol.03.epub",
+      "series": "Project Aurora ~Afterglow",
+      "volume": 3,
+      "language": null
+    },
+    {
+      "file_name": "機巧都市 - 夜明けの章 - 第三巻.epub",
+      "series": "機巧都市 - 夜明けの章",
+      "volume": 3,
+      "language": "ja"
+    },
+    {
+      "file_name": "Chronicle 86 Vol.00 [English].epub",
+      "series": "Chronicle 86",
+      "volume": 0,
+      "language": "en"
+    }
+  ],
+  "epub_cases": [
+    {
+      "file_name": "001.epub",
+      "title": "星界の旅人 第十二巻",
+      "creators": [
+        "作者: 水野 空",
+        "水野 空（著）"
+      ],
+      "language": "ja-JP",
+      "subjects": [
+        "冒険",
+        "冒険"
+      ],
+      "series": "星界の旅人",
+      "series_index": "12",
+      "expected": {
+        "title": "星界の旅人 第十二巻",
+        "series": "星界の旅人",
+        "authors": [
+          "水野 空"
+        ],
+        "volume": 12,
+        "language": "ja",
+        "tags": [
+          "冒険"
+        ]
+      }
+    },
+    {
+      "file_name": "volume.epub",
+      "title": "The Glass Archive Vol. IV",
+      "creators": [
+        "Author: Mira Vale",
+        "Mira Vale [Writer]"
+      ],
+      "language": "en-US",
+      "subjects": [
+        "Fantasy",
+        "fantasy"
+      ],
+      "series": "The Glass Archive",
+      "series_index": "4",
+      "expected": {
+        "title": "The Glass Archive Vol. IV",
+        "series": "The Glass Archive",
+        "authors": [
+          "Mira Vale"
+        ],
+        "volume": 4,
+        "language": "en",
+        "tags": [
+          "Fantasy"
+        ]
+      }
+    },
+    {
+      "file_name": "匿名样本.epub",
+      "title": "雾海书简 第七卷",
+      "creators": [
+        "著者：林 遥"
+      ],
+      "language": "zh-CN",
+      "subjects": [
+        "校园"
+      ],
+      "series": "雾海书简",
+      "series_index": "7",
+      "expected": {
+        "title": "雾海书简 第七卷",
+        "series": "雾海书简",
+        "authors": [
+          "林 遥"
+        ],
+        "volume": 7,
+        "language": "zh-Hans",
+        "tags": [
+          "校园"
+        ]
+      }
+    }
+  ]
+}

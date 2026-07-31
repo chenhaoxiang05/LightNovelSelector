@@ -7,6 +7,8 @@ LightNovelSelector/
 ├─ lightnovel_selector/
 │  ├─ application.py             应用状态、后台任务与快照
 │  ├─ classification.py          分类计划、执行、恢复日志、报告与撤销
+│  ├─ corrections.py             本地人工修正别名与持久化
+│  ├─ recognition.py             置信度校准与分类依据
 │  ├─ report_history.py          报告历史、指定批次解析与撤销状态
 │  ├─ scan_cache.py              增量扫描、可靠文件快照与哈希缓存
 │  ├─ cli.py                     命令行入口
@@ -35,7 +37,7 @@ LightNovelSelector/
 │  ├─ build_winui.bat            PowerShell 构建包装
 │  ├─ build_winui.ps1            完整验证与安装器流水线
 │  └─ LightNovelSelector.iss     Inno Setup 安装脚本
-├─ tests/                         Python 核心与 Sidecar 测试
+├─ tests/                         Python 核心、脱敏识别语料与 Sidecar 测试
 ├─ tools/
 │  ├─ generate_native_assets.py  生成原生应用图标
 │  └─ verify_sidecar.py          验证打包 Sidecar 协议

@@ -16,13 +16,17 @@ public sealed class AccessibilityLabelTests
             FileName = "第一卷.epub",
             TargetName = "测试系列 01.epub",
             ConfidenceLabel = "92%",
+            ConfidenceLevel = "高",
             ResolverSource = "文件名",
+            ClassificationReason = "文件名与系列完全一致。",
         };
 
         StringAssert.Contains(plan.AccessibilityLabel, "可执行");
         StringAssert.Contains(plan.AccessibilityLabel, "第一卷.epub");
         StringAssert.Contains(plan.AccessibilityLabel, "测试系列 01.epub");
         StringAssert.Contains(plan.AccessibilityLabel, "92%");
+        StringAssert.Contains(plan.AccessibilityLabel, "高");
+        StringAssert.Contains(plan.AccessibilityLabel, "分类依据");
     }
 
     [TestMethod]

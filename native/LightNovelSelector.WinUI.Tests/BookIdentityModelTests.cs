@@ -27,6 +27,10 @@ public sealed class BookIdentityModelTests
               "language": "zh-Hans",
               "language_label": "简体中文",
               "tags_label": "异世界 · 成长",
+              "confidence_label": "92%",
+              "confidence_level": "高",
+              "classification_reason": "命中了本地修正记忆。",
+              "classification_evidence": ["人工修正记忆精确匹配", "识别到第 13 卷"],
               "identity": {
                 "title": "无职转生 第13卷",
                 "series_name": "无职转生",
@@ -44,6 +48,12 @@ public sealed class BookIdentityModelTests
         Assert.AreEqual("无职转生 第13卷", plan.Identity.Title);
         Assert.AreEqual("无职转生", plan.Identity.SeriesName);
         Assert.AreEqual(13, plan.Identity.VolumeNumber);
+        Assert.AreEqual("92% · 高", plan.ConfidenceDisplayLabel);
+        Assert.AreEqual("命中了本地修正记忆。", plan.ClassificationReason);
+        CollectionAssert.AreEqual(
+            new[] { "人工修正记忆精确匹配", "识别到第 13 卷" },
+            plan.ClassificationEvidence.ToArray()
+        );
         CollectionAssert.AreEqual(new[] { "理不尽な孫の手" }, plan.Identity.Authors.ToArray());
         CollectionAssert.AreEqual(new[] { "异世界", "成长" }, plan.Identity.Tags.ToArray());
     }
