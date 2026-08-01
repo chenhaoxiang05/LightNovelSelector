@@ -75,6 +75,10 @@ jobs:
               (Get-Item -LiteralPath $notes).Length -lt 100) {
             throw "缺少完整的中文发布说明：$notes"
           }
+          $currentNotes = Join-Path $env:GITHUB_WORKSPACE "UPDATE_NOTES.md"
+          if ([IO.File]::ReadAllText($currentNotes) -cne [IO.File]::ReadAllText($notes)) {
+            throw "根目录 UPDATE_NOTES.md 与 $env:GITHUB_REF_NAME 归档不一致。"
+          }
 
       - name: 构建并验证发布资产
         shell: pwsh

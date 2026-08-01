@@ -60,15 +60,37 @@ class ProjectMetadataTests(unittest.TestCase):
         version_match = re.search(r"最新稳定版.+?`(v\d+\.\d+\.\d+)`", readme)
         if version_match is None:
             self.fail("README 缺少可解析的最新稳定版本。")
-        archived_notes = PROJECT_ROOT / "docs" / "releases" / f"{version_match.group(1)}.md"
+        latest_tag = version_match.group(1)
+        archived_notes = PROJECT_ROOT / "docs" / "releases" / f"{latest_tag}.md"
         current_notes = PROJECT_ROOT / "UPDATE_NOTES.md"
 
         self.assertTrue(archived_notes.is_file(), "最新稳定版缺少仓库内发布说明归档。")
+        notes = current_notes.read_text(encoding="utf-8")
         self.assertEqual(
-            current_notes.read_text(encoding="utf-8"),
+            notes,
             archived_notes.read_text(encoding="utf-8"),
             "UPDATE_NOTES.md 必须与最新稳定版归档保持一致。",
         )
+        self.assertTrue(
+            notes.startswith(f"# LightNovelSelector {latest_tag} 更新说明\n"),
+            "发布说明标题必须与 README 最新稳定版本一致。",
+        )
+
+        installer_name = f"LightNovelSelector-{latest_tag}-win-x64-setup.exe"
+        self.assertIn(installer_name, readme)
+        self.assertIn(installer_name, notes)
+        self.assertIn(
+            f"## {latest_tag} - ",
+            (PROJECT_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"),
+            "更新记录缺少最新稳定版本章节。",
+        )
+
+        if "-" not in APP_VERSION and "+" not in APP_VERSION:
+            self.assertEqual(
+                latest_tag,
+                f"v{APP_VERSION}",
+                "正式应用版本必须与 README 最新稳定版本一致。",
+            )
 
     def test_python_and_native_versions_stay_in_sync(self) -> None:
         numeric_version = APP_VERSION.split("-", 1)[0].split("+", 1)[0]
@@ -120,6 +142,8 @@ class ProjectMetadataTests(unittest.TestCase):
         self.assertIn('"-RequireCleanSource"', workflow)
         self.assertIn("git merge-base --is-ancestor $env:GITHUB_SHA origin/main", workflow)
         self.assertIn("runpy.run_path('lightnovel_selector/constants.py')", workflow)
+        self.assertIn("根目录 UPDATE_NOTES.md", workflow)
+        self.assertIn("[IO.File]::ReadAllText($currentNotes)", workflow)
         self.assertNotIn("from lightnovel_selector.constants import APP_VERSION", workflow)
         self.assertIn("id: release-assets", workflow)
         self.assertIn("sbom-path: ${{ steps.release-assets.outputs.sbom_path }}", workflow)
