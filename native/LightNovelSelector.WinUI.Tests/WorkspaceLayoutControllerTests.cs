@@ -29,6 +29,8 @@ public sealed class WorkspaceLayoutControllerTests
         Assert.IsFalse(layout.UseTwoColumnStats);
         Assert.IsTrue(layout.UseCompactWorkflow);
         Assert.IsFalse(layout.StackFilters);
+        Assert.IsFalse(layout.UseWorkspaceScroll);
+        Assert.AreEqual(420, layout.DetailWidth);
     }
 
     [TestMethod]
@@ -42,6 +44,8 @@ public sealed class WorkspaceLayoutControllerTests
         Assert.IsTrue(layout.StackOperationActions);
         Assert.IsTrue(layout.UseTwoColumnStats);
         Assert.IsTrue(layout.UseCompactPadding);
+        Assert.IsTrue(layout.UseWorkspaceScroll);
+        Assert.AreEqual(420, layout.DetailWidth);
     }
 
     [TestMethod]
@@ -71,5 +75,7 @@ public sealed class WorkspaceLayoutControllerTests
         Assert.AreEqual(WorkspaceLayoutMode.Narrow, layout.Mode);
         Assert.IsTrue(layout.StackFilters);
         Assert.IsTrue(layout.UseCompactWorkflow);
+        Assert.IsTrue(layout.UseWorkspaceScroll);
+        Assert.AreEqual(320, layout.DetailWidth);
     }
 }

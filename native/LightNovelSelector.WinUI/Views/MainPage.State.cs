@@ -55,7 +55,7 @@ public sealed partial class MainPage
         SetCount(DuplicateCountText, snapshot.Counts.Duplicate);
         SetCount(AttentionCountText, snapshot.Counts.Error);
         UpdateOperation(snapshot.Operation);
-        UpdateWorkflowRail(snapshot);
+        WorkflowRail.Update(snapshot, Plans.Count);
         UpdateReportAvailability();
     }
 

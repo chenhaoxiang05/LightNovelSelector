@@ -1,19 +1,55 @@
 using LightNovelSelector.WinUI.Models;
+using Microsoft.UI;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI.Text;
 
-namespace LightNovelSelector.WinUI;
+namespace LightNovelSelector.WinUI.Components;
 
-public sealed partial class MainPage
+public sealed partial class WorkflowRail : UserControl
 {
     private static readonly FontFamily WorkflowTextFont = new("Segoe UI Variable Text");
     private static readonly FontFamily WorkflowIconFont = new("Segoe Fluent Icons");
 
-    private void UpdateWorkflowRail(AppSnapshot snapshot)
+    public WorkflowRail()
+    {
+        InitializeComponent();
+    }
+
+    public void SetVersion(string text) => VersionText.Text = text;
+
+    public void ApplyPaneLayout(bool paneExpanded, bool useCompactWorkflow)
+    {
+        WorkflowEyebrow.Visibility = paneExpanded ? Visibility.Visible : Visibility.Collapsed;
+        VersionStack.Visibility = paneExpanded ? Visibility.Visible : Visibility.Collapsed;
+        SafetyStatusText.Visibility = paneExpanded ? Visibility.Visible : Visibility.Collapsed;
+        SafetyStatusBadge.Width = paneExpanded ? double.NaN : 36;
+        SafetyStatusBadge.Height = paneExpanded ? double.NaN : 36;
+        SafetyStatusBadge.Padding = paneExpanded ? new Thickness(9, 6, 9, 6) : new Thickness(0);
+        SafetyStatusBadge.HorizontalAlignment = paneExpanded
+            ? HorizontalAlignment.Stretch
+            : HorizontalAlignment.Center;
+
+        if (!paneExpanded)
+        {
+            WorkflowStepsPanel.Visibility = Visibility.Collapsed;
+            CompactWorkflowSummary.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        WorkflowStepsPanel.Visibility = useCompactWorkflow
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        CompactWorkflowSummary.Visibility = useCompactWorkflow
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    public void Update(AppSnapshot snapshot, int planCount)
     {
         var hasFolder = !string.IsNullOrWhiteSpace(snapshot.Folder);
-        var hasPlans = Plans.Count > 0;
+        var hasPlans = planCount > 0;
         var operation = snapshot.Operation;
         var isScanning = operation.Kind == "scan" && operation.State == "running";
         var isApplying = operation.Kind == "apply" && operation.State == "running";
@@ -114,6 +150,9 @@ public sealed partial class MainPage
             Weight = state == WorkflowStepState.Active ? (ushort)600 : (ushort)400,
         };
     }
+
+    private static Brush ResourceBrush(string key) =>
+        Application.Current.Resources[key] as Brush ?? new SolidColorBrush(Colors.Transparent);
 
     private enum WorkflowStepState
     {

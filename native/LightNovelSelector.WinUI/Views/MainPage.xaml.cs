@@ -53,6 +53,8 @@ public sealed partial class MainPage : Page
     public MainPage()
     {
         InitializeComponent();
+        InitializeDetailPane();
+        InitializeOnboarding();
         if (ShellNavigation.SettingsItem is NavigationViewItem settingsItem)
         {
             settingsItem.Content = "设置";
@@ -115,6 +117,10 @@ public sealed partial class MainPage : Page
             await Task.Delay(750);
             Application.Current.Exit();
         }
+        else
+        {
+            await ShowFirstRunTipAsync();
+        }
     }
 
     private void LocalizeSettingsItem()
@@ -173,9 +179,8 @@ public sealed partial class MainPage : Page
         Motion.Enter(WorkspaceHeader, 0);
         Motion.Enter(FolderCard, 24);
         Motion.Enter(StatsGrid, 48);
-        Motion.Enter(ResultsCard, 72);
-        Motion.Enter(DetailCard, 96);
-        Motion.Enter(OperationCard, 120);
+        Motion.Enter(WorkspaceDataSurface, 72);
+        Motion.Enter(OperationCard, 96);
     }
 
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
@@ -235,7 +240,7 @@ public sealed partial class MainPage : Page
         var target = args.IsSettingsSelected
             ? "settings"
             : (args.SelectedItemContainer as NavigationViewItem)?.Tag as string ?? "workspace";
-        WorkspaceView.Visibility = target == "workspace" ? Visibility.Visible : Visibility.Collapsed;
+        WorkspaceScrollViewer.Visibility = target == "workspace" ? Visibility.Visible : Visibility.Collapsed;
         ActivityView.Visibility = target == "activity" ? Visibility.Visible : Visibility.Collapsed;
         SettingsView.Visibility = target == "settings" ? Visibility.Visible : Visibility.Collapsed;
 
@@ -281,25 +286,5 @@ public sealed partial class MainPage : Page
 
     private static Brush ResourceBrush(string key) =>
         Application.Current.Resources[key] as Brush ?? new SolidColorBrush(Colors.Transparent);
-
-    private static Brush StatusBrush(string status, bool background)
-    {
-        var key = status switch
-        {
-            "ready" or "moved" or "unchanged" => background ? "SuccessSubtleBrush" : "SuccessTextBrush",
-            "duplicate" => background ? "WarningSubtleBrush" : "WarningTextBrush",
-            "error" => background ? "ErrorSubtleBrush" : "ErrorTextBrush",
-            _ => background ? "AccentSubtleBrush" : "AppAccentBrush",
-        };
-        return ResourceBrush(key);
-    }
-
-    private static string StatusGlyph(string status) => status switch
-    {
-        "ready" or "moved" or "unchanged" => "\uE73E",
-        "duplicate" => "\uE8C8",
-        "error" => "\uEA39",
-        _ => "\uE946",
-    };
 
 }

@@ -22,22 +22,50 @@ public sealed partial class MainPage
             return;
         }
 
+        var keepOverlayDetailOpen = _workspaceLayout is { ShowSideDetail: false }
+            && !layout.ShowSideDetail
+            && DetailSplitView.IsPaneOpen
+            && _detail is not null;
+        var resetWorkspaceScroll = _workspaceLayout is { UseWorkspaceScroll: true }
+            && !layout.UseWorkspaceScroll;
         _workspaceLayout = layout;
         ShellNavigation.IsPaneOpen = layout.KeepNavigationPaneOpen;
         ShellContentGrid.Padding = layout.UseCompactPadding
             ? new Thickness(16, 14, 16, 18)
             : new Thickness(26, 18, 26, 24);
 
-        DetailColumn.Width = layout.ShowSideDetail
-            ? new GridLength(layout.DetailWidth)
-            : new GridLength(0);
-        DetailCard.Visibility = layout.ShowSideDetail
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        DetailSplitView.DisplayMode = layout.ShowSideDetail
+            ? SplitViewDisplayMode.Inline
+            : SplitViewDisplayMode.Overlay;
+        DetailSplitView.OpenPaneLength = layout.DetailWidth;
+        DetailSplitView.IsPaneOpen = layout.ShowSideDetail || keepOverlayDetailOpen;
+        DetailCard.Style = Application.Current.Resources[
+            layout.ShowSideDetail
+                ? "DetailRegionBorderStyle"
+                : "OverlayDetailRegionBorderStyle"
+        ] as Style;
+        DetailPane.SetCompactMode(!layout.ShowSideDetail);
         CompactDetailButton.Visibility = layout.ShowSideDetail
             ? Visibility.Collapsed
             : Visibility.Visible;
         UpdateCompactDetailButtonState();
+
+        WorkspaceView.MinHeight = layout.UseWorkspaceScroll ? 860 : 0;
+        WorkspaceScrollViewer.VerticalScrollMode = layout.UseWorkspaceScroll
+            ? ScrollMode.Enabled
+            : ScrollMode.Disabled;
+        WorkspaceScrollViewer.VerticalScrollBarVisibility = layout.UseWorkspaceScroll
+            ? ScrollBarVisibility.Auto
+            : ScrollBarVisibility.Hidden;
+        if (resetWorkspaceScroll)
+        {
+            WorkspaceScrollViewer.ChangeView(
+                horizontalOffset: null,
+                verticalOffset: 0,
+                zoomFactor: null,
+                disableAnimation: true
+            );
+        }
 
         ApplyStatsLayout(layout.UseTwoColumnStats);
         ApplyFolderLayout(layout.StackFolderActions);
@@ -137,29 +165,7 @@ public sealed partial class MainPage
 
     private void ApplyPaneFooterLayout(bool paneExpanded, bool useCompactWorkflow)
     {
-        WorkflowEyebrow.Visibility = paneExpanded ? Visibility.Visible : Visibility.Collapsed;
-        VersionStack.Visibility = paneExpanded ? Visibility.Visible : Visibility.Collapsed;
-        SafetyStatusText.Visibility = paneExpanded ? Visibility.Visible : Visibility.Collapsed;
-        SafetyStatusBadge.Width = paneExpanded ? double.NaN : 36;
-        SafetyStatusBadge.Height = paneExpanded ? double.NaN : 36;
-        SafetyStatusBadge.Padding = paneExpanded ? new Thickness(9, 6, 9, 6) : new Thickness(0);
-        SafetyStatusBadge.HorizontalAlignment = paneExpanded
-            ? HorizontalAlignment.Stretch
-            : HorizontalAlignment.Center;
-
-        if (!paneExpanded)
-        {
-            WorkflowStepsPanel.Visibility = Visibility.Collapsed;
-            CompactWorkflowSummary.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        WorkflowStepsPanel.Visibility = useCompactWorkflow
-            ? Visibility.Collapsed
-            : Visibility.Visible;
-        CompactWorkflowSummary.Visibility = useCompactWorkflow
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        WorkflowRail.ApplyPaneLayout(paneExpanded, useCompactWorkflow);
     }
 
     private void OnNavigationPaneOpened(NavigationView sender, object args) =>

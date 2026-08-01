@@ -19,10 +19,10 @@ public sealed partial class MainPage
         {
             ResetCoreSessionState();
         }
-        VersionText.Text = $"版本 {snapshot.App.Version}";
+        WorkflowRail.SetVersion($"版本 {snapshot.App.Version}");
         if (string.IsNullOrWhiteSpace(snapshot.App.Version))
         {
-            VersionText.Text = $"核心进程 {ping.ProcessId}";
+            WorkflowRail.SetVersion($"核心进程 {ping.ProcessId}");
         }
         ApplySnapshot(snapshot);
         SetConnectionState(ConnectionState.Ready);

@@ -132,6 +132,10 @@ public static class AppearancePreferences
         _ => WindowMaterial.Acrylic,
     };
 
+    internal static string? ReadPreference(string key) => ReadString(key);
+
+    internal static bool TryWritePreference(string key, string value) => TryWrite(key, value);
+
     private static string? ReadString(string key)
     {
         try

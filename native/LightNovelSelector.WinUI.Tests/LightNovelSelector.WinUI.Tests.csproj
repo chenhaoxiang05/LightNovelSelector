@@ -20,8 +20,10 @@
     <Compile Include="..\LightNovelSelector.WinUI\Security\UriSafety.cs" Link="Source\UriSafety.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\ConnectionStateController.cs" Link="Source\ConnectionStateController.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\FocusCycleController.cs" Link="Source\FocusCycleController.cs" />
+    <Compile Include="..\LightNovelSelector.WinUI\ViewModels\FirstRunOnboardingController.cs" Link="Source\FirstRunOnboardingController.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\MetadataProviderDisplay.cs" Link="Source\MetadataProviderDisplay.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\PlanFilterController.cs" Link="Source\PlanFilterController.cs" />
+    <Compile Include="..\LightNovelSelector.WinUI\ViewModels\WindowLaunchSizeController.cs" Link="Source\WindowLaunchSizeController.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\WorkspaceLayoutController.cs" Link="Source\WorkspaceLayoutController.cs" />
   </ItemGroup>
 </Project>

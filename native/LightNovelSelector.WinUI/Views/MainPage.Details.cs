@@ -1,20 +1,36 @@
-using LightNovelSelector.WinUI.Helpers;
 using LightNovelSelector.WinUI.Models;
 using LightNovelSelector.WinUI.Security;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media.Imaging;
-using Windows.Storage.Streams;
 using Windows.System;
 
 namespace LightNovelSelector.WinUI;
 
 public sealed partial class MainPage
 {
-    private const int MaxCoverDataUriChars = 12 * 1024 * 1024;
-    private bool _compactDetailDialogOpen;
+    private void InitializeDetailPane()
+    {
+        DetailPane.CloseRequested += OnCloseDetailClick;
+        DetailPane.CandidateLookupRequested += OnLoadCandidatesClick;
+        DetailPane.CorrectionRequested += OnSaveCorrectionClick;
+        DetailPane.CorrectionScopeChanged += OnBatchScopeChanged;
+        DetailPane.RetryRequested += OnRetryDetailClick;
+        DetailPane.RevealFileRequested += OnRevealFileClick;
+        DetailPane.OpenSubjectRequested += OnOpenSubjectClick;
+        DetailSplitView.PaneClosed += (_, _) => UpdateCompactDetailButtonState();
+    }
 
     private async void OnResultSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        await LoadSelectedDetailAsync();
+    }
+
+    private async void OnRetryDetailClick(object sender, RoutedEventArgs e)
+    {
+        await LoadSelectedDetailAsync();
+    }
+
+    private async Task LoadSelectedDetailAsync()
     {
         _detailCancellation?.Cancel();
         _detailCancellation?.Dispose();
@@ -31,9 +47,7 @@ public sealed partial class MainPage
         }
         var plansRevision = _plansRevision;
 
-        DetailEmptyState.Visibility = Visibility.Collapsed;
-        DetailContent.Visibility = Visibility.Collapsed;
-        DetailLoadingState.Visibility = Visibility.Visible;
+        DetailPane.ShowLoading();
         var lockTaken = false;
         try
         {
@@ -42,20 +56,28 @@ public sealed partial class MainPage
             lockTaken = true;
             _isDetailRequestActive = true;
             var detail = await _sidecar.GetDetailAsync(plan.Index, plansRevision);
-            if (cancellation.IsCancellationRequested || (ResultsList.SelectedItem as PlanItem)?.Index != detail.Index)
+            if (
+                cancellation.IsCancellationRequested
+                || (ResultsList.SelectedItem as PlanItem)?.Index != detail.Index
+            )
             {
                 return;
             }
             _detail = detail;
-            await RenderDetailAsync(detail);
+            await DetailPane.RenderAsync(detail);
+            UpdateCandidateLookupState();
+            UpdateCorrectionButtonState();
         }
         catch (OperationCanceledException)
         {
         }
         catch (Exception exc)
         {
-            DetailLoadingState.Visibility = Visibility.Collapsed;
-            DetailEmptyState.Visibility = Visibility.Visible;
+            if (cancellation.IsCancellationRequested)
+            {
+                return;
+            }
+            DetailPane.ShowError(exc.Message);
             if (!_disposing)
             {
                 ShowToast(exc.Message, ToastKind.Error);
@@ -77,92 +99,38 @@ public sealed partial class MainPage
         }
     }
 
-    private async Task RenderDetailAsync(BookDetail detail)
-    {
-        DetailTitleText.Text = detail.Title;
-        DetailAuthorsText.Text = detail.AuthorsLabel;
-        DetailVolumeText.Text = detail.VolumeLabel;
-        DetailLanguageText.Text = detail.LanguageLabel;
-        DetailTagsText.Text = detail.TagsLabel;
-        DetailSummaryText.Text = detail.Summary;
-        DetailTargetText.Text = detail.TargetPath;
-        DetailConfidenceText.Text =
-            $"{detail.ResolverSource} · 置信度 {detail.ConfidenceLabel} · {detail.ConfidenceLevel}";
-        DetailReasonText.Text = detail.ClassificationReason;
-        DetailEvidenceText.Text = detail.ClassificationEvidence.Count > 0
-            ? string.Join(" · ", detail.ClassificationEvidence)
-            : "当前结果没有额外证据。";
-        DetailCoverSourceText.Text = detail.CoverSource;
-        DetailStatusText.Text = detail.StatusLabel;
-        DetailStatusIcon.Text = StatusGlyph(detail.Status);
-        DetailStatusBadge.Background = StatusBrush(detail.Status, background: true);
-        DetailStatusText.Foreground = StatusBrush(detail.Status, background: false);
-        DetailStatusIcon.Foreground = StatusBrush(detail.Status, background: false);
-        SeriesEditBox.Text = detail.SeriesName;
-        RenderCandidates(detail.Candidates);
-        ApplySeriesGroupCheckBox.IsChecked = false;
-        ApplySeriesGroupCheckBox.Content = $"同时修正当前系列的 {detail.MatchingSeriesCount} 个条目";
-        ApplySeriesGroupCheckBox.Visibility = detail.MatchingSeriesCount > 1
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        LoadCandidatesButton.Visibility = detail.CanLoadCandidates
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        UpdateCandidateLookupState();
-        UpdateCorrectionButtonState();
-        DetailWarningBar.IsOpen = !string.IsNullOrWhiteSpace(detail.Warning);
-        DetailWarningBar.Message = detail.Warning ?? string.Empty;
-        OpenSubjectButton.IsEnabled = UriSafety.TryCreatePublicHttpsUri(detail.SubjectUrl, out _);
-        await SetCoverAsync(detail.CoverDataUrl);
-        DetailLoadingState.Visibility = Visibility.Collapsed;
-        DetailEmptyState.Visibility = Visibility.Collapsed;
-        DetailContent.Visibility = Visibility.Visible;
-        UpdateCompactDetailButtonState();
-        Motion.Enter(DetailContent);
-    }
-
     private async void OnCompactDetailClick(object sender, RoutedEventArgs e)
     {
-        if (_detail is null || _compactDetailDialogOpen)
+        if (
+            ResultsList.SelectedItem is not PlanItem
+            || _connectionState != ConnectionState.Ready
+        )
         {
             return;
         }
 
-        _compactDetailDialogOpen = true;
+        DetailSplitView.IsPaneOpen = true;
         UpdateCompactDetailButtonState();
-        try
+        await Task.Yield();
+        DetailPane.FocusInitial();
+    }
+
+    private void OnCloseDetailClick(object sender, RoutedEventArgs e)
+    {
+        if (_workspaceLayout is { ShowSideDetail: false })
         {
-            await ShowCompactDetailDialogAsync(_detail);
-        }
-        finally
-        {
-            _compactDetailDialogOpen = false;
+            DetailSplitView.IsPaneOpen = false;
             UpdateCompactDetailButtonState();
+            CompactDetailButton.Focus(FocusState.Programmatic);
         }
     }
 
     private void UpdateCompactDetailButtonState()
     {
         CompactDetailButton.IsEnabled = CompactDetailButton.Visibility == Visibility.Visible
-            && _detail is not null
-            && !_compactDetailDialogOpen
-            && !_isDetailRequestActive
+            && !DetailSplitView.IsPaneOpen
+            && ResultsList.SelectedItem is PlanItem
             && _connectionState == ConnectionState.Ready;
-    }
-
-    private void RenderCandidates(IReadOnlyList<SeriesCandidate> candidates)
-    {
-        CandidateList.ItemsSource = candidates;
-        CandidateList.SelectedItem = candidates.FirstOrDefault(candidate => candidate.IsCurrent)
-            ?? candidates.FirstOrDefault();
-    }
-
-    private void OnCandidateSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (CandidateList.SelectedItem is SeriesCandidate candidate)
-        {
-            SeriesEditBox.Text = candidate.SeriesName;
-        }
     }
 
     private async void OnLoadCandidatesClick(object sender, RoutedEventArgs e)
@@ -184,7 +152,7 @@ public sealed partial class MainPage
             {
                 return;
             }
-            RenderCandidates(result.Candidates);
+            DetailPane.SetCandidates(result.Candidates);
             if (!string.IsNullOrWhiteSpace(result.Warning))
             {
                 ShowToast(result.Warning, ToastKind.Warning);
@@ -208,15 +176,12 @@ public sealed partial class MainPage
 
     private void UpdateCandidateLookupState()
     {
-        CandidateLookupProgress.IsActive = _isCandidateLookupActive;
-        CandidateLookupProgress.Visibility = _isCandidateLookupActive
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        LoadCandidatesButton.IsEnabled = !_isCandidateLookupActive
+        var enabled = !_isCandidateLookupActive
             && !_isSavingCorrection
             && _connectionState == ConnectionState.Ready
             && _detail is { CanLoadCandidates: true }
             && _snapshot.Operation.State != "running";
+        DetailPane.SetCandidateLookupState(_isCandidateLookupActive, enabled);
     }
 
     private void OnBatchScopeChanged(object sender, RoutedEventArgs e)
@@ -226,219 +191,27 @@ public sealed partial class MainPage
 
     private void UpdateCorrectionButtonState()
     {
-        var useBatch = ApplySeriesGroupCheckBox.IsChecked == true
+        var useBatch = DetailPane.ApplyToSeriesGroup
             && _detail is { MatchingSeriesCount: > 1 };
-        SaveCorrectionText.Text = useBatch
+        var label = useBatch
             ? $"批量修正 {_detail!.MatchingSeriesCount} 项"
             : "保存修正";
-        SaveCorrectionButton.IsEnabled = !_isSavingCorrection
+        var enabled = !_isSavingCorrection
             && !_isCandidateLookupActive
             && _connectionState == ConnectionState.Ready
             && _snapshot.Operation.State != "running"
             && _detail is not null;
-    }
-
-    private async Task ShowCompactDetailDialogAsync(BookDetail detail)
-    {
-        var editor = new TextBox
-        {
-            Header = "系列文件夹名称",
-            Text = detail.SeriesName,
-            MaxLength = 120,
-        };
-        var candidates = new ComboBox
-        {
-            Header = "候选系列",
-            DisplayMemberPath = nameof(SeriesCandidate.DisplayLabel),
-            ItemsSource = detail.Candidates,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-        };
-        candidates.SelectedItem = detail.Candidates.FirstOrDefault(candidate => candidate.IsCurrent)
-            ?? detail.Candidates.FirstOrDefault();
-        candidates.SelectionChanged += (_, _) =>
-        {
-            if (candidates.SelectedItem is SeriesCandidate candidate)
-            {
-                editor.Text = candidate.SeriesName;
-            }
-        };
-        var batchScope = new CheckBox
-        {
-            Content = $"同时修正当前系列的 {detail.MatchingSeriesCount} 个条目",
-            Visibility = detail.MatchingSeriesCount > 1
-                ? Visibility.Visible
-                : Visibility.Collapsed,
-        };
-        var lookupButton = new Button
-        {
-            Content = "联网查找更多候选",
-            IsEnabled = detail.CanLoadCandidates,
-            HorizontalAlignment = HorizontalAlignment.Left,
-        };
-        lookupButton.Click += async (_, _) =>
-        {
-            if (_isCandidateLookupActive || _isSavingCorrection)
-            {
-                return;
-            }
-            _isCandidateLookupActive = true;
-            lookupButton.IsEnabled = false;
-            UpdateCandidateLookupState();
-            UpdateCorrectionButtonState();
-            try
-            {
-                var result = await _sidecar.LoadCandidatesAsync(detail.Index, detail.PlansRevision);
-                candidates.ItemsSource = result.Candidates;
-                candidates.SelectedItem = result.Candidates.FirstOrDefault(candidate => candidate.IsCurrent)
-                    ?? result.Candidates.FirstOrDefault();
-                if (!string.IsNullOrWhiteSpace(result.Warning))
-                {
-                    ShowToast(result.Warning, ToastKind.Warning);
-                }
-            }
-            catch (Exception exc)
-            {
-                ShowToast(exc.Message, ToastKind.Error);
-            }
-            finally
-            {
-                _isCandidateLookupActive = false;
-                lookupButton.IsEnabled = detail.CanLoadCandidates
-                    && _connectionState == ConnectionState.Ready
-                    && _snapshot.Operation.State != "running";
-                UpdateCandidateLookupState();
-                UpdateCorrectionButtonState();
-            }
-        };
-        var panel = new StackPanel { Spacing = 12, MaxWidth = 460 };
-        panel.Children.Add(new TextBlock
-        {
-            Text =
-                $"{detail.StatusLabel} · {detail.ResolverSource} · "
-                + $"置信度 {detail.ConfidenceLabel} · {detail.ConfidenceLevel}",
-            Foreground = ResourceBrush("TextFillColorSecondaryBrush"),
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = $"分类依据：{detail.ClassificationReason}",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = ResourceBrush("TextFillColorSecondaryBrush"),
-        });
-        if (detail.ClassificationEvidence.Count > 0)
-        {
-            panel.Children.Add(new TextBlock
-            {
-                Text = string.Join(" · ", detail.ClassificationEvidence),
-                TextWrapping = TextWrapping.Wrap,
-                FontSize = 12,
-                Foreground = ResourceBrush("TextFillColorTertiaryBrush"),
-            });
-        }
-        panel.Children.Add(new TextBlock
-        {
-            Text = $"作者：{detail.AuthorsLabel}　卷号：{detail.VolumeLabel}　语言：{detail.LanguageLabel}",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = ResourceBrush("TextFillColorSecondaryBrush"),
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = $"标签：{detail.TagsLabel}",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = ResourceBrush("TextFillColorTertiaryBrush"),
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = detail.Summary,
-            MaxLines = 6,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = ResourceBrush("TextFillColorSecondaryBrush"),
-        });
-        panel.Children.Add(candidates);
-        panel.Children.Add(lookupButton);
-        panel.Children.Add(editor);
-        panel.Children.Add(batchScope);
-        panel.Children.Add(new TextBlock
-        {
-            Text = detail.TargetPath,
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 12,
-            Foreground = ResourceBrush("TextFillColorTertiaryBrush"),
-        });
-
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = detail.Title,
-            Content = panel,
-            PrimaryButtonText = "保存修正",
-            CloseButtonText = "关闭",
-            DefaultButton = ContentDialogButton.Close,
-        };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-        {
-            await SaveCorrectionAsync(
-                detail.Index,
-                editor.Text,
-                batchScope.IsChecked == true,
-                detail.MatchingSeriesCount,
-                detail.PlansRevision
-            );
-        }
-    }
-
-    private async Task SetCoverAsync(string? dataUri)
-    {
-        CoverImage.Source = null;
-        CoverPlaceholder.Visibility = Visibility.Visible;
-        if (string.IsNullOrWhiteSpace(dataUri) || dataUri.Length > MaxCoverDataUriChars)
-        {
-            return;
-        }
-
-        var commaIndex = dataUri.IndexOf(',');
-        if (commaIndex < 0 || commaIndex == dataUri.Length - 1)
-        {
-            return;
-        }
-        try
-        {
-            var bytes = Convert.FromBase64String(dataUri[(commaIndex + 1)..]);
-            using var stream = new InMemoryRandomAccessStream();
-            using (var writer = new DataWriter(stream))
-            {
-                writer.WriteBytes(bytes);
-                await writer.StoreAsync();
-                await writer.FlushAsync();
-                writer.DetachStream();
-            }
-            stream.Seek(0);
-            var image = new BitmapImage
-            {
-                DecodePixelWidth = 480,
-                CreateOptions = BitmapCreateOptions.IgnoreImageCache,
-            };
-            await image.SetSourceAsync(stream);
-            CoverImage.Source = image;
-            CoverPlaceholder.Visibility = Visibility.Collapsed;
-        }
-        catch (Exception)
-        {
-            CoverImage.Source = null;
-            CoverPlaceholder.Visibility = Visibility.Visible;
-        }
+        DetailPane.SetCorrectionState(enabled, label);
     }
 
     private void ShowDetailEmpty()
     {
         _detail = null;
-        CandidateList.ItemsSource = null;
-        ApplySeriesGroupCheckBox.IsChecked = false;
-        ApplySeriesGroupCheckBox.Visibility = Visibility.Collapsed;
-        LoadCandidatesButton.Visibility = Visibility.Collapsed;
-        CoverImage.Source = null;
-        DetailLoadingState.Visibility = Visibility.Collapsed;
-        DetailContent.Visibility = Visibility.Collapsed;
-        DetailEmptyState.Visibility = Visibility.Visible;
+        DetailPane.ShowEmpty();
+        if (_workspaceLayout is { ShowSideDetail: false })
+        {
+            DetailSplitView.IsPaneOpen = false;
+        }
         UpdateCompactDetailButtonState();
     }
 
@@ -448,8 +221,8 @@ public sealed partial class MainPage
         {
             await SaveCorrectionAsync(
                 _detail.Index,
-                SeriesEditBox.Text,
-                ApplySeriesGroupCheckBox.IsChecked == true,
+                DetailPane.EditedSeriesName,
+                DetailPane.ApplyToSeriesGroup,
                 _detail.MatchingSeriesCount,
                 _detail.PlansRevision
             );
@@ -478,7 +251,7 @@ public sealed partial class MainPage
         if (string.IsNullOrWhiteSpace(seriesName))
         {
             ShowToast("系列名称不能为空。", ToastKind.Warning);
-            SeriesEditBox.Focus(FocusState.Programmatic);
+            DetailPane.FocusSeriesEditor();
             return;
         }
 

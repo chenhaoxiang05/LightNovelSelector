@@ -278,9 +278,13 @@ function Invoke-AppSmokeTest {
     else {
         $env:LN_SELECTOR_WINUI_APPEARANCE_SMOKE_TEST = "1"
     }
+    if ($Mode -eq "appearance-compact") {
+        $env:LN_SELECTOR_WINUI_TEST_WINDOW_SIZE = "1024x700"
+        $env:LN_SELECTOR_WINUI_TEST_OPEN_DETAIL = "1"
+    }
 
     try {
-        $process = Start-Process -FilePath $AppPath -PassThru
+        $process = Start-Process -FilePath $AppPath -PassThru -WindowStyle Hidden
         if (-not $process.WaitForExit(30000)) {
             try {
                 $process.Kill($true)
@@ -300,6 +304,8 @@ function Invoke-AppSmokeTest {
         Remove-Item Env:LN_SELECTOR_WINUI_APPEARANCE_SMOKE_TEST -ErrorAction SilentlyContinue
         Remove-Item Env:LN_SELECTOR_WINUI_TEST_THEME -ErrorAction SilentlyContinue
         Remove-Item Env:LN_SELECTOR_WINUI_TEST_MATERIAL -ErrorAction SilentlyContinue
+        Remove-Item Env:LN_SELECTOR_WINUI_TEST_WINDOW_SIZE -ErrorAction SilentlyContinue
+        Remove-Item Env:LN_SELECTOR_WINUI_TEST_OPEN_DETAIL -ErrorAction SilentlyContinue
     }
 }
 
@@ -706,9 +712,10 @@ else {
     Write-Host "Project binaries remain unsigned for this development build."
 }
 
-Write-Host "[9/11] Running startup and appearance smoke tests..."
+Write-Host "[9/11] Running startup, appearance, and compact-layout smoke tests..."
 Invoke-AppSmokeTest -AppPath $appExe -Mode "startup"
 Invoke-AppSmokeTest -AppPath $appExe -Mode "appearance"
+Invoke-AppSmokeTest -AppPath $appExe -Mode "appearance-compact"
 
 Write-Host "[10/11] Compiling the single EXE installer..."
 $installerScript = Join-Path $PSScriptRoot "LightNovelSelector.iss"

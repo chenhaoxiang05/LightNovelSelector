@@ -11,6 +11,7 @@ X_KEY = f"{{{X_NAMESPACE}}}Key"
 
 class AccessibilityContractTests(unittest.TestCase):
     main_page: ElementTree.Element
+    interface_roots: list[ElementTree.Element]
     design_tokens: ElementTree.Element
 
     @classmethod
@@ -18,15 +19,21 @@ class AccessibilityContractTests(unittest.TestCase):
         cls.main_page = ElementTree.parse(
             PROJECT_ROOT / "native" / "LightNovelSelector.WinUI" / "Views" / "MainPage.xaml"
         ).getroot()
+        component_folder = PROJECT_ROOT / "native" / "LightNovelSelector.WinUI" / "Components"
+        cls.interface_roots = [
+            cls.main_page,
+            *(ElementTree.parse(path).getroot() for path in sorted(component_folder.glob("*.xaml"))),
+        ]
         cls.design_tokens = ElementTree.parse(
             PROJECT_ROOT / "native" / "LightNovelSelector.WinUI" / "Styles" / "DesignTokens.xaml"
         ).getroot()
 
     def _element_named(self, name: str) -> ElementTree.Element:
-        for element in self.main_page.iter():
-            if element.get(X_NAME) == name:
-                return element
-        self.fail(f"MainPage.xaml 缺少 x:Name={name!r} 的控件。")
+        for root in self.interface_roots:
+            for element in root.iter():
+                if element.get(X_NAME) == name:
+                    return element
+        self.fail(f"界面 XAML 缺少 x:Name={name!r} 的控件。")
 
     def test_primary_regions_have_landmarks_and_names(self) -> None:
         expected = {
@@ -60,6 +67,9 @@ class AccessibilityContractTests(unittest.TestCase):
             "CandidateList": "候选系列列表",
             "SeriesEditBox": "手动修正系列名称",
             "SaveCorrectionButton": "保存系列修正",
+            "CloseDetailButton": "关闭文件详情",
+            "RetryDetailButton": "重新读取文件详情",
+            "UsageHelpButton": "查看使用提示",
             "ApplyButton": "确认整理全部分类计划",
             "ReportHistoryList": "分类历史批次",
             "ReportItemsList": "所选分类报告条目",
@@ -75,6 +85,18 @@ class AccessibilityContractTests(unittest.TestCase):
                     accessible_name,
                     self._element_named(element_name).get("AutomationProperties.Name"),
                 )
+
+    def test_large_regions_are_componentized(self) -> None:
+        component_tags = {element.tag.rsplit("}", 1)[-1] for element in self.main_page.iter()}
+
+        self.assertIn("FileDetailPane", component_tags)
+        self.assertIn("WorkflowRail", component_tags)
+        self.assertIsNone(
+            next(
+                (element for element in self.main_page.iter() if element.get(X_NAME) == "CandidateList"),
+                None,
+            )
+        )
 
     def test_page_shortcuts_are_wired_to_handlers(self) -> None:
         shortcuts = {

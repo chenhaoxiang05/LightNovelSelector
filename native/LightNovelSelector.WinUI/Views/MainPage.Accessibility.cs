@@ -193,7 +193,7 @@ public sealed partial class MainPage
         var regions = new List<FocusRegion>();
         AddFocusRegion(regions, ShellNavigation, GetSelectedNavigationItem());
 
-        if (WorkspaceView.Visibility == Visibility.Visible)
+        if (WorkspaceScrollViewer.Visibility == Visibility.Visible)
         {
             AddFocusRegion(regions, FolderCard, ChooseFolderButton, ScanButton, OpenFolderButton);
             AddFocusRegion(
@@ -203,14 +203,17 @@ public sealed partial class MainPage
                 ResultsList,
                 CompactDetailButton
             );
-            AddFocusRegion(
-                regions,
-                DetailCard,
-                SeriesEditBox,
-                CandidateList,
-                SaveCorrectionButton,
-                RevealFileButton
-            );
+            if (DetailSplitView.IsPaneOpen)
+            {
+                AddFocusRegion(
+                    regions,
+                    DetailPane,
+                    DetailPane.SeriesEditorFocusTarget,
+                    DetailPane.CandidateListFocusTarget,
+                    DetailPane.SaveCorrectionFocusTarget,
+                    DetailPane.RevealFileFocusTarget
+                );
+            }
             AddFocusRegion(regions, OperationCard, ApplyButton, UndoButton, CancelButton);
         }
         else if (ActivityView.Visibility == Visibility.Visible)

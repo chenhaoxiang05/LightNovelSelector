@@ -16,6 +16,11 @@ public sealed partial class MainPage
 {
     private async void OnChooseFolderClick(object sender, RoutedEventArgs e)
     {
+        await ChooseFolderAsync();
+    }
+
+    private async Task ChooseFolderAsync()
+    {
         try
         {
             var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
