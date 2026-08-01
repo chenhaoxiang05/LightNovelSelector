@@ -1,3 +1,4 @@
+import ctypes
 import json
 import os
 import socket
@@ -838,6 +839,45 @@ class UndoReportSafetyTests(unittest.TestCase):
 
             self.assertEqual(undo_classification_report(report_path), (1, 0))
             self.assertTrue(source.exists())
+            self.assertFalse(target.exists())
+
+    @unittest.skipUnless(os.name == "nt", "Windows 8.3 路径测试")
+    def test_report_accepts_equivalent_windows_short_path_alias(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve() / "A deliberately long classification library"
+            target = root / "Series" / "book.txt"
+            target.parent.mkdir(parents=True)
+            target.write_text("content", encoding="utf-8")
+
+            get_short_path = ctypes.WinDLL(  # type: ignore[attr-defined]
+                "kernel32",
+                use_last_error=True,
+            ).GetShortPathNameW
+            get_short_path.argtypes = (
+                ctypes.c_wchar_p,
+                ctypes.c_wchar_p,
+                ctypes.c_ulong,
+            )
+            get_short_path.restype = ctypes.c_ulong
+            buffer = ctypes.create_unicode_buffer(32_768)
+            length = get_short_path(str(root), buffer, len(buffer))
+            if length == 0 or length >= len(buffer):
+                self.skipTest("当前卷未提供可用的 Windows 8.3 短路径。")
+
+            short_root = Path(buffer.value)
+            if short_root == root:
+                self.skipTest("当前卷没有为测试目录生成不同的 Windows 8.3 别名。")
+
+            report_path = root / "classification_report.json"
+            self.write_report(
+                report_path,
+                root_path=short_root,
+                source_path=short_root / "book.txt",
+                target_path=short_root / "Series" / "book.txt",
+            )
+
+            self.assertEqual(undo_classification_report(report_path), (1, 0))
+            self.assertTrue((root / "book.txt").exists())
             self.assertFalse(target.exists())
 
 

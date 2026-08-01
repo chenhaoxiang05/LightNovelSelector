@@ -324,7 +324,7 @@ class MovePlanTests(unittest.TestCase):
 
     def test_recursive_file_discovery_is_deterministic_for_matching_names(self) -> None:
         with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
+            root = Path(temp_dir).resolve()
             first = root / "A" / "same.txt"
             second = root / "B" / "same.txt"
             first.parent.mkdir()
@@ -420,7 +420,7 @@ class MovePlanTests(unittest.TestCase):
 
     def test_duplicate_file_is_marked_and_skipped(self) -> None:
         with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
+            root = Path(temp_dir).resolve()
             first = root / "A Sword.Art.Online.Vol.01.epub"
             duplicate = root / "B SAO copy.epub"
             first.write_text("same", encoding="utf-8")
@@ -818,7 +818,7 @@ class MovePlanTests(unittest.TestCase):
 
     def test_recursive_scan_keeps_already_classified_file_in_place(self) -> None:
         with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
+            root = Path(temp_dir).resolve()
             series_dir = root / "Sword Art Online"
             series_dir.mkdir()
             book = series_dir / "Sword.Art.Online.Vol.01.txt"
@@ -1041,7 +1041,7 @@ class MovePlanTests(unittest.TestCase):
         from shutil import move as real_move
 
         with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
+            root = Path(temp_dir).resolve()
             first = root / "A Sword.Art.Online.Vol.01.txt"
             missing = root / "B Sword.Art.Online.Vol.02.txt"
             first.write_text("one", encoding="utf-8")
@@ -1271,7 +1271,7 @@ class MovePlanTests(unittest.TestCase):
         from shutil import move as real_move
 
         with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
+            root = Path(temp_dir).resolve()
             first = root / "A Sword.Art.Online.Vol.01.txt"
             second = root / "B Sword.Art.Online.Vol.02.txt"
             first.write_text("one", encoding="utf-8")
@@ -1851,7 +1851,7 @@ class ApplicationServiceTests(unittest.TestCase):
         from lightnovel_selector.application import ApplicationService
 
         with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
+            root = Path(temp_dir).resolve()
             book = root / "Sword.Art.Online.Vol.01.txt"
             book.write_text("volume one", encoding="utf-8")
             with (
@@ -1980,7 +1980,7 @@ class ApplicationServiceTests(unittest.TestCase):
         from lightnovel_selector.application import ApplicationService
 
         with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
+            root = Path(temp_dir).resolve()
             first = root / "A Demo Vol.01.txt"
             second = root / "B Demo Vol.02.txt"
             first.write_text("one", encoding="utf-8")
