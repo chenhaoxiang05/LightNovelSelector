@@ -33,7 +33,7 @@
 </picture>
 
 > [!TIP]
-> 最新稳定版是 **WinUI 3 原生版 `v2.0.2`**。可直接下载 [Windows x64 安装器](https://github.com/chenhaoxiang05/LightNovelSelector/releases/download/v2.0.2/LightNovelSelector-v2.0.2-win-x64-setup.exe)，不需要另装 Python、.NET 或 Windows App SDK。
+> 最新稳定版是 **WinUI 3 原生版 `v2.1.0`**。可直接下载 [Windows x64 安装器](https://github.com/chenhaoxiang05/LightNovelSelector/releases/download/v2.1.0/LightNovelSelector-v2.1.0-win-x64-setup.exe)，不需要另装 Python、.NET 或 Windows App SDK。
 
 ## 为什么使用它
 
@@ -57,18 +57,18 @@
 
 ### 下载发布版
 
-从 [`v2.0.2` 发布页](https://github.com/chenhaoxiang05/LightNovelSelector/releases/tag/v2.0.2) 下载：
+从 [`v2.1.0` 发布页](https://github.com/chenhaoxiang05/LightNovelSelector/releases/tag/v2.1.0) 下载：
 
 ```text
-LightNovelSelector-v2.0.2-win-x64-setup.exe
+LightNovelSelector-v2.1.0-win-x64-setup.exe
 ```
 
-安装器按当前 Windows 用户安装，不要求管理员权限，并包含 .NET、Windows App SDK 与 Python Sidecar。`v2.0.2` 暂未进行商业代码签名，请只从本仓库 Release 下载并核对发布页提供的 SHA-256。
+安装器按当前 Windows 用户安装，不要求管理员权限，并包含 .NET、Windows App SDK 与 Python Sidecar。`v2.1.0` 暂未进行商业代码签名，请只从本仓库 Release 下载并核对随附的 `SHA256SUMS.txt`。
 
 下载后可在 PowerShell 中计算校验值，并与 Release 页面逐字比对：
 
 ```powershell
-Get-FileHash .\LightNovelSelector-v2.0.2-win-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\LightNovelSelector-v2.1.0-win-x64-setup.exe -Algorithm SHA256
 ```
 
 新版发布流水线会同时提供 `SHA256SUMS.txt`、SPDX SBOM、构建信息和 GitHub 构建来源证明；代码签名状态会如实写入构建信息。完整验证方法见 [发布可信度与下载验证](docs/RELEASE_TRUST.md)。
