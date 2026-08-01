@@ -52,7 +52,10 @@ LightNovelSelector/
 ├─ tools/
 │  ├─ benchmark_large_library.py  合成大型书库性能与取消基准
 │  ├─ generate_native_assets.py  生成原生应用图标
+│  ├─ release_assets.py          生成并验证 SBOM、构建信息与校验清单
 │  └─ verify_sidecar.py          验证打包 Sidecar 协议
+├─ .config/dotnet-tools.json      固定 Microsoft SBOM Tool 版本
+├─ .github/workflows/release.yml  标签构建、来源证明与 Release 发布
 ├─ docs/                          架构、截图与维护说明
 ├─ LICENSE                        MIT 开源许可证
 ├─ THIRD_PARTY_NOTICES.md         第三方运行时与许可索引
@@ -74,7 +77,7 @@ LightNovelSelector/
 - `native/**/bin/`、`native/**/obj/`：.NET 构建输出。
 - `__pycache__/`、`.pytest_cache/`、`.ruff_cache/`：工具缓存。
 
-正常构建完成后，`dist\winui` 只包含一个安装 EXE。构建中间目录不会直接写入 `dist`，因此失败构建不会留下空发布目录。
+正常构建完成后，`dist\winui` 只包含当前安装 EXE、SPDX SBOM、构建信息和 `SHA256SUMS.txt`。构建中间目录不会直接写入正式输出，四项资产全部验证成功后才原子替换 `dist\winui`，因此失败构建不会留下半套发布文件。
 
 ## 历史恢复点
 

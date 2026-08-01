@@ -50,4 +50,8 @@ LightNovelSelector 在本地读取文件名、EPUB 书名/作者/语言/主题�
 
 ## 发布真实性
 
-当前 Windows 安装器尚未使用商业代码签名证书，系统可能显示“未知发布者”。正式构建会剔除 PDB、开发期 runtime 配置和其他调试产物。请只从本仓库的 GitHub Release 下载，并核对 Release 正文中的文件名、版本和 SHA-256。任何第三方镜像、网盘重新打包或校验值不一致的文件都不在支持范围内。
+当前 Windows 安装器尚未使用商业代码签名证书，系统可能显示“未知发布者”。构建脚本已经提供严格的 Authenticode 入口：配置证书后会使用 SHA-256 和 RFC 3161 时间戳签署项目自有 EXE、主程序集、Sidecar 与安装器，并在 SignTool 或 PowerShell 验证失败时停止构建；未配置证书时则明确记录 `unsigned`，不会使用自签名证书制造虚假的系统信任。
+
+新版正式构建会剔除 PDB、开发期 runtime 配置和其他调试产物，并随安装器生成 `SHA256SUMS.txt`、SPDX 2.2 SBOM 和构建信息。标签发布工作流还会使用 GitHub OIDC 与 Sigstore 为安装器生成 SLSA 来源证明和 SBOM 证明。构建信息记录源码提交、标签、工作树状态、安装器哈希和 Authenticode 状态；正式 GitHub 标签构建的工作树必须是干净状态。
+
+请只从本仓库的 GitHub Release 下载，并同时核对校验文件。任何第三方镜像、网盘重新打包、清单缺失或校验值不一致的文件都不在支持范围内。不同验证层的用途和命令见 [发布可信度与下载验证](docs/RELEASE_TRUST.md)。

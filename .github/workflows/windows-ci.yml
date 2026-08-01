@@ -53,7 +53,7 @@ jobs:
           python -m mypy lightnovel_classifier.py lightnovel_sidecar.py lightnovel_selector tests tools
           python -m bandit -q -r lightnovel_selector lightnovel_classifier.py lightnovel_sidecar.py tools
           python -m vulture lightnovel_classifier.py lightnovel_selector tests tools --min-confidence 80
-          python -m pip_audit -r requirements-dev.txt --strict
+          python -m pip_audit -r requirements-dev.txt --strict --cache-dir build/pip-audit-cache --progress-spinner off
 
       - name: 验证 1 万文件性能预算
         shell: pwsh

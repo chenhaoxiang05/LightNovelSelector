@@ -1,0 +1,154 @@
+name: Windows 可信发布
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: 构建、证明并发布 Windows 安装器
+    runs-on: windows-2022
+    timeout-minutes: 60
+
+    steps:
+      - name: 检出标签源码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: 配置 Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements-runtime.txt
+            requirements-dev.txt
+
+      - name: 配置 .NET 8 与 .NET 10
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: 验证标签、版本和中文发布说明
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          $version = python -c "from lightnovel_selector.constants import APP_VERSION; print(APP_VERSION)"
+          if ($LASTEXITCODE -ne 0) {
+            throw "无法读取应用版本。"
+          }
+          $version = $version.Trim()
+          if ($version.Contains("-") -or $version.Contains("+")) {
+            throw "正式 Release 标签不能指向开发版本：$version"
+          }
+          if ($env:GITHUB_REF_NAME -ne "v$version") {
+            throw "标签 $env:GITHUB_REF_NAME 与应用版本 v$version 不一致。"
+          }
+          $notes = Join-Path $env:GITHUB_WORKSPACE "docs\releases\$env:GITHUB_REF_NAME.md"
+          if (-not (Test-Path -LiteralPath $notes -PathType Leaf) -or
+              (Get-Item -LiteralPath $notes).Length -lt 100) {
+            throw "缺少完整的中文发布说明：$notes"
+          }
+
+      - name: 构建并验证发布资产
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+          SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          $certificatePath = Join-Path $env:RUNNER_TEMP "LightNovelSelector-signing.pfx"
+          try {
+            $buildArguments = @("-RequireCleanSource")
+            if (-not [string]::IsNullOrWhiteSpace($env:SIGNING_PFX_BASE64)) {
+              $certificateBytes = [Convert]::FromBase64String($env:SIGNING_PFX_BASE64.Trim())
+              [IO.File]::WriteAllBytes($certificatePath, $certificateBytes)
+              $env:WINDOWS_SIGNING_PFX_PATH = $certificatePath
+              $buildArguments += "-RequireSignature"
+            }
+            else {
+              Write-Warning "未配置代码签名证书，本次 Release 将明确标记为未签名。"
+            }
+            & .\build_winui.bat @buildArguments
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+            .\.venv-build\Scripts\python.exe tools\release_assets.py verify --dist dist\winui
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+            $buildInfoPath = Get-ChildItem -LiteralPath "dist\winui" -Filter "*-build-info.json" -File -ErrorAction Stop
+            $buildInfo = Get-Content -LiteralPath $buildInfoPath.FullName -Raw | ConvertFrom-Json
+            if ($buildInfo.source.dirty -ne $false -or
+                $buildInfo.source.commit -ne $env:GITHUB_SHA.ToLowerInvariant() -or
+                $buildInfo.source.ref -ne $env:GITHUB_REF_NAME) {
+              throw "构建信息与当前标签源码不一致。"
+            }
+          }
+          finally {
+            Remove-Item -LiteralPath $certificatePath -Force -ErrorAction SilentlyContinue
+            Remove-Item Env:WINDOWS_SIGNING_PFX_PATH -ErrorAction SilentlyContinue
+          }
+
+      - name: 生成安装器构建来源证明
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: dist/winui/*-setup.exe
+
+      - name: 生成安装器 SBOM 证明
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: dist/winui/*-setup.exe
+          sbom-path: dist/winui/*-sbom.spdx.json
+
+      - name: 创建或修复 GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $notes = Join-Path $env:GITHUB_WORKSPACE "docs\releases\$tag.md"
+          $assets = @(
+            Get-ChildItem -LiteralPath "dist\winui" -File |
+              Sort-Object -Property Name |
+              Select-Object -ExpandProperty FullName
+          )
+          if ($assets.Count -ne 4) {
+            throw "发布资产数量异常，期望 4 个文件，实际为 $($assets.Count)。"
+          }
+          & gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            & gh release edit $tag `
+              --repo $env:GITHUB_REPOSITORY `
+              --title "LightNovelSelector $tag" `
+              --notes-file $notes
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+            & gh release upload $tag @assets --repo $env:GITHUB_REPOSITORY --clobber
+          }
+          else {
+            & gh release create $tag @assets `
+              --repo $env:GITHUB_REPOSITORY `
+              --verify-tag `
+              --title "LightNovelSelector $tag" `
+              --notes-file $notes
+          }
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
