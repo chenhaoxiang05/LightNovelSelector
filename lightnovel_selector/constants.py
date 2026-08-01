@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 APP_NAME = "Light Novel Selector"
-APP_VERSION = "2.1.0-dev.10"
+APP_VERSION = "2.1.0-dev.11"
 USER_AGENT = f"LightNovelSelector/{APP_VERSION} (+local-file-classifier)"
 BANGUMI_SEARCH_URL = "https://api.bgm.tv/v0/search/subjects"
 BANGUMI_SUBJECT_WEB_URL = "https://bgm.tv/subject/{subject_id}"

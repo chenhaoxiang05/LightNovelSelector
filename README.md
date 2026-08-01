@@ -19,6 +19,7 @@
     <a href="https://github.com/chenhaoxiang05/LightNovelSelector/releases">下载发布版</a> ·
     <a href="CHANGELOG.md">更新记录</a> ·
     <a href="docs/WINUI_ARCHITECTURE.md">架构说明</a> ·
+    <a href="docs/RELEASE_TRUST.md">下载验证</a> ·
     <a href="CONTRIBUTING.md">参与贡献</a> ·
     <a href="https://github.com/chenhaoxiang05/LightNovelSelector/issues">问题反馈</a>
   </p>
@@ -58,13 +59,15 @@
 LightNovelSelector-v2.0.2-win-x64-setup.exe
 ```
 
-安装器按当前 Windows 用户安装，不要求管理员权限，并包含 .NET、Windows App SDK 与 Python Sidecar。发布产物暂未进行商业代码签名，请只从本仓库 Release 下载并核对发布页提供的 SHA-256。
+安装器按当前 Windows 用户安装，不要求管理员权限，并包含 .NET、Windows App SDK 与 Python Sidecar。`v2.0.2` 暂未进行商业代码签名，请只从本仓库 Release 下载并核对发布页提供的 SHA-256。
 
 下载后可在 PowerShell 中计算校验值，并与 Release 页面逐字比对：
 
 ```powershell
 Get-FileHash .\LightNovelSelector-v2.0.2-win-x64-setup.exe -Algorithm SHA256
 ```
+
+新版发布流水线会同时提供 `SHA256SUMS.txt`、SPDX SBOM、构建信息和 GitHub 构建来源证明；代码签名状态会如实写入构建信息。完整验证方法见 [发布可信度与下载验证](docs/RELEASE_TRUST.md)。
 
 ### 从源码运行 WinUI 3 版本
 
@@ -193,14 +196,15 @@ py .\lightnovel_classifier.py "D:\你的轻小说目录" --dry-run --no-network 
 py .\lightnovel_classifier.py --undo-report "D:\你的轻小说目录\classification_report.json"
 ```
 
-构建单 EXE 安装器还需要 Inno Setup 6 或更高版本：
+构建单 EXE 安装器还需要 .NET 8 Runtime（SBOM 工具）与 Inno Setup 6 或更高版本：
 
 ```powershell
+winget install Microsoft.DotNet.Runtime.8
 winget install JRSoftware.InnoSetup
 .\build_winui.bat
 ```
 
-完整开发环境、测试命令和发布流程见 [DEVELOPMENT.md](DEVELOPMENT.md)；新增在线书库请同时阅读 [元数据提供器开发指南](docs/METADATA_PROVIDERS.md)。
+完整开发环境、测试命令和发布流程见 [DEVELOPMENT.md](DEVELOPMENT.md)，发布资产的验证与签名边界见 [发布可信度说明](docs/RELEASE_TRUST.md)；新增在线书库请同时阅读 [元数据提供器开发指南](docs/METADATA_PROVIDERS.md)。
 
 ## 获取帮助
 

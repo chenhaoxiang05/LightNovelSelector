@@ -505,6 +505,11 @@ def main() -> int:
         f"取消响应 {measurements['cancel_latency_seconds']:.3f}s，"
         f"峰值工作集 {measurements['peak_working_set_mib']:.1f} MiB。"
     )
+    for check in report["checks"]:
+        if not check["passed"]:
+            print(
+                f"预算超限：{check['metric']}={check['value']:.3f}，要求 {check['comparison']} {check['limit']:.3f}。"
+            )
     print(f"结果：{'通过' if report['passed'] else '未通过'}；报告：{args.output}")
     return 0 if report["passed"] or not args.enforce else 2
 

@@ -42,18 +42,24 @@
 ```
 
 - Sidecar 协议验证、Python/C# 检查、WinUI 发布和两轮冒烟全部成功。
-- `dist\winui` 只保留当前版本安装器，不包含暂存目录、语言资源散文件或旧版本副本。
+- `dist\winui` 不包含暂存目录、语言资源散文件、旧版本副本或未列入校验清单的文件。
 - 安装器内容不包含 `.pdb`、开发期 runtime 配置、源码、本机绝对路径或其他调试产物。
 - 安装目录包含项目 `LICENSE`、第三方组件索引和全部必需的运行时许可证/Notice 原文。
 - 安装器按当前用户安装，不请求管理员权限。
 - 安装、首次启动、扫描预览、关闭、卸载和残留进程检查通过。
 - 使用 Windows Defender 扫描最终安装器。
-- 记录 Authenticode 状态；没有证书时在 README 与 Release 明确说明“未签名”。
+- `dist\winui` 只包含当前安装器、SPDX SBOM、构建信息和 `SHA256SUMS.txt` 四个普通文件。
+- 执行 `tools\release_assets.py verify --dist dist\winui`，确认资产集合、三项 SHA-256、版本、源码提交和关键组件全部一致。
+- 检查构建信息中的 `source.dirty`；正式标签构建必须为 `false`。
+- 记录 Authenticode 状态；配置证书时安装器必须通过 SignTool 与 PowerShell 验证并带时间戳，没有证书时在 README 与 Release 明确说明“未签名”。
+- 查看 SPDX SBOM，确认至少包含 CPython、defusedxml、PyInstaller、.NET Runtime、Windows App SDK、WebView2 和 Inno Setup。
 
 ## Release
 
-- 从 `main` 的已验证提交创建带注释标签。
+- 为目标版本提交 `docs\releases\v<版本>.md` 中文说明，再从 `main` 的已验证提交创建带注释标签。
 - Release 标题、正文、文件名和应用内版本一致。
-- 上传完成后重新下载资产并计算 SHA-256，不能只校验本地原文件。
-- Release 正文使用中文，列出主要修复、兼容性、已知限制、验证结果和 SHA-256。
+- 标签工作流的版本检查、完整构建、SLSA 来源证明和 SBOM 证明全部成功。
+- 上传完成后重新下载四项资产并计算 SHA-256，不能只校验 runner 内的原文件。
+- 使用 `gh attestation verify <安装器> --repo chenhaoxiang05/LightNovelSelector` 验证下载后的安装器来源证明。
+- Release 正文使用中文，列出主要修复、兼容性、已知限制、验证结果，并引导用户使用随附 `SHA256SUMS.txt`。
 - 发布后再次检查安装器链接、README 徽章、CodeQL、规则集、Dependabot 和私密漏洞报告入口。

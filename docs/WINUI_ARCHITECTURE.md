@@ -257,14 +257,21 @@ WinUI 只把列表返回的执行编号传给 `get_report` 和 `start_undo`，�
 
 ## 发布边界
 
-`build_winui.bat` 使用受路径保护的 PowerShell 流水线生成安装器：
+`build_winui.bat` 使用受路径保护的 PowerShell 流水线生成可信发布资产：
 
-1. PyInstaller 将 `lightnovel_sidecar.py` 冻结为单文件 Sidecar。
-2. `dotnet publish` 以 `win-x64` 自包含方式发布 WinUI。
-3. 项目文件把生成的 Sidecar 作为发布内容复制到 WinUI 目录根部。
-4. 暂存发布目录执行真实启动与外观冒烟。
-5. Inno Setup 把暂存目录封装为单个 `LightNovelSelector-v<版本>-win-x64-setup.exe`。
-6. 只有以上步骤全部成功后才清理并替换 `dist\winui`；失败构建只留在可删除的 `build` 暂存区。
+1. 安装固定依赖，还原仓库固定版本的 Microsoft SBOM Tool，并生成原生图标资源。
+2. PyInstaller 将 `lightnovel_sidecar.py` 冻结为单文件 Sidecar，再执行真实 JSON Lines 协议验证。
+3. 运行 Python 测试、静态检查、安全审计、依赖审计和 C# 单元测试。
+4. `dotnet publish` 以 `win-x64` 自包含方式发布 WinUI，项目文件同时复制冻结 Sidecar。
+5. 收集项目与第三方许可证，剔除 PDB 和开发期 runtime 配置。
+6. 配置证书时，对应用 EXE、应用 DLL 和 Sidecar 执行 SHA-256 Authenticode 签名并验证。
+7. 在暂存发布目录执行真实启动与外观冒烟。
+8. Inno Setup 把暂存目录封装为单个安装 EXE；启用签名时继续签名并验证安装器。
+9. Microsoft SBOM Tool 扫描实际安装器与依赖，生成 SPDX 2.2 清单并执行第一次验证。
+10. 发布资产验证器补齐 CPython 与 Inno Setup 组件，生成构建来源信息和 GNU 格式 `SHA256SUMS.txt`；最终 SBOM 再交给 Microsoft 工具验证。
+11. 四项资产通过独立验证后原子替换 `dist\winui`；替换后验证失败会自动恢复上一份完整输出。
+
+`dist\winui` 最终只包含安装器、版本化 SPDX SBOM、版本化构建信息和 `SHA256SUMS.txt`。构建信息如实记录源码提交、工作树状态和 Authenticode 状态；没有商业证书的开发构建会明确标记为未签名，不创建或信任自签名证书。标签发布还会在 GitHub 上为安装器生成 SLSA 来源证明和 SBOM 证明。
 
 安装器解包后的应用体积较大，但不依赖目标机器已有 Python、.NET 或 Windows App SDK。Windows App SDK 的 `.mui` 语言目录都包含真实资源，安装器不创建空目录。`PublishTrimmed` 保持关闭，避免 XAML 和 JSON 反射元数据被错误裁剪；`PublishReadyToRun` 关闭，避免额外运行时包要求并控制体积。
 

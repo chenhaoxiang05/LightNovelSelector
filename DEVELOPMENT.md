@@ -9,6 +9,8 @@
 - .NET 10：WinUI 应用和 C# 测试。
 - PyInstaller：把 Python Sidecar 构建为独立 EXE。
 - Inno Setup 6+：把 WinUI 运行文件封装为单个安装 EXE。
+- Microsoft SBOM Tool 4.1.5：生成并验证 SPDX 2.2 软件物料清单。
+- Windows SDK SignTool：配置正式证书时执行 Authenticode 签名与时间戳验证。
 - defusedxml：安全读取 EPUB XML。
 - pytest、ruff、mypy、bandit、vulture、pip-audit、MSTest：自动验证。
 
@@ -16,9 +18,12 @@
 
 ```powershell
 winget install Python.Python.3.12
+winget install Microsoft.DotNet.Runtime.8
 winget install Microsoft.DotNet.SDK.10
 winget install JRSoftware.InnoSetup
 ```
+
+.NET 10 用于应用与测试；固定的 Microsoft SBOM Tool 当前以 .NET 8 为目标，因此构建机还需安装 .NET 8 Runtime。只有进行 Authenticode 签名时才需要包含 SignTool 的 Windows SDK。
 
 构建脚本优先使用 `.venv-build\Scripts\python.exe`。不存在时会从 `py -3` 或 `python` 创建该环境。
 
@@ -91,7 +96,7 @@ Sidecar 协议见 [WinUI 架构说明](docs/WINUI_ARCHITECTURE.md)。WinUI 不�
 .\.venv-build\Scripts\python.exe -m mypy lightnovel_classifier.py lightnovel_sidecar.py lightnovel_selector tests
 .\.venv-build\Scripts\python.exe -m bandit -q -r lightnovel_selector lightnovel_classifier.py lightnovel_sidecar.py
 .\.venv-build\Scripts\python.exe -m vulture lightnovel_classifier.py lightnovel_selector tests --min-confidence 80
-.\.venv-build\Scripts\python.exe -m pip_audit -r requirements-dev.txt --strict
+.\.venv-build\Scripts\python.exe -m pip_audit -r requirements-dev.txt --strict --cache-dir build\pip-audit-cache --progress-spinner off
 
 dotnet restore native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj --locked-mode
 dotnet test native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj -c Release --no-restore
@@ -141,22 +146,27 @@ git diff --check
 .\build_winui.bat
 ```
 
-`build_exe.bat` 指向相同入口。实际实现位于 `scripts\windows\build_winui.ps1`，共九步：
+`build_exe.bat` 指向相同入口。实际实现位于 `scripts\windows\build_winui.ps1`，共十一步：
 
 1. 安装固定版本的开发依赖。
-2. 生成原生图标。
+2. 还原仓库固定的 SBOM 工具并生成原生图标。
 3. 生成 `LightNovelSelector.Sidecar.exe`。
 4. 使用独立 Python 工具验证 `ping` / `shutdown` 协议。
 5. 执行 Python 测试、类型检查、静态安全扫描和依赖漏洞审计。
 6. 执行 C# 测试。
 7. 发布自包含 WinUI 到 `build\winui-package` 暂存区，剔除调试产物并收集第三方许可证全文。
-8. 执行启动和外观两轮冒烟。
-9. 使用 Inno Setup 编译安装器，成功后原子式替换 `dist\winui`。
+8. 配置证书时签署并验证项目自有 WinUI、程序集和 Sidecar；未配置时记录未签名状态。
+9. 执行启动和外观两轮冒烟。
+10. 使用 Inno Setup 编译安装器，并在配置证书时签署最终安装器。
+11. 扫描安装器与依赖，生成并验证 SBOM、构建信息和 SHA-256 清单，成功后原子式替换 `dist\winui`。
 
-最终只保留：
+最终只保留四项可分发资产：
 
 ```text
 dist\winui\LightNovelSelector-v<版本>-win-x64-setup.exe
+dist\winui\LightNovelSelector-v<版本>-win-x64-sbom.spdx.json
+dist\winui\LightNovelSelector-v<版本>-win-x64-build-info.json
+dist\winui\SHA256SUMS.txt
 ```
 
 安装器会在安装前显示根目录中的 MIT `LICENSE`，并把项目许可证、`THIRD_PARTY_NOTICES.md` 以及 Python、PyInstaller、defusedxml、.NET、Windows App SDK、WebView2 和 Inno Setup 的原始许可文本保留在应用安装目录。
@@ -167,9 +177,41 @@ dist\winui\LightNovelSelector-v<版本>-win-x64-setup.exe
 .\build_winui.bat -SkipDependencyInstall
 .\build_winui.bat -SkipTests
 .\build_winui.bat -KeepStaging
+.\build_winui.bat -RequireCleanSource
 ```
 
-默认不保留发布暂存区。`-KeepStaging` 仅用于检查内部 WinUI 运行文件；正式暂存区不应包含 `.pdb` 或 `*.runtimeconfig.dev.json`。
+默认不保留发布暂存区。`-KeepStaging` 仅用于检查内部 WinUI 运行文件；正式暂存区不应包含 `.pdb` 或 `*.runtimeconfig.dev.json`。`-RequireCleanSource` 用于正式发布，在工作树有任何未提交源码时阻断构建。
+
+构建结束后可以独立复核最终目录：
+
+```powershell
+.\.venv-build\Scripts\python.exe .\tools\release_assets.py verify --dist .\dist\winui
+```
+
+### Authenticode 签名
+
+没有证书的日常开发构建保持可用，但 `build-info.json` 会明确写入 `authenticode.status = "unsigned"`。取得受信任的代码签名 PFX 后，使用环境变量避免把证书路径和密码写入脚本：
+
+```powershell
+$env:WINDOWS_SIGNING_PFX_PATH = "D:\secure\codesign.pfx"
+$env:WINDOWS_SIGNING_PFX_PASSWORD = "<密码>"
+.\build_winui.bat -RequireSignature
+```
+
+构建脚本固定使用 SHA-256 文件摘要、HTTPS RFC 3161 时间戳和 SHA-256 时间戳摘要，并对每个签名执行 `signtool verify /pa /all /tw` 与 `Get-AuthenticodeSignature` 双重检查。`-RequireSignature` 会在证书或 SignTool 缺失时立即失败；可用 `-TimestampUrl` 显式更换时间戳服务。
+
+证书、密码和临时 PFX 不能提交到仓库。GitHub Actions 使用 `WINDOWS_SIGNING_PFX_BASE64` 与 `WINDOWS_SIGNING_PFX_PASSWORD` Secrets；仓库尚无商业证书时，工作流仍生成校验、SBOM 和来源证明，但会如实发布未签名状态。详见 [发布可信度说明](docs/RELEASE_TRUST.md)。
+
+### 标签发布
+
+`.github\workflows\release.yml` 只响应 `v*` 标签，并在构建前强制要求：
+
+- `APP_VERSION` 是不含 `-dev` 的正式版本；
+- 标签严格等于 `v<APP_VERSION>`；
+- `docs\releases\v<版本>.md` 存在且包含完整中文说明；
+- 完整测试、安装器冒烟和四项发布资产验证全部成功。
+
+通过后，工作流使用 GitHub OIDC/Sigstore 为安装器生成 SLSA 来源证明和 SBOM 证明，再创建或修复同名 GitHub Release。所有 Actions 均固定到完整提交 SHA，发布 runner 固定为仍提供 Inno Setup 的 `windows-2022`。
 
 ## 为什么安装器内部有语言目录
 

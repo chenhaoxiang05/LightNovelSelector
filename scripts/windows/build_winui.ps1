@@ -1,8 +1,30 @@
 [CmdletBinding()]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    "PSAvoidUsingWriteHost",
+    "",
+    Justification = "This interactive build entry point intentionally prints numbered progress and final artifact paths."
+)]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    "PSAvoidUsingConvertToSecureStringWithPlainText",
+    "",
+    Justification = "The secret arrives through an environment variable and is converted immediately; it is never persisted or logged."
+)]
 param(
     [switch]$SkipDependencyInstall,
     [switch]$SkipTests,
-    [switch]$KeepStaging
+    [switch]$KeepStaging,
+    [string]$SigningCertificatePath = $env:WINDOWS_SIGNING_PFX_PATH,
+    [Security.SecureString]$SigningCertificatePassword = $(
+        if ($env:WINDOWS_SIGNING_PFX_PASSWORD) {
+            ConvertTo-SecureString -String $env:WINDOWS_SIGNING_PFX_PASSWORD -AsPlainText -Force
+        }
+        else {
+            $null
+        }
+    ),
+    [string]$TimestampUrl = "https://timestamp.digicert.com",
+    [switch]$RequireSignature,
+    [switch]$RequireCleanSource
 )
 
 $ErrorActionPreference = "Stop"
@@ -70,13 +92,17 @@ function Copy-ReleaseFile {
     }
 }
 
-function Reset-SafeDirectory {
+function New-SafeBuildDirectory {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = "Low")]
     param(
         [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)][string]$Parent
     )
 
     $safePath = Assert-ChildPath -Path $Path -Parent $Parent
+    if (-not $PSCmdlet.ShouldProcess($safePath, "Reset build staging directory")) {
+        return $safePath
+    }
     if (Test-Path -LiteralPath $safePath) {
         Remove-Item -LiteralPath $safePath -Recurse -Force
     }
@@ -93,6 +119,77 @@ function Find-CommandPath {
         }
     }
     return $null
+}
+
+function Find-SignTool {
+    $candidates = @(
+        (Get-Command signtool.exe -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Source -First 1)
+    )
+    foreach ($kitsRoot in @(
+        (Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"),
+        (Join-Path $env:ProgramFiles "Windows Kits\10\bin")
+    )) {
+        if (-not (Test-Path -LiteralPath $kitsRoot -PathType Container)) {
+            continue
+        }
+        $candidates += @(
+            Get-ChildItem -LiteralPath $kitsRoot -Directory |
+                Sort-Object -Property Name -Descending |
+                ForEach-Object { Join-Path $_.FullName "x64\signtool.exe" }
+        )
+    }
+    return Find-CommandPath -Candidates $candidates
+}
+
+function Invoke-AuthenticodeSign {
+    param(
+        [Parameter(Mandatory = $true)][string]$SignTool,
+        [Parameter(Mandatory = $true)][string]$CertificatePath,
+        [Security.SecureString]$CertificatePassword,
+        [Parameter(Mandatory = $true)][string]$TimestampServer,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $arguments = @(
+        "sign", "/v",
+        "/fd", "SHA256",
+        "/tr", $TimestampServer,
+        "/td", "SHA256",
+        "/d", "LightNovelSelector",
+        "/du", "https://github.com/chenhaoxiang05/LightNovelSelector",
+        "/f", $CertificatePath
+    )
+    $passwordPointer = [IntPtr]::Zero
+    try {
+        if ($null -ne $CertificatePassword -and $CertificatePassword.Length -gt 0) {
+            $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($CertificatePassword)
+            $plainText = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
+            $arguments += @("/p", $plainText)
+        }
+        $arguments += $Path
+
+        & $SignTool @arguments | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "Authenticode signing failed with exit code ${LASTEXITCODE}: $Path"
+        }
+    }
+    finally {
+        $arguments = @()
+        $plainText = $null
+        if ($passwordPointer -ne [IntPtr]::Zero) {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
+        }
+    }
+    & $SignTool verify /pa /all /tw $Path | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "Authenticode verification failed with exit code ${LASTEXITCODE}: $Path"
+    }
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    if ($signature.Status -ne [Management.Automation.SignatureStatus]::Valid -or
+        $null -eq $signature.SignerCertificate) {
+        throw "PowerShell did not accept the Authenticode signature for: $Path"
+    }
 }
 
 function Test-Python {
@@ -127,6 +224,12 @@ function Find-Python {
         Remove-Item -LiteralPath $safeVenv -Recurse -Force
     }
 
+    $python = Get-Command python.exe -ErrorAction SilentlyContinue
+    if ($python -and (Test-Python -Path $python.Source)) {
+        Invoke-External -FilePath $python.Source -Arguments @("-m", "venv", (Join-Path $ProjectRoot ".venv-build"))
+        return $venvPath
+    }
+
     $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($launcher) {
         & $launcher.Source -3 -c "import sys; raise SystemExit(sys.version_info < (3, 10))" *> $null
@@ -134,12 +237,6 @@ function Find-Python {
             Invoke-External -FilePath $launcher.Source -Arguments @("-3", "-m", "venv", (Join-Path $ProjectRoot ".venv-build"))
             return $venvPath
         }
-    }
-
-    $python = Get-Command python.exe -ErrorAction SilentlyContinue
-    if ($python -and (Test-Python -Path $python.Source)) {
-        Invoke-External -FilePath $python.Source -Arguments @("-m", "venv", (Join-Path $ProjectRoot ".venv-build"))
-        return $venvPath
     }
 
     throw "Python 3.10 or newer was not found."
@@ -168,6 +265,7 @@ function Invoke-AppSmokeTest {
                 $process.WaitForExit(5000)
             }
             catch {
+                Write-Verbose "The timed-out smoke-test process had already exited."
             }
             throw "WinUI $Mode smoke test timed out after 30 seconds."
         }
@@ -192,6 +290,10 @@ $dotnet = Find-CommandPath -Candidates @(
 if (-not $dotnet) {
     throw ".NET 10 SDK was not found. Install Microsoft.DotNet.SDK.10 first."
 }
+$dotnetRuntimes = Invoke-ExternalOutput -FilePath $dotnet -Arguments @("--list-runtimes")
+if ($dotnetRuntimes -notmatch "(?m)^Microsoft\.NETCore\.App 8\.") {
+    throw ".NET 8 Runtime is required by the pinned SBOM tool. Install it with: winget install Microsoft.DotNet.Runtime.8"
+}
 
 $iscc = Find-CommandPath -Candidates @(
     (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 7\ISCC.exe"),
@@ -206,22 +308,51 @@ if (-not $iscc) {
     throw "Inno Setup 6 or newer was not found. Install it with: winget install JRSoftware.InnoSetup"
 }
 
+$signingEnabled = -not [string]::IsNullOrWhiteSpace($SigningCertificatePath)
+if ($RequireSignature -and -not $signingEnabled) {
+    throw "A signing certificate is required, but WINDOWS_SIGNING_PFX_PATH or -SigningCertificatePath was not provided."
+}
+$signTool = $null
+$signingCertificate = $null
+if ($signingEnabled) {
+    $signingCertificate = [IO.Path]::GetFullPath($SigningCertificatePath)
+    if (-not (Test-Path -LiteralPath $signingCertificate -PathType Leaf)) {
+        throw "The Authenticode signing certificate was not found: $signingCertificate"
+    }
+    if (-not [Uri]::IsWellFormedUriString($TimestampUrl, [UriKind]::Absolute) -or
+        -not $TimestampUrl.StartsWith("https://", [StringComparison]::OrdinalIgnoreCase)) {
+        throw "The Authenticode timestamp URL must be an absolute HTTPS URL."
+    }
+    $signTool = Find-SignTool
+    if (-not $signTool) {
+        throw "SignTool was not found. Install the Windows SDK before requesting Authenticode signing."
+    }
+    Write-Host "Authenticode signing is enabled."
+}
+else {
+    Write-Warning "No code-signing certificate was configured. Release metadata will mark this build as unsigned."
+}
+
 $python = Find-Python
 if (-not $SkipDependencyInstall) {
-    Write-Host "[1/9] Installing build dependencies..."
+    Write-Host "[1/11] Installing build dependencies..."
     Invoke-External -FilePath $python -Arguments @("-m", "pip", "install", "--disable-pip-version-check", "-r", (Join-Path $ProjectRoot "requirements-dev.txt"))
 }
 
-Write-Host "[2/9] Generating native assets..."
+Write-Host "[2/11] Restoring release tools and generating native assets..."
+Invoke-External -FilePath $dotnet -Arguments @("tool", "restore")
 Invoke-External -FilePath $python -Arguments @((Join-Path $ProjectRoot "tools\generate_native_assets.py"))
 
-$sidecarOutput = Reset-SafeDirectory -Path (Join-Path $BuildRoot "native-sidecar") -Parent $BuildRoot
-$pyInstallerWork = Reset-SafeDirectory -Path (Join-Path $BuildRoot "pyinstaller-sidecar") -Parent $BuildRoot
-$specOutput = Reset-SafeDirectory -Path (Join-Path $BuildRoot "spec") -Parent $BuildRoot
-$publishRoot = Reset-SafeDirectory -Path (Join-Path $BuildRoot "winui-package") -Parent $BuildRoot
-$installerBuild = Reset-SafeDirectory -Path (Join-Path $BuildRoot "winui-installer") -Parent $BuildRoot
+$sidecarOutput = New-SafeBuildDirectory -Path (Join-Path $BuildRoot "native-sidecar") -Parent $BuildRoot
+$pyInstallerWork = New-SafeBuildDirectory -Path (Join-Path $BuildRoot "pyinstaller-sidecar") -Parent $BuildRoot
+$specOutput = New-SafeBuildDirectory -Path (Join-Path $BuildRoot "spec") -Parent $BuildRoot
+$publishRoot = New-SafeBuildDirectory -Path (Join-Path $BuildRoot "winui-package") -Parent $BuildRoot
+$installerBuild = New-SafeBuildDirectory -Path (Join-Path $BuildRoot "winui-installer") -Parent $BuildRoot
+$sbomComponentRoot = New-SafeBuildDirectory -Path (Join-Path $BuildRoot "sbom-components") -Parent $BuildRoot
+$sbomManifestRoot = New-SafeBuildDirectory -Path (Join-Path $BuildRoot "sbom-manifest") -Parent $BuildRoot
+$sbomValidationDrop = New-SafeBuildDirectory -Path (Join-Path $BuildRoot "sbom-validation-drop") -Parent $BuildRoot
 
-Write-Host "[3/9] Building the Python Sidecar..."
+Write-Host "[3/11] Building the Python Sidecar..."
 Invoke-External -FilePath $python -Arguments @(
     "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--console",
     "--workpath", $pyInstallerWork,
@@ -232,7 +363,7 @@ Invoke-External -FilePath $python -Arguments @(
 )
 
 $sidecarExe = Join-Path $sidecarOutput "LightNovelSelector.Sidecar.exe"
-Write-Host "[4/9] Verifying the Sidecar protocol..."
+Write-Host "[4/11] Verifying the Sidecar protocol..."
 Invoke-External -FilePath $python -Arguments @((Join-Path $ProjectRoot "tools\verify_sidecar.py"), $sidecarExe)
 
 $versionOutput = & $python -c "from lightnovel_selector.constants import APP_VERSION; print(APP_VERSION)"
@@ -293,7 +424,7 @@ foreach ($entry in $versionChecks.GetEnumerator()) {
 Write-Host "Version metadata verified: $appVersion"
 
 if (-not $SkipTests) {
-    Write-Host "[5/9] Running Python checks..."
+    Write-Host "[5/11] Running Python checks..."
     Invoke-External -FilePath $python -Arguments @("-m", "pip", "check")
     Invoke-External -FilePath $python -Arguments @("-m", "py_compile", (Join-Path $ProjectRoot "lightnovel_classifier.py"), (Join-Path $ProjectRoot "lightnovel_sidecar.py"))
     Invoke-External -FilePath $python -Arguments @("-m", "pytest", "-q")
@@ -302,19 +433,23 @@ if (-not $SkipTests) {
     Invoke-External -FilePath $python -Arguments @("-m", "mypy", "lightnovel_classifier.py", "lightnovel_sidecar.py", "lightnovel_selector", "tests", "tools")
     Invoke-External -FilePath $python -Arguments @("-m", "bandit", "-q", "-r", "lightnovel_selector", "lightnovel_classifier.py", "lightnovel_sidecar.py", "tools")
     Invoke-External -FilePath $python -Arguments @("-m", "vulture", "lightnovel_classifier.py", "lightnovel_selector", "tests", "tools", "--min-confidence", "80")
-    Invoke-External -FilePath $python -Arguments @("-m", "pip_audit", "-r", "requirements-dev.txt", "--strict")
+    Invoke-External -FilePath $python -Arguments @(
+        "-m", "pip_audit", "-r", "requirements-dev.txt", "--strict",
+        "--cache-dir", (Join-Path $BuildRoot "pip-audit-cache"),
+        "--progress-spinner", "off"
+    )
 
-    Write-Host "[6/9] Running C# tests..."
+    Write-Host "[6/11] Running C# tests..."
     $testProject = Join-Path $ProjectRoot "native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj"
     Invoke-External -FilePath $dotnet -Arguments @("restore", $testProject, "--locked-mode")
     Invoke-External -FilePath $dotnet -Arguments @("test", $testProject, "-c", "Release", "--no-restore", "--logger", "console;verbosity=minimal")
 }
 else {
-    Write-Host "[5/9] Python checks skipped."
-    Write-Host "[6/9] C# tests skipped."
+    Write-Host "[5/11] Python checks skipped."
+    Write-Host "[6/11] C# tests skipped."
 }
 
-Write-Host "[7/9] Publishing the self-contained WinUI app to staging..."
+Write-Host "[7/11] Publishing the self-contained WinUI app to staging..."
 $appProject = Join-Path $ProjectRoot "native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj"
 Invoke-External -FilePath $dotnet -Arguments @("restore", $appProject, "--locked-mode", "-r", "win-x64", "-p:Platform=x64", "-p:WindowsPackageType=None")
 Invoke-External -FilePath $dotnet -Arguments @(
@@ -346,7 +481,7 @@ if ($unexpectedReleaseArtifacts.Count -gt 0) {
     throw "Release staging still contains development-only artifacts: $artifactNames"
 }
 
-$licenseOutput = Reset-SafeDirectory -Path (Join-Path $publishRoot "licenses") -Parent $publishRoot
+$licenseOutput = New-SafeBuildDirectory -Path (Join-Path $publishRoot "licenses") -Parent $publishRoot
 $pythonBase = Invoke-ExternalOutput -FilePath $python -Arguments @(
     "-c", "import sys; print(sys.base_prefix)"
 )
@@ -425,6 +560,17 @@ $webView2Package = Join-Path (
 ) $webView2Versions[0]
 $dotnetRoot = Split-Path -Parent $dotnet
 $innoSetupRoot = Split-Path -Parent $iscc
+$innoSetupVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($iscc).ProductVersion
+if ([string]::IsNullOrWhiteSpace($innoSetupVersion) -or $innoSetupVersion -eq "0.0.0.0") {
+    $innoUninstaller = Join-Path $innoSetupRoot "unins000.exe"
+    if (Test-Path -LiteralPath $innoUninstaller -PathType Leaf) {
+        $innoSetupVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($innoUninstaller).ProductVersion
+    }
+}
+if ([string]::IsNullOrWhiteSpace($innoSetupVersion) -or $innoSetupVersion -notmatch "\d+\.\d+") {
+    throw "Unable to read the Inno Setup version."
+}
+$innoSetupVersion = [regex]::Match($innoSetupVersion, "\d+(?:\.\d+)+").Value
 
 Copy-ReleaseFile -Source (Join-Path $ProjectRoot "LICENSE") `
     -Destination (Join-Path $publishRoot "LICENSE") -DestinationRoot $publishRoot
@@ -461,7 +607,7 @@ $componentVersions = @(
     "DotNetSdk=$dotnetSdkVersion",
     "WindowsAppSDK=$($windowsAppSdkVersions[0])",
     "WebView2=$($webView2Versions[0])",
-    "InnoSetup=6"
+    "InnoSetup=$innoSetupVersion"
 )
 [IO.File]::WriteAllLines(
     $componentVersionsPath,
@@ -473,19 +619,39 @@ if ((Get-Item -LiteralPath $componentVersionsPath).Length -eq 0) {
 }
 
 $appExe = Join-Path $publishRoot "LightNovelSelector.exe"
+$appDll = Join-Path $publishRoot "LightNovelSelector.dll"
 $publishedSidecar = Join-Path $publishRoot "LightNovelSelector.Sidecar.exe"
 if (-not (Test-Path -LiteralPath $appExe -PathType Leaf)) {
     throw "The WinUI executable was not published."
+}
+if (-not (Test-Path -LiteralPath $appDll -PathType Leaf)) {
+    throw "The WinUI application assembly was not published."
 }
 if (-not (Test-Path -LiteralPath $publishedSidecar -PathType Leaf)) {
     throw "The Python Sidecar was not copied into the publish staging directory."
 }
 
-Write-Host "[8/9] Running startup and appearance smoke tests..."
+Write-Host "[8/11] Applying and verifying project Authenticode signatures..."
+$signerSubject = $null
+if ($signingEnabled) {
+    foreach ($ownedBinary in @($appExe, $appDll, $publishedSidecar)) {
+        Invoke-AuthenticodeSign `
+            -SignTool $signTool `
+            -CertificatePath $signingCertificate `
+            -CertificatePassword $SigningCertificatePassword `
+            -TimestampServer $TimestampUrl `
+            -Path $ownedBinary
+    }
+}
+else {
+    Write-Host "Project binaries remain unsigned for this development build."
+}
+
+Write-Host "[9/11] Running startup and appearance smoke tests..."
 Invoke-AppSmokeTest -AppPath $appExe -Mode "startup"
 Invoke-AppSmokeTest -AppPath $appExe -Mode "appearance"
 
-Write-Host "[9/9] Compiling the single EXE installer..."
+Write-Host "[10/11] Compiling the single EXE installer..."
 $installerScript = Join-Path $PSScriptRoot "LightNovelSelector.iss"
 $installerBaseName = "LightNovelSelector-v${appVersion}-win-x64-setup"
 Invoke-External -FilePath $iscc -Arguments @(
@@ -498,14 +664,176 @@ $builtInstaller = Join-Path $installerBuild "${installerBaseName}.exe"
 if (-not (Test-Path -LiteralPath $builtInstaller -PathType Leaf)) {
     throw "The installer compiler completed without producing the expected EXE."
 }
+if ($signingEnabled) {
+    Invoke-AuthenticodeSign `
+        -SignTool $signTool `
+        -CertificatePath $signingCertificate `
+        -CertificatePassword $SigningCertificatePassword `
+        -TimestampServer $TimestampUrl `
+        -Path $builtInstaller
+    $installerSignature = Get-AuthenticodeSignature -LiteralPath $builtInstaller
+    $signerSubject = $installerSignature.SignerCertificate.Subject
+}
 
 $distParent = Join-Path $ProjectRoot "dist"
 if (-not (Test-Path -LiteralPath $distParent)) {
     New-Item -ItemType Directory -Path $distParent -Force | Out-Null
 }
-$nextDist = Reset-SafeDirectory -Path (Join-Path $distParent ".winui-next") -Parent $distParent
+$nextDist = New-SafeBuildDirectory -Path (Join-Path $distParent ".winui-next") -Parent $distParent
 $nextInstaller = Join-Path $nextDist "${installerBaseName}.exe"
 Copy-Item -LiteralPath $builtInstaller -Destination $nextInstaller
+
+Write-Host "[11/11] Generating and verifying release metadata..."
+$sbomNativeRoot = Join-Path $sbomComponentRoot "native\LightNovelSelector.WinUI"
+$sbomNativeObj = Join-Path $sbomNativeRoot "obj"
+New-Item -ItemType Directory -Path $sbomNativeObj -Force | Out-Null
+Copy-ReleaseFile `
+    -Source (Join-Path $ProjectRoot "native\LightNovelSelector.WinUI\LightNovelSelector.WinUI.csproj") `
+    -Destination (Join-Path $sbomNativeRoot "LightNovelSelector.WinUI.csproj") `
+    -DestinationRoot $sbomComponentRoot
+Copy-ReleaseFile `
+    -Source (Join-Path $ProjectRoot "native\LightNovelSelector.WinUI\packages.lock.json") `
+    -Destination (Join-Path $sbomNativeRoot "packages.lock.json") `
+    -DestinationRoot $sbomComponentRoot
+Copy-ReleaseFile `
+    -Source (Join-Path $ProjectRoot "native\LightNovelSelector.WinUI\obj\project.assets.json") `
+    -Destination (Join-Path $sbomNativeObj "project.assets.json") `
+    -DestinationRoot $sbomComponentRoot
+Copy-ReleaseFile `
+    -Source (Join-Path $ProjectRoot "native\LightNovelSelector.WinUI\obj\LightNovelSelector.WinUI.csproj.nuget.dgspec.json") `
+    -Destination (Join-Path $sbomNativeObj "LightNovelSelector.WinUI.csproj.nuget.dgspec.json") `
+    -DestinationRoot $sbomComponentRoot
+
+foreach ($packageVersion in @($appVersion, $defusedXmlVersion, $pyInstallerVersion)) {
+    if ($packageVersion -notmatch "^[0-9A-Za-z.+-]+$") {
+        throw "Unsafe package version in SBOM component metadata: $packageVersion"
+    }
+}
+$pep440Version = $appVersion -replace "-dev\.", ".dev"
+$sbomSetupPath = Assert-ChildPath -Path (Join-Path $sbomComponentRoot "setup.py") -Parent $sbomComponentRoot
+$sbomSetup = @(
+    "from setuptools import setup",
+    "",
+    "setup(",
+    "    name='lightnovelselector-sidecar',",
+    "    version='$pep440Version',",
+    "    install_requires=[",
+    "        'defusedxml==$defusedXmlVersion',",
+    "        'pyinstaller==$pyInstallerVersion',",
+    "    ],",
+    ")"
+)
+[IO.File]::WriteAllLines($sbomSetupPath, $sbomSetup, [Text.UTF8Encoding]::new($false))
+
+$git = Get-Command git.exe -ErrorAction SilentlyContinue
+$sourceCommit = "unknown"
+$sourceRef = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "unknown" }
+$sourceDirty = $true
+if ($git) {
+    try {
+        $sourceCommit = Invoke-ExternalOutput -FilePath $git.Source -Arguments @("-C", $ProjectRoot, "rev-parse", "HEAD")
+        $gitStatus = Invoke-ExternalOutput -FilePath $git.Source -Arguments @(
+            "-C", $ProjectRoot, "status", "--porcelain=v1", "--untracked-files=normal"
+        )
+        $sourceDirty = -not [string]::IsNullOrWhiteSpace($gitStatus)
+        if (-not $env:GITHUB_REF_NAME) {
+            $branchName = Invoke-ExternalOutput -FilePath $git.Source -Arguments @(
+                "-C", $ProjectRoot, "branch", "--show-current"
+            )
+            if ($branchName) {
+                $sourceRef = $branchName
+            }
+        }
+    }
+    catch {
+        Write-Warning "Unable to record Git source metadata; using 'unknown'."
+        $sourceCommit = "unknown"
+        $sourceRef = "unknown"
+    }
+}
+if ($RequireCleanSource -and $sourceDirty) {
+    throw "A clean Git worktree is required for this build, but tracked or untracked source changes were found."
+}
+
+$sbomNamespacePart = "${appVersion}-win-x64-${sourceCommit}"
+Invoke-External -FilePath $dotnet -Arguments @(
+    "tool", "run", "sbom-tool", "--", "generate",
+    "-b", $nextDist,
+    "-bc", $sbomComponentRoot,
+    "-m", $sbomManifestRoot,
+    "-pn", "LightNovelSelector",
+    "-pv", $appVersion,
+    "-ps", "LightNovelSelector contributors",
+    "-nsb", "https://github.com/chenhaoxiang05/LightNovelSelector",
+    "-nsu", $sbomNamespacePart,
+    "-mi", "SPDX:2.2",
+    "-D", "true",
+    "-F", "false",
+    "-pm", "true",
+    "-V", "Warning"
+)
+$generatedSbom = Join-Path $sbomManifestRoot "_manifest\spdx_2.2\manifest.spdx.json"
+if (-not (Test-Path -LiteralPath $generatedSbom -PathType Leaf)) {
+    throw "The SBOM tool did not produce the expected SPDX 2.2 manifest."
+}
+$sbomValidationPath = Join-Path $sbomManifestRoot "validation.json"
+Invoke-External -FilePath $dotnet -Arguments @(
+    "tool", "run", "sbom-tool", "--", "validate",
+    "-b", $nextDist,
+    "-m", (Join-Path $sbomManifestRoot "_manifest"),
+    "-o", $sbomValidationPath,
+    "-mi", "SPDX:2.2",
+    "-F", "false",
+    "-n", "true",
+    "-V", "Warning"
+)
+
+$signatureStatus = if ($signingEnabled) { "verified" } else { "unsigned" }
+$finalizeArguments = @(
+    (Join-Path $ProjectRoot "tools\release_assets.py"), "finalize",
+    "--dist", $nextDist,
+    "--installer", "${installerBaseName}.exe",
+    "--sbom-source", $generatedSbom,
+    "--version", $appVersion,
+    "--signature-status", $signatureStatus,
+    "--source-commit", $sourceCommit,
+    "--source-ref", $sourceRef,
+    "--python-version", $pythonVersion,
+    "--inno-version", $innoSetupVersion
+)
+if ($signerSubject) {
+    $finalizeArguments += @("--signer-subject", $signerSubject)
+}
+if ($sourceDirty) {
+    $finalizeArguments += "--source-dirty"
+}
+Invoke-External -FilePath $python -Arguments $finalizeArguments
+$finalSbomFiles = @(Get-ChildItem -LiteralPath $nextDist -Filter "*-sbom.spdx.json" -File)
+if ($finalSbomFiles.Count -ne 1) {
+    throw "Expected exactly one finalized SPDX SBOM, found $($finalSbomFiles.Count)."
+}
+Copy-Item -LiteralPath $finalSbomFiles[0].FullName -Destination $generatedSbom -Force
+$generatedSbomChecksum = "${generatedSbom}.sha256"
+[IO.File]::WriteAllText(
+    $generatedSbomChecksum,
+    (Get-Sha256 -Path $generatedSbom).ToLowerInvariant(),
+    [Text.UTF8Encoding]::new($false)
+)
+Copy-ReleaseFile `
+    -Source $nextInstaller `
+    -Destination (Join-Path $sbomValidationDrop "${installerBaseName}.exe") `
+    -DestinationRoot $sbomValidationDrop
+$finalSbomValidationPath = Join-Path $sbomManifestRoot "final-validation.json"
+Invoke-External -FilePath $dotnet -Arguments @(
+    "tool", "run", "sbom-tool", "--", "validate",
+    "-b", $sbomValidationDrop,
+    "-m", (Join-Path $sbomManifestRoot "_manifest"),
+    "-o", $finalSbomValidationPath,
+    "-mi", "SPDX:2.2",
+    "-F", "false",
+    "-n", "true",
+    "-V", "Warning"
+)
 $hash = Get-Sha256 -Path $nextInstaller
 
 $finalDist = Assert-ChildPath -Path $DistRoot -Parent $distParent
@@ -524,9 +852,16 @@ try {
         $movedPrevious = $true
     }
     Move-Item -LiteralPath $nextDist -Destination $finalDist
+    Invoke-External -FilePath $python -Arguments @(
+        (Join-Path $ProjectRoot "tools\release_assets.py"), "verify",
+        "--dist", $finalDist
+    )
 }
 catch {
-    if ($movedPrevious -and -not (Test-Path -LiteralPath $finalDist)) {
+    if (Test-Path -LiteralPath $finalDist) {
+        Remove-Item -LiteralPath $finalDist -Recurse -Force
+    }
+    if ($movedPrevious) {
         Move-Item -LiteralPath $previousDist -Destination $finalDist
     }
     throw
@@ -537,7 +872,16 @@ if (Test-Path -LiteralPath $previousDist) {
 $finalInstaller = Join-Path $finalDist "${installerBaseName}.exe"
 
 if (-not $KeepStaging) {
-    foreach ($temporaryPath in @($publishRoot, $installerBuild, $sidecarOutput, $pyInstallerWork, $specOutput)) {
+    foreach ($temporaryPath in @(
+        $publishRoot,
+        $installerBuild,
+        $sidecarOutput,
+        $pyInstallerWork,
+        $specOutput,
+        $sbomComponentRoot,
+        $sbomManifestRoot,
+        $sbomValidationDrop
+    )) {
         Remove-Item -LiteralPath (Assert-ChildPath -Path $temporaryPath -Parent $BuildRoot) -Recurse -Force
     }
 }
@@ -546,3 +890,8 @@ Write-Host ""
 Write-Host "Build completed successfully."
 Write-Host "Installer: $finalInstaller"
 Write-Host "SHA-256: $hash"
+Write-Host "Authenticode: $signatureStatus"
+Write-Host "Release assets:"
+Get-ChildItem -LiteralPath $finalDist -File |
+    Sort-Object -Property Name |
+    ForEach-Object { Write-Host "  $($_.Name)" }

@@ -119,6 +119,31 @@ class PerformanceBudgetTests(unittest.TestCase):
             },
         )
 
+    def test_evaluator_keeps_a_meaningful_warm_scan_speedup(self) -> None:
+        budget = PerformanceBudget(
+            file_count=10_000,
+            max_cold_scan_seconds=180,
+            max_warm_scan_seconds=60,
+            max_warm_to_cold_ratio=0.9,
+            max_cancel_latency_seconds=2,
+            max_peak_working_set_mib=768,
+            min_warm_cache_reuse_ratio=0.99,
+        )
+        cold = ScanMeasurement(20, 10_000, 100, 20, {"reused_files": 0})
+        warm = ScanMeasurement(19, 10_000, 100, 10, {"reused_files": 10_000})
+
+        checks = evaluate_budget(
+            budget,
+            file_count=10_000,
+            cancellation_seconds=0.01,
+            cold=cold,
+            warm=warm,
+        )
+
+        ratio_check = next(check for check in checks if check.metric == "warm_to_cold_ratio")
+        self.assertFalse(ratio_check.passed)
+        self.assertAlmostEqual(ratio_check.value, 0.95)
+
 
 if __name__ == "__main__":
     unittest.main()
