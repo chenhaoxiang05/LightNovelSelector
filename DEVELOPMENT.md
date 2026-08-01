@@ -110,6 +110,10 @@ git diff --check
 
 测试数量会随回归覆盖增长，不在文档中固定；以命令输出和 GitHub Actions 为准。
 
+`tests/test_fault_injection.py` 使用标准库和固定随机种子生成文件名、EPUB 与协议边界样本，不读取真实书库，也不访问网络。新增随机用例必须固定种子并保留 `subTest` 样本编号，使本地和 CI 失败可以精确复现。文件移动故障需要覆盖移动前、移动返回后、部分报告写入失败与恢复后撤销，不能只断言抛出了异常。
+
+C# 测试会通过 `PythonSidecarClientTests` 启动真实 Sidecar 并强制结束一次进程。测试优先使用 `LN_SELECTOR_PYTHON`、GitHub Actions 的 `pythonLocation` 或仓库虚拟环境；它验证的是进程生命周期和协议恢复，不替代 Python 内部的协议模糊测试。
+
 ### 大型书库性能基准
 
 性能基准只生成临时合成文件，不读取真实书库，也不访问网络：
