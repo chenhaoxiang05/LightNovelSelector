@@ -33,6 +33,7 @@ LightNovelSelector/
 ├─ native/
 │  ├─ LightNovelSelector.WinUI/  WinUI 3 应用
 │  │  ├─ Appearance/             主题和窗口材质
+│  │  ├─ Components/             可复用详情面板与流程侧栏
 │  │  ├─ Helpers/                动效辅助
 │  │  ├─ Models/                 C# 协议与界面模型
 │  │  ├─ Security/               外部 URI 等系统边界校验
@@ -46,7 +47,7 @@ LightNovelSelector/
 │  ├─ build_winui.bat            PowerShell 构建包装
 │  ├─ build_winui.ps1            完整验证与安装器流水线
 │  └─ LightNovelSelector.iss     Inno Setup 安装脚本
-├─ tests/                         Python 核心、脱敏识别语料与 Sidecar 测试
+├─ tests/                         Python 核心、脱敏语料、故障注入与 Sidecar 测试
 ├─ benchmarks/
 │  └─ performance_budget.json     1 万文件 CI 性能预算
 ├─ tools/
@@ -56,7 +57,7 @@ LightNovelSelector/
 │  └─ verify_sidecar.py          验证打包 Sidecar 协议
 ├─ .config/dotnet-tools.json      固定 Microsoft SBOM Tool 版本
 ├─ .github/workflows/release.yml  标签构建、来源证明与 Release 发布
-├─ docs/                          架构、截图与维护说明
+├─ docs/                          架构、截图、发布归档与全面优化报告
 ├─ LICENSE                        MIT 开源许可证
 ├─ THIRD_PARTY_NOTICES.md         第三方运行时与许可索引
 ├─ Directory.Build.props          NuGet 锁定、审计与确定性构建
