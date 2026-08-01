@@ -44,6 +44,7 @@
 - Sidecar 协议验证、Python/C# 检查、WinUI 发布和两轮冒烟全部成功。
 - `dist\winui` 不包含暂存目录、语言资源散文件、旧版本副本或未列入校验清单的文件。
 - 安装器内容不包含 `.pdb`、开发期 runtime 配置、源码、本机绝对路径或其他调试产物。
+- 完整暂存目录不超过 210 MiB，且不包含 ONNX Runtime、DirectML、Windows AI、Windows ML、Widgets 或 Workloads 可选组件。
 - 安装目录包含项目 `LICENSE`、第三方组件索引和全部必需的运行时许可证/Notice 原文。
 - 安装器按当前用户安装，不请求管理员权限。
 - 安装、首次启动、扫描预览、关闭、卸载和残留进程检查通过。
@@ -52,7 +53,7 @@
 - 执行 `tools\release_assets.py verify --dist dist\winui`，确认资产集合、三项 SHA-256、版本、源码提交和关键组件全部一致。
 - 检查构建信息中的 `source.dirty`；正式标签构建必须为 `false`。
 - 记录 Authenticode 状态；配置证书时安装器必须通过 SignTool 与 PowerShell 验证并带时间戳，没有证书时在 README 与 Release 明确说明“未签名”。
-- 查看 SPDX SBOM，确认至少包含 CPython、defusedxml、PyInstaller、.NET Runtime、Windows App SDK、WebView2 和 Inno Setup。
+- 查看 SPDX SBOM，确认至少包含 CPython、defusedxml、PyInstaller、.NET Runtime、Windows App SDK Base/Foundation/InteractiveExperiences/WinUI、WebView2 和 Inno Setup。
 
 ## Release
 

@@ -66,3 +66,57 @@ class ProjectMetadataTests(unittest.TestCase):
         self.assertNotIn("sbom-path: dist/winui/*", workflow)
         self.assertIn("gh release delete-asset", workflow)
         self.assertIn("Compare-Object", workflow)
+
+    def test_winui_uses_only_required_windows_app_sdk_components(self) -> None:
+        project = ElementTree.parse(
+            PROJECT_ROOT / "native" / "LightNovelSelector.WinUI" / "LightNovelSelector.WinUI.csproj"
+        ).getroot()
+        package_references = {
+            reference.get("Include")
+            for reference in project.findall("./ItemGroup/PackageReference")
+            if reference.get("Include")
+        }
+        required = {
+            "Microsoft.WindowsAppSDK.Foundation",
+            "Microsoft.WindowsAppSDK.InteractiveExperiences",
+            "Microsoft.WindowsAppSDK.WinUI",
+        }
+        self.assertTrue(required <= package_references)
+        self.assertNotIn("Microsoft.WindowsAppSDK", package_references)
+        self.assertEqual(
+            project.findtext("./PropertyGroup/WindowsAppSDKSelfContained"),
+            "true",
+        )
+
+        package_lock = json.loads(
+            (PROJECT_ROOT / "native" / "LightNovelSelector.WinUI" / "packages.lock.json").read_text(encoding="utf-8")
+        )
+        locked_packages = {
+            package_name for framework in package_lock["dependencies"].values() for package_name in framework
+        }
+        self.assertTrue(required | {"Microsoft.WindowsAppSDK.Base", "Microsoft.Web.WebView2"} <= locked_packages)
+        self.assertTrue(
+            locked_packages.isdisjoint(
+                {
+                    "Microsoft.WindowsAppSDK",
+                    "Microsoft.WindowsAppSDK.AI",
+                    "Microsoft.WindowsAppSDK.DWrite",
+                    "Microsoft.WindowsAppSDK.ML",
+                    "Microsoft.WindowsAppSDK.Runtime",
+                    "Microsoft.WindowsAppSDK.Widgets",
+                    "Microsoft.Windows.AI.MachineLearning",
+                    "System.Numerics.Tensors",
+                }
+            )
+        )
+
+        build_script = (PROJECT_ROOT / "scripts" / "windows" / "build_winui.ps1").read_text(encoding="utf-8")
+        self.assertIn("$MaxPublishBytes = 210 * 1MB", build_script)
+        for forbidden_payload in (
+            "DirectML.dll",
+            "onnxruntime.dll",
+            "Microsoft.Windows.AI.*",
+            "Microsoft.Windows.Widgets*",
+            "Microsoft.Windows.Workloads*",
+        ):
+            self.assertIn(forbidden_payload, build_script)

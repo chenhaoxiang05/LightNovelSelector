@@ -273,7 +273,7 @@ WinUI 只把列表返回的执行编号传给 `get_report` 和 `start_undo`，�
 
 `dist\winui` 最终只包含安装器、版本化 SPDX SBOM、版本化构建信息和 `SHA256SUMS.txt`。构建信息如实记录源码提交、工作树状态和 Authenticode 状态；没有商业证书的开发构建会明确标记为未签名，不创建或信任自签名证书。标签发布还会在 GitHub 上为安装器生成 SLSA 来源证明和 SBOM 证明。
 
-安装器解包后的应用体积较大，但不依赖目标机器已有 Python、.NET 或 Windows App SDK。Windows App SDK 的 `.mui` 语言目录都包含真实资源，安装器不创建空目录。`PublishTrimmed` 保持关闭，避免 XAML 和 JSON 反射元数据被错误裁剪；`PublishReadyToRun` 关闭，避免额外运行时包要求并控制体积。
+安装器不依赖目标机器已有 Python、.NET 或 Windows App SDK。WinUI 项目只引用 Base、Foundation、InteractiveExperiences 和 WinUI 组件，不分发未使用的 AI、ML、Widgets 或 DWrite 组件；构建还以可选文件拒绝清单和 210 MiB 暂存预算固定这条边界。Windows App SDK 的 `.mui` 语言目录都包含真实资源，安装器不创建空目录。`PublishTrimmed` 保持关闭，避免 XAML 和 JSON 反射元数据被错误裁剪；`PublishReadyToRun` 关闭，避免额外运行时包要求并控制体积。完整测量见 [安装包体积说明](PACKAGE_SIZE.md)。
 
 ## 故障定位
 

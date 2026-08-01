@@ -24,7 +24,10 @@ REQUIRED_SBOM_PACKAGES = (
     "defusedxml",
     "pyinstaller",
     "Microsoft.Web.WebView2",
-    "Microsoft.WindowsAppSDK",
+    "Microsoft.WindowsAppSDK.Base",
+    "Microsoft.WindowsAppSDK.Foundation",
+    "Microsoft.WindowsAppSDK.InteractiveExperiences",
+    "Microsoft.WindowsAppSDK.WinUI",
     "CPython",
     "Inno Setup",
 )

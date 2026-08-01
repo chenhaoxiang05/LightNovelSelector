@@ -15,7 +15,7 @@ SHA256SUMS.txt
 
 - 安装器：面向 Windows x64 用户的完整自包含版本。
 - `SHA256SUMS.txt`：列出安装器、SBOM 和构建信息的 SHA-256，可发现下载损坏或文件被替换。
-- SPDX SBOM：列出构建时检测到的 Python、PyInstaller、.NET、Windows App SDK、WebView2 等组件。
+- SPDX SBOM：列出构建时检测到的 Python、PyInstaller、.NET、Windows App SDK Base/Foundation/InteractiveExperiences/WinUI、WebView2 等实际分发组件。
 - 构建信息：记录源码提交、标签、安装器大小与哈希，以及 Authenticode 是否经过验证和时间戳。
 
 GitHub Actions 还会为安装器生成两份不依赖 Release 文本的签名证明：SLSA 构建来源证明和 SBOM 证明。证明绑定安装器的 SHA-256，因此不能挪用到另一个文件。
