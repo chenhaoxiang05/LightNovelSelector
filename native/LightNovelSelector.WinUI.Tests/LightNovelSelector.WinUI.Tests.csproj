@@ -18,6 +18,7 @@
     <Compile Include="..\LightNovelSelector.WinUI\Models\EditableMetadataProvider.cs" Link="Source\EditableMetadataProvider.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\Security\ReportPathSafety.cs" Link="Source\ReportPathSafety.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\Security\UriSafety.cs" Link="Source\UriSafety.cs" />
+    <Compile Include="..\LightNovelSelector.WinUI\Services\PythonSidecarClient.cs" Link="Source\PythonSidecarClient.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\ConnectionStateController.cs" Link="Source\ConnectionStateController.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\FocusCycleController.cs" Link="Source\FocusCycleController.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\FirstRunOnboardingController.cs" Link="Source\FirstRunOnboardingController.cs" />

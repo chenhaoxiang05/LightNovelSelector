@@ -40,6 +40,10 @@ _DISPLAY_PUNCTUATION_TRANSLATION = str.maketrans(
         "’": "'",
     }
 )
+_UNSAFE_TEXT_CONTROLS_PATTERN = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u061c\u200e\u200f"
+    r"\u202a-\u202e\u2066-\u206f\ud800-\udfff]"
+)
 _CHINESE_DIGITS = {
     "零": 0,
     "〇": 0,
@@ -63,6 +67,7 @@ def collapse_spaces(value: str) -> str:
 
 def normalize_title_text(value: str) -> str:
     text = unicodedata.normalize("NFKC", value).translate(_DISPLAY_PUNCTUATION_TRANSLATION)
+    text = _UNSAFE_TEXT_CONTROLS_PATTERN.sub(" ", text)
     text = text.replace("\u3000", " ")
     return collapse_spaces(text).strip(" \t\r\n\"'「」『』《》")
 
@@ -213,7 +218,9 @@ def clean_file_stem(file_name: str) -> str:
 @lru_cache(maxsize=2048)
 def extract_book_lookup_query(file_name: str) -> str:
     stem = Path(file_name).stem
-    return clean_file_stem(file_name) or collapse_spaces(stem.strip(" -_.~"))
+    clean_stem = clean_file_stem(file_name)
+    fallback = normalize_title_text(stem).strip(" -_.~")
+    return clean_stem or collapse_spaces(fallback)
 
 
 def weak_file_name_query(file_name: str) -> bool:
@@ -449,11 +456,13 @@ def extract_series_guess(file_name: str) -> str:
 
     text = strip_bracket_noise(text)
     text = collapse_spaces(text.strip(" -_.~"))
-    return text or collapse_spaces(stem.strip(" -_.~")) or "未命名系列"
+    fallback = normalize_title_text(stem).strip(" -_.~")
+    return text or collapse_spaces(fallback) or "未命名系列"
 
 
 def safe_folder_name(value: str) -> str:
     text = unicodedata.normalize("NFKC", value)
+    text = _UNSAFE_TEXT_CONTROLS_PATTERN.sub("_", text)
     text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", text)
     text = re.sub(r"\s+", " ", text).strip(" .")
     text = re.sub(r"_+", "_", text)
