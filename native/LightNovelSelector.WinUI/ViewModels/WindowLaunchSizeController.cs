@@ -27,4 +27,13 @@ public static class WindowLaunchSizeController
         size = new WindowLaunchSize(width, height);
         return true;
     }
+
+    public static WindowLaunchSize ScaleForDpi(WindowLaunchSize size, uint dpi)
+    {
+        var scale = Math.Clamp(dpi / 96.0, 1.0, 3.0);
+        return new WindowLaunchSize(
+            (int)Math.Round(size.Width * scale),
+            (int)Math.Round(size.Height * scale)
+        );
+    }
 }

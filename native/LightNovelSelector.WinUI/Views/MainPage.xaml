@@ -352,6 +352,7 @@
                                 x:Name="DetailSplitView"
                                 DisplayMode="Inline"
                                 IsPaneOpen="True"
+                                LightDismissOverlayMode="On"
                                 OpenPaneLength="340"
                                 PaneBackground="Transparent"
                                 PanePlacement="Right">

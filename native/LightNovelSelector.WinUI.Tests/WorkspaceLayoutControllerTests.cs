@@ -29,7 +29,7 @@ public sealed class WorkspaceLayoutControllerTests
         Assert.IsFalse(layout.UseTwoColumnStats);
         Assert.IsTrue(layout.UseCompactWorkflow);
         Assert.IsFalse(layout.StackFilters);
-        Assert.IsFalse(layout.UseWorkspaceScroll);
+        Assert.IsTrue(layout.UseWorkspaceScroll);
         Assert.AreEqual(420, layout.DetailWidth);
     }
 

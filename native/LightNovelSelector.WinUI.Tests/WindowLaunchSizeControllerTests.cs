@@ -26,4 +26,19 @@ public sealed class WindowLaunchSizeControllerTests
     {
         Assert.IsFalse(WindowLaunchSizeController.TryParse(value, out _));
     }
+
+    [TestMethod]
+    [DataRow(96u, 1024, 700)]
+    [DataRow(144u, 1536, 1050)]
+    [DataRow(192u, 2048, 1400)]
+    public void EffectiveSizeIsScaledToPhysicalPixels(uint dpi, int width, int height)
+    {
+        var size = WindowLaunchSizeController.ScaleForDpi(
+            new WindowLaunchSize(1024, 700),
+            dpi
+        );
+
+        Assert.AreEqual(width, size.Width);
+        Assert.AreEqual(height, size.Height);
+    }
 }

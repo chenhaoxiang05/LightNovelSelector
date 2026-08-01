@@ -98,6 +98,11 @@ class AccessibilityContractTests(unittest.TestCase):
             )
         )
 
+    def test_compact_detail_overlay_supports_light_dismiss(self) -> None:
+        split_view = self._element_named("DetailSplitView")
+
+        self.assertEqual("On", split_view.get("LightDismissOverlayMode"))
+
     def test_page_shortcuts_are_wired_to_handlers(self) -> None:
         shortcuts = {
             (

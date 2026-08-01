@@ -184,7 +184,7 @@ public sealed partial class MainPage
             && requestedHold > 0
         )
         {
-            await Task.Delay(Math.Min(requestedHold, 60_000));
+            await Task.Delay(Math.Min(requestedHold, 15_000));
         }
 
         foreach (var theme in new[] { "light", "dark", "system", "dark" })

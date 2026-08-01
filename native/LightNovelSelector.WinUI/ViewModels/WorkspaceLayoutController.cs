@@ -30,7 +30,7 @@ public static class WorkspaceLayoutController
     public const double StackedFilterBreakpoint = 820;
     public const double StackedActionBreakpoint = 760;
     public const double ShortWindowBreakpoint = 760;
-    public const double WorkspaceScrollHeightBreakpoint = 640;
+    public const double WorkspaceScrollHeightBreakpoint = 720;
     public const double NarrowWorkspaceScrollHeightBreakpoint = 820;
 
     public static WorkspaceLayoutPresentation Describe(double width, double height)
