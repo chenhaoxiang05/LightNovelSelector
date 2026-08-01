@@ -18,6 +18,8 @@
     <a href="#快速开始"><strong>快速开始</strong></a> ·
     <a href="https://github.com/chenhaoxiang05/LightNovelSelector/releases">下载发布版</a> ·
     <a href="CHANGELOG.md">更新记录</a> ·
+    <a href="UPDATE_NOTES.md">稳定版说明</a> ·
+    <a href="docs/OPTIMIZATION_REPORT.md">优化报告</a> ·
     <a href="docs/WINUI_ARCHITECTURE.md">架构说明</a> ·
     <a href="docs/RELEASE_TRUST.md">下载验证</a> ·
     <a href="CONTRIBUTING.md">参与贡献</a> ·
@@ -207,7 +209,7 @@ winget install JRSoftware.InnoSetup
 .\build_winui.bat
 ```
 
-完整开发环境、测试命令和发布流程见 [DEVELOPMENT.md](DEVELOPMENT.md)，发布资产的验证与签名边界见 [发布可信度说明](docs/RELEASE_TRUST.md)，自包含依赖与体积测量见 [安装包体积说明](docs/PACKAGE_SIZE.md)；新增在线书库请同时阅读 [元数据提供器开发指南](docs/METADATA_PROVIDERS.md)。
+完整开发环境、测试命令和发布流程见 [DEVELOPMENT.md](DEVELOPMENT.md)，本轮系统性改进见 [全面优化报告](docs/OPTIMIZATION_REPORT.md)，发布资产的验证与签名边界见 [发布可信度说明](docs/RELEASE_TRUST.md)，自包含依赖与体积测量见 [安装包体积说明](docs/PACKAGE_SIZE.md)；新增在线书库请同时阅读 [元数据提供器开发指南](docs/METADATA_PROVIDERS.md)。
 
 ## 获取帮助
 

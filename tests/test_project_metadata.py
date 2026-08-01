@@ -2,14 +2,74 @@ import json
 import re
 import unittest
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 from xml.etree import ElementTree
 
 from lightnovel_selector.constants import APP_VERSION
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_MARKDOWN_LINK_PATTERN = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+['\"][^'\"]*['\"])?\)")
+_HTML_LINK_PATTERN = re.compile(
+    r"<(?:a|img|source)\b[^>]*(href|src|srcset)=['\"]([^'\"]+)['\"]",
+    flags=re.IGNORECASE,
+)
+
+
+def _document_link_targets(text: str) -> list[str]:
+    targets = list(_MARKDOWN_LINK_PATTERN.findall(text))
+    for attribute, value in _HTML_LINK_PATTERN.findall(text):
+        if attribute.casefold() != "srcset":
+            targets.append(value)
+            continue
+        targets.extend(candidate.strip().split(maxsplit=1)[0] for candidate in value.split(",") if candidate.strip())
+    return targets
 
 
 class ProjectMetadataTests(unittest.TestCase):
+    def test_local_markdown_links_resolve_inside_repository(self) -> None:
+        markdown_files = list(PROJECT_ROOT.glob("*.md"))
+        for directory_name in (".github", "docs", "scripts"):
+            markdown_files.extend((PROJECT_ROOT / directory_name).rglob("*.md"))
+
+        for markdown_path in sorted(set(markdown_files)):
+            text = markdown_path.read_text(encoding="utf-8")
+            for target in _document_link_targets(text):
+                parsed = urlsplit(target.split(maxsplit=1)[0])
+                if parsed.scheme or target.startswith(("#", "//")) or not parsed.path:
+                    continue
+                resolved = (markdown_path.parent / unquote(parsed.path)).resolve()
+                with self.subTest(
+                    document=str(markdown_path.relative_to(PROJECT_ROOT)),
+                    target=target,
+                ):
+                    self.assertTrue(
+                        resolved.is_relative_to(PROJECT_ROOT),
+                        "本地文档链接不能越出仓库。",
+                    )
+                    self.assertTrue(resolved.exists(), "本地文档链接指向不存在的文件。")
+
+    def test_html_srcset_checks_every_density_candidate(self) -> None:
+        targets = _document_link_targets(
+            '<picture><source srcset="normal.png 1x, retina.png 2x"><img src="fallback.png"></picture>'
+        )
+
+        self.assertEqual(targets, ["normal.png", "retina.png", "fallback.png"])
+
+    def test_latest_release_notes_are_archived_without_drift(self) -> None:
+        readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+        version_match = re.search(r"最新稳定版.+?`(v\d+\.\d+\.\d+)`", readme)
+        if version_match is None:
+            self.fail("README 缺少可解析的最新稳定版本。")
+        archived_notes = PROJECT_ROOT / "docs" / "releases" / f"{version_match.group(1)}.md"
+        current_notes = PROJECT_ROOT / "UPDATE_NOTES.md"
+
+        self.assertTrue(archived_notes.is_file(), "最新稳定版缺少仓库内发布说明归档。")
+        self.assertEqual(
+            current_notes.read_text(encoding="utf-8"),
+            archived_notes.read_text(encoding="utf-8"),
+            "UPDATE_NOTES.md 必须与最新稳定版归档保持一致。",
+        )
+
     def test_python_and_native_versions_stay_in_sync(self) -> None:
         numeric_version = APP_VERSION.split("-", 1)[0].split("+", 1)[0]
         assembly_version = f"{numeric_version}.0"
