@@ -48,7 +48,18 @@ jobs:
         env:
           PYTHONUTF8: "1"
         run: |
-          $version = python -c "from lightnovel_selector.constants import APP_VERSION; print(APP_VERSION)"
+          git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+          if ($LASTEXITCODE -ne 0) {
+            throw "无法获取远端 main 分支。"
+          }
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -eq 1) {
+            throw "标签提交不在 origin/main 历史中，拒绝发布未合并代码。"
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "无法验证标签提交与 origin/main 的祖先关系。"
+          }
+          $version = python -c "import runpy; print(runpy.run_path('lightnovel_selector/constants.py')['APP_VERSION'])"
           if ($LASTEXITCODE -ne 0) {
             throw "无法读取应用版本。"
           }
@@ -105,16 +116,36 @@ jobs:
             Remove-Item Env:WINDOWS_SIGNING_PFX_PATH -ErrorAction SilentlyContinue
           }
 
+      - name: 解析唯一安装器与 SBOM
+        id: release-assets
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem -LiteralPath "dist\winui" -Filter "*-setup.exe" -File)
+          $sboms = @(Get-ChildItem -LiteralPath "dist\winui" -Filter "*-sbom.spdx.json" -File)
+          if ($installers.Count -ne 1 -or $sboms.Count -ne 1) {
+            throw "无法解析唯一安装器或 SBOM。"
+          }
+          $installerPath = [IO.Path]::GetRelativePath(
+            $env:GITHUB_WORKSPACE,
+            $installers[0].FullName
+          ).Replace('\', '/')
+          $sbomPath = [IO.Path]::GetRelativePath(
+            $env:GITHUB_WORKSPACE,
+            $sboms[0].FullName
+          ).Replace('\', '/')
+          "installer_path=$installerPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "sbom_path=$sbomPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
       - name: 生成安装器构建来源证明
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
         with:
-          subject-path: dist/winui/*-setup.exe
+          subject-path: ${{ steps.release-assets.outputs.installer_path }}
 
       - name: 生成安装器 SBOM 证明
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
         with:
-          subject-path: dist/winui/*-setup.exe
-          sbom-path: dist/winui/*-sbom.spdx.json
+          subject-path: ${{ steps.release-assets.outputs.installer_path }}
+          sbom-path: ${{ steps.release-assets.outputs.sbom_path }}
 
       - name: 创建或修复 GitHub Release
         shell: pwsh
@@ -131,6 +162,14 @@ jobs:
           if ($assets.Count -ne 4) {
             throw "发布资产数量异常，期望 4 个文件，实际为 $($assets.Count)。"
           }
+          $expectedNames = [Collections.Generic.HashSet[string]]::new(
+            [StringComparer]::Ordinal
+          )
+          foreach ($assetPath in $assets) {
+            if (-not $expectedNames.Add([IO.Path]::GetFileName($assetPath))) {
+              throw "本地发布资产名称重复：$assetPath"
+            }
+          }
           & gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
             & gh release edit $tag `
@@ -139,6 +178,25 @@ jobs:
               --notes-file $notes
             if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
+            }
+            $releaseJson = & gh release view $tag `
+              --repo $env:GITHUB_REPOSITORY `
+              --json assets
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+            $publishedAssets = @(
+              ($releaseJson | ConvertFrom-Json -ErrorAction Stop).assets
+            )
+            foreach ($publishedAsset in $publishedAssets) {
+              if (-not $expectedNames.Contains([string]$publishedAsset.name)) {
+                & gh release delete-asset $tag $publishedAsset.name `
+                  --repo $env:GITHUB_REPOSITORY `
+                  --yes
+                if ($LASTEXITCODE -ne 0) {
+                  exit $LASTEXITCODE
+                }
+              }
             }
             & gh release upload $tag @assets --repo $env:GITHUB_REPOSITORY --clobber
           }
@@ -151,4 +209,18 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
+          }
+          $releaseJson = & gh release view $tag `
+            --repo $env:GITHUB_REPOSITORY `
+            --json assets
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          $actualNames = @(
+            ($releaseJson | ConvertFrom-Json -ErrorAction Stop).assets.name |
+              Sort-Object
+          )
+          $expectedSorted = @($expectedNames | Sort-Object)
+          if (@(Compare-Object -ReferenceObject $expectedSorted -DifferenceObject $actualNames).Count -ne 0) {
+            throw "GitHub Release 资产集合与本地四项可信资产不一致。"
           }
