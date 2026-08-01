@@ -79,7 +79,7 @@
 
 ## 6. 验证结果
 
-- Python：235 项测试、746 组参数化与故障注入子样本通过。
+- Python：236 项测试、746 组参数化与故障注入子样本通过。
 - C#：72 项测试通过，包括真实 Python Sidecar 强制退出与重连。
 - Ruff、Mypy、Bandit、Vulture、`pip check`、pip-audit、PSScriptAnalyzer、actionlint 与 `git diff --check` 通过。
 - WinUI Debug / Release x64 均为 0 警告、0 错误。

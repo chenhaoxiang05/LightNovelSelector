@@ -10,9 +10,19 @@ from lightnovel_selector.constants import APP_VERSION
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _MARKDOWN_LINK_PATTERN = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+['\"][^'\"]*['\"])?\)")
 _HTML_LINK_PATTERN = re.compile(
-    r"<(?:a|img|source)\b[^>]*(?:href|src|srcset)=['\"]([^'\"]+)['\"]",
+    r"<(?:a|img|source)\b[^>]*(href|src|srcset)=['\"]([^'\"]+)['\"]",
     flags=re.IGNORECASE,
 )
+
+
+def _document_link_targets(text: str) -> list[str]:
+    targets = list(_MARKDOWN_LINK_PATTERN.findall(text))
+    for attribute, value in _HTML_LINK_PATTERN.findall(text):
+        if attribute.casefold() != "srcset":
+            targets.append(value)
+            continue
+        targets.extend(candidate.strip().split(maxsplit=1)[0] for candidate in value.split(",") if candidate.strip())
+    return targets
 
 
 class ProjectMetadataTests(unittest.TestCase):
@@ -23,10 +33,7 @@ class ProjectMetadataTests(unittest.TestCase):
 
         for markdown_path in sorted(set(markdown_files)):
             text = markdown_path.read_text(encoding="utf-8")
-            targets = [
-                target for pattern in (_MARKDOWN_LINK_PATTERN, _HTML_LINK_PATTERN) for target in pattern.findall(text)
-            ]
-            for target in targets:
+            for target in _document_link_targets(text):
                 parsed = urlsplit(target.split(maxsplit=1)[0])
                 if parsed.scheme or target.startswith(("#", "//")) or not parsed.path:
                     continue
@@ -40,6 +47,13 @@ class ProjectMetadataTests(unittest.TestCase):
                         "本地文档链接不能越出仓库。",
                     )
                     self.assertTrue(resolved.exists(), "本地文档链接指向不存在的文件。")
+
+    def test_html_srcset_checks_every_density_candidate(self) -> None:
+        targets = _document_link_targets(
+            '<picture><source srcset="normal.png 1x, retina.png 2x"><img src="fallback.png"></picture>'
+        )
+
+        self.assertEqual(targets, ["normal.png", "retina.png", "fallback.png"])
 
     def test_latest_release_notes_are_archived_without_drift(self) -> None:
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
