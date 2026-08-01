@@ -24,7 +24,10 @@ def _source_sbom(installer_name: str, installer_payload: bytes, version: str) ->
         "defusedxml",
         "pyinstaller",
         "Microsoft.Web.WebView2",
-        "Microsoft.WindowsAppSDK",
+        "Microsoft.WindowsAppSDK.Base",
+        "Microsoft.WindowsAppSDK.Foundation",
+        "Microsoft.WindowsAppSDK.InteractiveExperiences",
+        "Microsoft.WindowsAppSDK.WinUI",
         "Microsoft.NETCore.App.Runtime.win-x64",
     ]
     packages: list[dict[str, object]] = [
@@ -151,6 +154,36 @@ def test_finalize_rejects_incomplete_sbom(tmp_path: Path) -> None:
     sbom_source.write_text(json.dumps(sbom), encoding="utf-8")
 
     with pytest.raises(ReleaseAssetError, match=r"\.NET runtime"):
+        finalize_release_assets(
+            dist_dir=dist,
+            installer_name=installer_name,
+            sbom_source=sbom_source,
+            version=version,
+            signature_status="unsigned",
+            signer_subject=None,
+            source_commit="1" * 40,
+            source_ref="test",
+            source_dirty=False,
+            python_version="3.12.10",
+            inno_version="6.4.3",
+        )
+
+
+def test_finalize_rejects_sbom_without_required_winui_component(tmp_path: Path) -> None:
+    version = "2.1.0-dev.11"
+    installer_name = f"LightNovelSelector-v{version}-win-x64-setup.exe"
+    installer_payload = b"installer fixture"
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / installer_name).write_bytes(installer_payload)
+    sbom = _source_sbom(installer_name, installer_payload, version)
+    packages = sbom["packages"]
+    assert isinstance(packages, list)
+    sbom["packages"] = [package for package in packages if package["name"] != "Microsoft.WindowsAppSDK.WinUI"]
+    sbom_source = tmp_path / "source.spdx.json"
+    sbom_source.write_text(json.dumps(sbom), encoding="utf-8")
+
+    with pytest.raises(ReleaseAssetError, match="Microsoft.WindowsAppSDK.WinUI"):
         finalize_release_assets(
             dist_dir=dist,
             installer_name=installer_name,

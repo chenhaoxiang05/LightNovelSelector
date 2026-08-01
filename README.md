@@ -204,7 +204,7 @@ winget install JRSoftware.InnoSetup
 .\build_winui.bat
 ```
 
-完整开发环境、测试命令和发布流程见 [DEVELOPMENT.md](DEVELOPMENT.md)，发布资产的验证与签名边界见 [发布可信度说明](docs/RELEASE_TRUST.md)；新增在线书库请同时阅读 [元数据提供器开发指南](docs/METADATA_PROVIDERS.md)。
+完整开发环境、测试命令和发布流程见 [DEVELOPMENT.md](DEVELOPMENT.md)，发布资产的验证与签名边界见 [发布可信度说明](docs/RELEASE_TRUST.md)，自包含依赖与体积测量见 [安装包体积说明](docs/PACKAGE_SIZE.md)；新增在线书库请同时阅读 [元数据提供器开发指南](docs/METADATA_PROVIDERS.md)。
 
 ## 获取帮助
 

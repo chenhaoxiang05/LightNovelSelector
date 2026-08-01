@@ -4,6 +4,13 @@
 
 ## 开发中
 
+### 安装包体积与依赖边界
+
+- WinUI 项目改为直接引用 Base、Foundation、InteractiveExperiences 和 WinUI 四个 Windows App SDK 组件，不再通过完整元包携带未使用的 AI、Windows ML、Widgets 和 DWrite 运行文件。
+- 同条件 `dotnet publish` 输出由 221.51 MiB 降到 169.92 MiB，减少 23.3%；包含 Python Sidecar 和许可证的完整暂存目录为 180.00 MiB。
+- 实际 Inno Setup 安装器由 72,482,903 字节降到 56,360,775 字节，减少 22.2%，同时继续保持 .NET、Windows App SDK 和 Python 全自包含。
+- 构建新增 210 MiB 暂存上限、可选组件文件拒绝清单、组件锁定测试和细化 SBOM/许可证校验，防止后续依赖升级静默恢复冗余运行时。
+
 ### 发布可信度
 
 - Windows 构建现在随安装器生成 GNU 格式 `SHA256SUMS.txt`、SPDX 2.2 SBOM 和结构化构建信息，并在替换 `dist\winui` 前后分别验证资产集合与哈希；补充运行组件后的最终 SBOM 还会再次交给 Microsoft 工具解析。

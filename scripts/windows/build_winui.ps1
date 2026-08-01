@@ -33,6 +33,7 @@ Set-StrictMode -Version Latest
 $ProjectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 $BuildRoot = Join-Path $ProjectRoot "build"
 $DistRoot = Join-Path $ProjectRoot "dist\winui"
+$MaxPublishBytes = 210 * 1MB
 
 function Invoke-External {
     param(
@@ -57,6 +58,27 @@ function Invoke-ExternalOutput {
         throw "Command failed with exit code ${LASTEXITCODE}: $FilePath"
     }
     return (($output | Out-String).Trim())
+}
+
+function Get-LockedPackageVersion {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$FrameworkEntries,
+        [Parameter(Mandatory = $true)][string]$PackageName
+    )
+
+    $rawVersions = @(
+        foreach ($frameworkEntry in $FrameworkEntries) {
+            $packageEntry = $frameworkEntry.Value.PSObject.Properties[$PackageName]
+            if ($null -ne $packageEntry) {
+                $packageEntry.Value.resolved
+            }
+        }
+    )
+    $versions = @($rawVersions | Where-Object { $_ } | Select-Object -Unique)
+    if ($versions.Count -ne 1) {
+        throw "Unable to resolve a single $PackageName version from packages.lock.json."
+    }
+    return [string]$versions[0]
 }
 
 function Assert-ChildPath {
@@ -520,31 +542,21 @@ if ($pyInstallerLicenses.Count -ne 1) {
 $packageLockPath = Join-Path $ProjectRoot "native\LightNovelSelector.WinUI\packages.lock.json"
 $packageLock = Get-Content -LiteralPath $packageLockPath -Raw | ConvertFrom-Json
 $frameworkEntries = @($packageLock.dependencies.PSObject.Properties)
-$windowsAppSdkVersions = @(
-    $frameworkEntries |
-        ForEach-Object {
-            $packageEntry = $_.Value.PSObject.Properties["Microsoft.WindowsAppSDK"]
-            if ($null -ne $packageEntry) {
-                $packageEntry.Value.resolved
-            }
-        } |
-        Where-Object { $_ } |
-        Select-Object -Unique
+$windowsAppSdkComponentNames = @(
+    "Microsoft.WindowsAppSDK.Base",
+    "Microsoft.WindowsAppSDK.Foundation",
+    "Microsoft.WindowsAppSDK.InteractiveExperiences",
+    "Microsoft.WindowsAppSDK.WinUI"
 )
-$webView2Versions = @(
-    $frameworkEntries |
-        ForEach-Object {
-            $packageEntry = $_.Value.PSObject.Properties["Microsoft.Web.WebView2"]
-            if ($null -ne $packageEntry) {
-                $packageEntry.Value.resolved
-            }
-        } |
-        Where-Object { $_ } |
-        Select-Object -Unique
-)
-if ($windowsAppSdkVersions.Count -ne 1 -or $webView2Versions.Count -ne 1) {
-    throw "Unable to resolve a single Windows App SDK and WebView2 version from packages.lock.json."
+$windowsAppSdkVersions = [ordered]@{}
+foreach ($componentName in $windowsAppSdkComponentNames) {
+    $windowsAppSdkVersions[$componentName] = Get-LockedPackageVersion `
+        -FrameworkEntries $frameworkEntries `
+        -PackageName $componentName
 }
+$webView2Version = Get-LockedPackageVersion `
+    -FrameworkEntries $frameworkEntries `
+    -PackageName "Microsoft.Web.WebView2"
 
 $nugetPackages = if ($env:NUGET_PACKAGES) {
     [IO.Path]::GetFullPath($env:NUGET_PACKAGES)
@@ -552,12 +564,19 @@ $nugetPackages = if ($env:NUGET_PACKAGES) {
 else {
     [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE ".nuget\packages"))
 }
-$windowsAppSdkPackage = Join-Path (
-    Join-Path $nugetPackages "microsoft.windowsappsdk"
-) $windowsAppSdkVersions[0]
+$windowsAppSdkPackages = [ordered]@{}
+foreach ($componentName in $windowsAppSdkComponentNames) {
+    $componentPackage = Join-Path (
+        Join-Path $nugetPackages $componentName.ToLowerInvariant()
+    ) $windowsAppSdkVersions[$componentName]
+    if (-not (Test-Path -LiteralPath $componentPackage -PathType Container)) {
+        throw "Windows App SDK component package was not restored: $componentPackage"
+    }
+    $windowsAppSdkPackages[$componentName] = $componentPackage
+}
 $webView2Package = Join-Path (
     Join-Path $nugetPackages "microsoft.web.webview2"
-) $webView2Versions[0]
+) $webView2Version
 $dotnetRoot = Split-Path -Parent $dotnet
 $innoSetupRoot = Split-Path -Parent $iscc
 $innoSetupVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($iscc).ProductVersion
@@ -586,10 +605,19 @@ Copy-ReleaseFile -Source (Join-Path $dotnetRoot "LICENSE.txt") `
     -Destination (Join-Path $licenseOutput "dotnet-LICENSE.txt") -DestinationRoot $licenseOutput
 Copy-ReleaseFile -Source (Join-Path $dotnetRoot "ThirdPartyNotices.txt") `
     -Destination (Join-Path $licenseOutput "dotnet-ThirdPartyNotices.txt") -DestinationRoot $licenseOutput
-Copy-ReleaseFile -Source (Join-Path $windowsAppSdkPackage "license.txt") `
-    -Destination (Join-Path $licenseOutput "WindowsAppSDK-LICENSE.txt") -DestinationRoot $licenseOutput
-Copy-ReleaseFile -Source (Join-Path $windowsAppSdkPackage "NOTICE.txt") `
-    -Destination (Join-Path $licenseOutput "WindowsAppSDK-NOTICE.txt") -DestinationRoot $licenseOutput
+foreach ($componentName in $windowsAppSdkComponentNames) {
+    $componentLabel = $componentName.Substring("Microsoft.WindowsAppSDK.".Length)
+    $componentPackage = $windowsAppSdkPackages[$componentName]
+    Copy-ReleaseFile -Source (Join-Path $componentPackage "license.txt") `
+        -Destination (Join-Path $licenseOutput "WindowsAppSDK-${componentLabel}-LICENSE.txt") `
+        -DestinationRoot $licenseOutput
+    $componentNotice = Join-Path $componentPackage "NOTICE.txt"
+    if (Test-Path -LiteralPath $componentNotice -PathType Leaf) {
+        Copy-ReleaseFile -Source $componentNotice `
+            -Destination (Join-Path $licenseOutput "WindowsAppSDK-${componentLabel}-NOTICE.txt") `
+            -DestinationRoot $licenseOutput
+    }
+}
 Copy-ReleaseFile -Source (Join-Path $webView2Package "LICENSE.txt") `
     -Destination (Join-Path $licenseOutput "WebView2-LICENSE.txt") -DestinationRoot $licenseOutput
 Copy-ReleaseFile -Source (Join-Path $webView2Package "NOTICE.txt") `
@@ -604,9 +632,11 @@ $componentVersions = @(
     "Python=$pythonVersion",
     "PyInstaller=$pyInstallerVersion",
     "defusedxml=$defusedXmlVersion",
-    "DotNetSdk=$dotnetSdkVersion",
-    "WindowsAppSDK=$($windowsAppSdkVersions[0])",
-    "WebView2=$($webView2Versions[0])",
+    "DotNetSdk=$dotnetSdkVersion"
+    foreach ($componentName in $windowsAppSdkComponentNames) {
+        "$componentName=$($windowsAppSdkVersions[$componentName])"
+    }
+    "WebView2=$webView2Version",
     "InnoSetup=$innoSetupVersion"
 )
 [IO.File]::WriteAllLines(
@@ -630,6 +660,35 @@ if (-not (Test-Path -LiteralPath $appDll -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $publishedSidecar -PathType Leaf)) {
     throw "The Python Sidecar was not copied into the publish staging directory."
 }
+
+$forbiddenPayloadPatterns = @(
+    "DirectML.dll",
+    "onnxruntime.dll",
+    "Microsoft.Windows.AI.*",
+    "Microsoft.Windows.Widgets*",
+    "Microsoft.Windows.Workloads*",
+    "PerceptiveStreaming.dll",
+    "workloads.*.json"
+)
+$unexpectedOptionalRuntimeArtifacts = @(
+    foreach ($pattern in $forbiddenPayloadPatterns) {
+        Get-ChildItem -LiteralPath $publishRoot -Recurse -File -Filter $pattern
+    }
+)
+if ($unexpectedOptionalRuntimeArtifacts.Count -gt 0) {
+    $artifactNames = @(
+        $unexpectedOptionalRuntimeArtifacts |
+            ForEach-Object { [IO.Path]::GetRelativePath($publishRoot, $_.FullName) } |
+            Sort-Object -Unique
+    ) -join ", "
+    throw "Unused Windows AI, ML, or Widgets payload returned to the package: $artifactNames"
+}
+$publishBytes = (Get-ChildItem -LiteralPath $publishRoot -Recurse -File |
+        Measure-Object -Property Length -Sum).Sum
+if ($publishBytes -gt $MaxPublishBytes) {
+    throw "Publish staging exceeds the 210 MiB size budget: $publishBytes bytes."
+}
+Write-Host ("Publish staging size: {0:N1} MiB." -f ($publishBytes / 1MB))
 
 Write-Host "[8/11] Applying and verifying project Authenticode signatures..."
 $signerSubject = $null

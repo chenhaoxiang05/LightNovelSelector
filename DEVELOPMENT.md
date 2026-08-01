@@ -154,7 +154,7 @@ git diff --check
 4. 使用独立 Python 工具验证 `ping` / `shutdown` 协议。
 5. 执行 Python 测试、类型检查、静态安全扫描和依赖漏洞审计。
 6. 执行 C# 测试。
-7. 发布自包含 WinUI 到 `build\winui-package` 暂存区，剔除调试产物并收集第三方许可证全文。
+7. 发布自包含 WinUI 到 `build\winui-package` 暂存区，剔除调试产物、拒绝未使用的可选运行组件、检查 210 MiB 体积预算并收集第三方许可证全文。
 8. 配置证书时签署并验证项目自有 WinUI、程序集和 Sidecar；未配置时记录未签名状态。
 9. 执行启动和外观两轮冒烟。
 10. 使用 Inno Setup 编译安装器，并在配置证书时签署最终安装器。
@@ -169,7 +169,7 @@ dist\winui\LightNovelSelector-v<版本>-win-x64-build-info.json
 dist\winui\SHA256SUMS.txt
 ```
 
-安装器会在安装前显示根目录中的 MIT `LICENSE`，并把项目许可证、`THIRD_PARTY_NOTICES.md` 以及 Python、PyInstaller、defusedxml、.NET、Windows App SDK、WebView2 和 Inno Setup 的原始许可文本保留在应用安装目录。
+安装器会在安装前显示根目录中的 MIT `LICENSE`，并把项目许可证、`THIRD_PARTY_NOTICES.md` 以及 Python、PyInstaller、defusedxml、.NET、各 Windows App SDK 组件、WebView2 和 Inno Setup 的原始许可文本保留在应用安装目录。
 
 可选参数：
 
@@ -209,9 +209,14 @@ $env:WINDOWS_SIGNING_PFX_PASSWORD = "<密码>"
 - `APP_VERSION` 是不含 `-dev` 的正式版本；
 - 标签严格等于 `v<APP_VERSION>`；
 - `docs\releases\v<版本>.md` 存在且包含完整中文说明；
+- 标签提交已经存在于远端 `main` 历史中；
 - 完整测试、安装器冒烟和四项发布资产验证全部成功。
 
-通过后，工作流使用 GitHub OIDC/Sigstore 为安装器生成 SLSA 来源证明和 SBOM 证明，再创建或修复同名 GitHub Release。所有 Actions 均固定到完整提交 SHA，发布 runner 固定为仍提供 Inno Setup 的 `windows-2022`。
+通过后，工作流解析唯一安装器与 SBOM，使用 GitHub OIDC/Sigstore 生成 SLSA 来源证明和 SBOM 证明，再创建或修复同名 GitHub Release。修复已有 Release 时会删除四项可信资产之外的旧附件，并在上传后复核完整资产集合。所有 Actions 均固定到完整提交 SHA，发布 runner 固定为仍提供 Inno Setup 的 `windows-2022`。
+
+## 安装包体积边界
+
+WinUI 项目直接引用所需的 Windows App SDK 组件，不引用会带入 AI、ML、Widgets 和 DWrite 的完整元包。构建脚本会拒绝这些可选运行文件重新出现，并对含 Sidecar 与许可证的完整暂存目录执行 210 MiB 上限。测量基线、排除列表和复核命令见 [Windows 安装包体积与依赖边界](docs/PACKAGE_SIZE.md)。
 
 ## 为什么安装器内部有语言目录
 
