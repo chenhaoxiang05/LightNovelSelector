@@ -151,6 +151,9 @@ class ProjectMetadataTests(unittest.TestCase):
         self.assertIn("gh release delete-asset", workflow)
         self.assertIn("Compare-Object", workflow)
 
+        ci_workflow = (PROJECT_ROOT / ".github" / "workflows" / "windows-ci.yml").read_text(encoding="utf-8")
+        self.assertIn("runs-on: windows-2022", ci_workflow)
+
     def test_winui_uses_only_required_windows_app_sdk_components(self) -> None:
         project = ElementTree.parse(
             PROJECT_ROOT / "native" / "LightNovelSelector.WinUI" / "LightNovelSelector.WinUI.csproj"

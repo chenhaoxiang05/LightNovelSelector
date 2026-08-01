@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ctypes
+import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from .constants import (
     APP_NAME,
@@ -11,6 +13,47 @@ from .constants import (
     SCAN_MAX_FILES,
 )
 from .models import ClassificationPlan
+
+_WINDOWS_LONG_PATH_BUFFER_CHARS = 32_768
+_GET_LONG_PATH_NAME_W: Any = None
+if os.name == "nt":
+    from ctypes import wintypes
+
+    _GET_LONG_PATH_NAME_W = ctypes.WinDLL(  # type: ignore[attr-defined]
+        "kernel32",
+        use_last_error=True,
+    ).GetLongPathNameW
+    _GET_LONG_PATH_NAME_W.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+    )
+    _GET_LONG_PATH_NAME_W.restype = wintypes.DWORD
+
+
+def _absolute_path_without_link_resolution(path: Path) -> Path:
+    absolute_path = path.expanduser().absolute()
+    if _GET_LONG_PATH_NAME_W is None:
+        return absolute_path
+
+    unresolved_parts: list[str] = []
+    existing_path = absolute_path
+    try:
+        while existing_path.parent != existing_path and not (existing_path.exists() or existing_path.is_symlink()):
+            unresolved_parts.append(existing_path.name)
+            existing_path = existing_path.parent
+    except OSError:
+        return absolute_path
+
+    buffer = ctypes.create_unicode_buffer(_WINDOWS_LONG_PATH_BUFFER_CHARS)
+    length = _GET_LONG_PATH_NAME_W(str(existing_path), buffer, len(buffer))
+    if length == 0 or length >= len(buffer):
+        return absolute_path
+
+    expanded_path = Path(buffer.value)
+    for part in reversed(unresolved_parts):
+        expanded_path /= part
+    return expanded_path
 
 
 def _resolved_child_path(path: Path, *, root_path: Path, field_name: str) -> Path:
@@ -161,7 +204,7 @@ def _undo_item_path(value: object, *, field_name: str, item_number: int, root_pa
     if not path.is_absolute():
         raise ValueError(f"{item_label}的 {field_name} 必须是绝对路径。")
     try:
-        absolute_path = path.absolute()
+        absolute_path = _absolute_path_without_link_resolution(path)
         resolved_path = path.resolve()
     except OSError as exc:
         raise ValueError(f"无法解析{item_label}的 {field_name}：{exc}") from exc
