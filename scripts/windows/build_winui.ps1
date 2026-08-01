@@ -470,7 +470,19 @@ if (-not $SkipTests) {
     Write-Host "[6/11] Running C# tests..."
     $testProject = Join-Path $ProjectRoot "native\LightNovelSelector.WinUI.Tests\LightNovelSelector.WinUI.Tests.csproj"
     Invoke-External -FilePath $dotnet -Arguments @("restore", $testProject, "--locked-mode")
-    Invoke-External -FilePath $dotnet -Arguments @("test", $testProject, "-c", "Release", "--no-restore", "--logger", "console;verbosity=minimal")
+    $previousSidecarPython = $env:LN_SELECTOR_PYTHON
+    try {
+        $env:LN_SELECTOR_PYTHON = $python
+        Invoke-External -FilePath $dotnet -Arguments @("test", $testProject, "-c", "Release", "--no-restore", "--logger", "console;verbosity=minimal")
+    }
+    finally {
+        if ($null -eq $previousSidecarPython) {
+            Remove-Item Env:LN_SELECTOR_PYTHON -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:LN_SELECTOR_PYTHON = $previousSidecarPython
+        }
+    }
 }
 else {
     Write-Host "[5/11] Python checks skipped."
