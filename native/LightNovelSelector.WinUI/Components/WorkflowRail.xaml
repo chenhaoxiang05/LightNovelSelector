@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="LightNovelSelector.WinUI.Components.WorkflowRail"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel Margin="12,8,12,12" Spacing="10">
+        <Border Height="1" Background="{ThemeResource DividerBrush}" />
+        <TextBlock x:Name="WorkflowEyebrow" Style="{StaticResource EyebrowTextStyle}" Text="安全工作流" />
+        <StackPanel x:Name="WorkflowStepsPanel" Spacing="8">
+            <Grid ColumnSpacing="9">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="20" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border x:Name="WorkflowStep1Badge" Width="20" Height="20" Background="{ThemeResource AccentSubtleBrush}" CornerRadius="10">
+                    <TextBlock x:Name="WorkflowStep1Glyph" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" Foreground="{ThemeResource AppAccentBrush}" Text="1" />
+                </Border>
+                <TextBlock x:Name="WorkflowStep1Label" Grid.Column="1" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Text="选择目录" />
+            </Grid>
+            <Grid ColumnSpacing="9">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="20" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border x:Name="WorkflowStep2Badge" Width="20" Height="20" Background="{ThemeResource SubtleSurfaceBrush}" CornerRadius="10">
+                    <TextBlock x:Name="WorkflowStep2Glyph" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="2" />
+                </Border>
+                <TextBlock x:Name="WorkflowStep2Label" Grid.Column="1" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="扫描预览" />
+            </Grid>
+            <Grid ColumnSpacing="9">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="20" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border x:Name="WorkflowStep3Badge" Width="20" Height="20" Background="{ThemeResource SubtleSurfaceBrush}" CornerRadius="10">
+                    <TextBlock x:Name="WorkflowStep3Glyph" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="3" />
+                </Border>
+                <TextBlock x:Name="WorkflowStep3Label" Grid.Column="1" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="检查并修正" />
+            </Grid>
+            <Grid ColumnSpacing="9">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="20" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border x:Name="WorkflowStep4Badge" Width="20" Height="20" Background="{ThemeResource SubtleSurfaceBrush}" CornerRadius="10">
+                    <TextBlock x:Name="WorkflowStep4Glyph" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="4" />
+                </Border>
+                <TextBlock x:Name="WorkflowStep4Label" Grid.Column="1" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="执行整理" />
+            </Grid>
+        </StackPanel>
+        <Border
+            x:Name="CompactWorkflowSummary"
+            Padding="9,7"
+            Background="{ThemeResource AccentSubtleBrush}"
+            CornerRadius="8"
+            Visibility="Collapsed">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+                <FontIcon FontSize="12" Foreground="{ThemeResource AppAccentBrush}" Glyph="&#xE9D2;" />
+                <TextBlock x:Name="CompactWorkflowStepText" VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold" Text="当前：选择目录" />
+            </StackPanel>
+        </Border>
+        <Border
+            x:Name="SafetyStatusBadge"
+            AutomationProperties.AccessibilityView="Content"
+            AutomationProperties.Name="本地安全处理"
+            Padding="9,6"
+            Background="{ThemeResource SuccessSubtleBrush}"
+            CornerRadius="8"
+            ToolTipService.ToolTip="所有文件操作均在本机完成">
+            <StackPanel HorizontalAlignment="Center" Orientation="Horizontal" Spacing="7">
+                <Ellipse Width="6" Height="6" Fill="{ThemeResource SuccessTextBrush}" />
+                <TextBlock
+                    x:Name="SafetyStatusText"
+                    VerticalAlignment="Center"
+                    FontSize="11"
+                    Foreground="{ThemeResource SuccessTextBrush}"
+                    Text="本地安全处理" />
+            </StackPanel>
+        </Border>
+        <StackPanel x:Name="VersionStack" Spacing="1">
+            <TextBlock FontSize="10" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="LIGHT NOVEL SELECTOR" />
+            <TextBlock x:Name="VersionText" FontSize="10" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="原生预览" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

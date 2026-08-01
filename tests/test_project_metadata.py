@@ -120,3 +120,23 @@ class ProjectMetadataTests(unittest.TestCase):
             "Microsoft.Windows.Workloads*",
         ):
             self.assertIn(forbidden_payload, build_script)
+
+    def test_windows_build_covers_compact_detail_smoke(self) -> None:
+        build_script = (PROJECT_ROOT / "scripts" / "windows" / "build_winui.ps1").read_text(encoding="utf-8")
+
+        self.assertIn('Invoke-AppSmokeTest -AppPath $appExe -Mode "appearance-compact"', build_script)
+        self.assertIn('$env:LN_SELECTOR_WINUI_TEST_WINDOW_SIZE = "1024x700"', build_script)
+        self.assertIn('$env:LN_SELECTOR_WINUI_TEST_OPEN_DETAIL = "1"', build_script)
+        appearance_source = (
+            PROJECT_ROOT / "native" / "LightNovelSelector.WinUI" / "Views" / "MainPage.Appearance.cs"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Math.Min(requestedHold, 15_000)", appearance_source)
+        self.assertIn("WaitForExit(30000)", build_script)
+        self.assertGreaterEqual(
+            build_script.count("Remove-Item Env:LN_SELECTOR_WINUI_TEST_WINDOW_SIZE"),
+            1,
+        )
+        self.assertGreaterEqual(
+            build_script.count("Remove-Item Env:LN_SELECTOR_WINUI_TEST_OPEN_DETAIL"),
+            1,
+        )

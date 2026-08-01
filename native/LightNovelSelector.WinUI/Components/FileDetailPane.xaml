@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="LightNovelSelector.WinUI.Components.FileDetailPane"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:LightNovelSelector.WinUI.Models"
+    AutomationProperties.Name="文件详情面板">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid Margin="2,0,2,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="1">
+                <TextBlock Style="{StaticResource EyebrowTextStyle}" Text="条目信息" />
+                <TextBlock x:Name="DetailHeading" Style="{StaticResource SectionTitleTextStyle}" Text="文件详情" />
+            </StackPanel>
+            <Button
+                x:Name="CloseDetailButton"
+                Grid.Column="1"
+                AutomationProperties.Name="关闭文件详情"
+                Click="OnCloseDetailClick"
+                Style="{StaticResource IconButtonStyle}"
+                ToolTipService.ToolTip="关闭详情"
+                Visibility="Collapsed">
+                <FontIcon FontSize="14" Glyph="&#xE711;" />
+            </Button>
+        </Grid>
+
+        <StackPanel x:Name="DetailEmptyState" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="9">
+            <Border Width="48" Height="48" Background="{ThemeResource SubtleSurfaceBrush}" CornerRadius="8">
+                <FontIcon FontSize="22" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="&#xE8A5;" />
+            </Border>
+            <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="选择一个文件" />
+            <TextBlock HorizontalAlignment="Center" TextAlignment="Center" Style="{StaticResource MutedTextStyle}" Text="这里会显示封面、简介和目标位置" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <StackPanel x:Name="DetailLoadingState" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" Visibility="Collapsed">
+            <ProgressRing Width="28" Height="28" IsActive="True" />
+            <TextBlock Style="{StaticResource MutedTextStyle}" Text="正在读取详情…" />
+        </StackPanel>
+
+        <StackPanel x:Name="DetailErrorState" Grid.Row="1" MaxWidth="280" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="9" Visibility="Collapsed">
+            <Border Width="48" Height="48" Background="{ThemeResource ErrorSubtleBrush}" CornerRadius="8">
+                <FontIcon FontSize="21" Foreground="{ThemeResource ErrorTextBrush}" Glyph="&#xEA39;" />
+            </Border>
+            <TextBlock x:Name="DetailErrorTitleText" HorizontalAlignment="Center" FontWeight="SemiBold" Text="详情读取失败" />
+            <TextBlock x:Name="DetailErrorMessageText" HorizontalAlignment="Center" TextAlignment="Center" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" />
+            <Button
+                x:Name="RetryDetailButton"
+                AutomationProperties.Name="重新读取文件详情"
+                Click="OnRetryDetailClick"
+                Content="重试"
+                Style="{StaticResource ToolbarButtonStyle}" />
+        </StackPanel>
+
+        <ScrollViewer x:Name="DetailContent" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="14">
+                <Grid ColumnSpacing="14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="112" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="112" Height="150" Background="{ThemeResource SubtleSurfaceBrush}" CornerRadius="8">
+                        <Grid>
+                            <FontIcon x:Name="CoverPlaceholder" FontSize="30" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xE8F1;" />
+                            <Image x:Name="CoverImage" Stretch="UniformToFill" />
+                        </Grid>
+                    </Border>
+                    <StackPanel Grid.Column="1" Spacing="8">
+                        <TextBlock x:Name="DetailTitleText" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <Border x:Name="DetailStatusBadge" HorizontalAlignment="Left" CornerRadius="8" Padding="8,4">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock x:Name="DetailStatusIcon" FontFamily="Segoe Fluent Icons" FontSize="12" />
+                                <TextBlock x:Name="DetailStatusText" FontSize="12" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock x:Name="DetailConfidenceText" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="DetailCoverSourceText" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel Spacing="8">
+                    <StackPanel Spacing="3">
+                        <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="作者" />
+                        <TextBlock x:Name="DetailAuthorsText" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="3">
+                            <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="卷号" />
+                            <TextBlock x:Name="DetailVolumeText" Style="{StaticResource MutedTextStyle}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="3">
+                            <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="语言" />
+                            <TextBlock x:Name="DetailLanguageText" Style="{StaticResource MutedTextStyle}" />
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel Spacing="3">
+                        <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="标签" />
+                        <TextBlock x:Name="DetailTagsText" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </StackPanel>
+
+                <Border Background="{ThemeResource SubtleSurfaceBrush}" CornerRadius="8" Padding="10">
+                    <StackPanel Spacing="5">
+                        <TextBlock FontSize="12" FontWeight="SemiBold" Text="分类依据" />
+                        <TextBlock x:Name="DetailReasonText" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="DetailEvidenceText" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Spacing="5">
+                    <TextBlock FontSize="12" FontWeight="SemiBold" Text="简介" />
+                    <TextBlock x:Name="DetailSummaryText" MaxLines="7" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Text="候选系列" />
+                        <ProgressRing
+                            x:Name="CandidateLookupProgress"
+                            Grid.Column="1"
+                            Width="16"
+                            Height="16"
+                            IsActive="False"
+                            Visibility="Collapsed" />
+                        <Button
+                            x:Name="LoadCandidatesButton"
+                            Grid.Column="2"
+                            MinWidth="104"
+                            AutomationProperties.Name="联网查找更多候选系列"
+                            Click="OnCandidateLookupClick"
+                            Content="联网查找更多"
+                            Style="{StaticResource ToolbarButtonStyle}" />
+                    </Grid>
+                    <ListView
+                        x:Name="CandidateList"
+                        MaxHeight="184"
+                        AutomationProperties.Name="候选系列列表"
+                        ItemContainerStyle="{StaticResource ResultItemContainerStyle}"
+                        SelectionChanged="OnCandidateSelectionChanged"
+                        Style="{StaticResource ResultListViewStyle}">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="models:SeriesCandidate">
+                                <Grid
+                                    AutomationProperties.AccessibilityView="Content"
+                                    AutomationProperties.Name="{x:Bind AccessibilityLabel}"
+                                    Padding="9,6"
+                                    ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="2">
+                                        <TextBlock FontSize="12" FontWeight="SemiBold" Text="{x:Bind SeriesName}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="{x:Bind SourceLabel}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        FontSize="11"
+                                        FontWeight="SemiBold"
+                                        Foreground="{ThemeResource AppAccentBrush}"
+                                        Text="{x:Bind CurrentLabel}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock FontSize="12" FontWeight="SemiBold" Text="手动修正系列" />
+                    <TextBox
+                        x:Name="SeriesEditBox"
+                        AutomationProperties.Name="手动修正系列名称"
+                        MaxLength="120"
+                        PlaceholderText="系列文件夹名称" />
+                    <CheckBox
+                        x:Name="ApplySeriesGroupCheckBox"
+                        AutomationProperties.Name="同时修正当前系列"
+                        Checked="OnCorrectionScopeChanged"
+                        Content="同时修正当前系列"
+                        Unchecked="OnCorrectionScopeChanged"
+                        Visibility="Collapsed" />
+                    <Button
+                        x:Name="SaveCorrectionButton"
+                        HorizontalAlignment="Stretch"
+                        AutomationProperties.Name="保存系列修正"
+                        Click="OnCorrectionClick"
+                        Style="{StaticResource ToolbarButtonStyle}">
+                        <StackPanel HorizontalAlignment="Center" Orientation="Horizontal" Spacing="7">
+                            <FontIcon FontSize="14" Glyph="&#xE73E;" />
+                            <TextBlock x:Name="SaveCorrectionText" Text="保存修正" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <StackPanel Spacing="5">
+                    <TextBlock FontSize="12" FontWeight="SemiBold" Text="目标位置" />
+                    <TextBlock x:Name="DetailTargetText" IsTextSelectionEnabled="True" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <InfoBar x:Name="DetailWarningBar" IsClosable="False" IsOpen="False" Severity="Warning" />
+
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button
+                        x:Name="RevealFileButton"
+                        AutomationProperties.Name="在文件资源管理器中定位文件"
+                        Click="OnRevealFileClick"
+                        HorizontalAlignment="Stretch"
+                        Style="{StaticResource ToolbarButtonStyle}">
+                        <TextBlock HorizontalAlignment="Center" Text="定位文件" />
+                    </Button>
+                    <Button
+                        x:Name="OpenSubjectButton"
+                        Grid.Column="1"
+                        AutomationProperties.Name="打开作品资料网页"
+                        Click="OnOpenSubjectClick"
+                        HorizontalAlignment="Stretch"
+                        IsEnabled="False"
+                        Style="{StaticResource ToolbarButtonStyle}">
+                        <TextBlock HorizontalAlignment="Center" Text="作品资料" />
+                    </Button>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

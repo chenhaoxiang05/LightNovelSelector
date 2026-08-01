@@ -61,7 +61,9 @@ py -3 -m venv .venv-build
 ### WinUI 原生界面
 
 - `Views/MainWindow.*`：标题栏、窗口尺寸、主题与窗口材质。
-- `Views/MainPage.*`：按状态、筛选、详情、报告、设置、通知和连接职责拆分。
+- `Views/MainPage.*`：按状态、筛选、报告、设置、通知、连接和首次引导职责拆分。
+- `Components/WorkflowRail.*`：四步流程、当前步骤与本地安全状态。
+- `Components/FileDetailPane.*`：详情加载、候选比较、分类依据和手动修正；宽屏与紧凑侧栏共用同一实例。
 - `Services/PythonSidecarClient.cs`：进程生命周期、请求关联、超时与安全重连。
 - `Security/ReportPathSafety.cs`：限制 WinUI 可打开或导出的本地报告位置。
 - `ViewModels/`：连接状态、筛选等可独立测试的纯逻辑。
@@ -129,6 +131,8 @@ git diff --check
 
 - 默认跟随 Windows 深浅色，首次材质为 Acrylic；透明效果关闭或高对比度时回退实色。
 - 窗口只创建一层 Desktop Acrylic，卡片使用半透明实色，避免重复模糊带来的 GPU 开销。
+- 首次引导只在版本未读时出现；结果详情在窄窗口进入同一 `SplitView` 侧栏，避免维护两套交互和视觉状态。
+- 低高度紧凑窗口允许工作区纵向滚动，底部确认操作必须始终可到达；恢复宽窗口时不保留意外滚动位置。
 - 高频列表筛选和键盘操作不增加位移动画；大结果集采用短防抖和单次数据源替换，避免逐行刷新阻塞界面。
 - 进入、Toast、页面切换和按压只动画 `Opacity`、`Translation`、`Scale`，单次不超过 220ms。
 - 按下 100ms、释放 160ms；Toast 进入 180/220ms、退出 140ms。
@@ -156,7 +160,7 @@ git diff --check
 6. 执行 C# 测试。
 7. 发布自包含 WinUI 到 `build\winui-package` 暂存区，剔除调试产物、拒绝未使用的可选运行组件、检查 210 MiB 体积预算并收集第三方许可证全文。
 8. 配置证书时签署并验证项目自有 WinUI、程序集和 Sidecar；未配置时记录未签名状态。
-9. 执行启动和外观两轮冒烟。
+9. 执行启动、完整外观和 1024×700 紧凑详情三轮冒烟。
 10. 使用 Inno Setup 编译安装器，并在配置证书时签署最终安装器。
 11. 扫描安装器与依赖，生成并验证 SBOM、构建信息和 SHA-256 清单，成功后原子式替换 `dist\winui`。
 

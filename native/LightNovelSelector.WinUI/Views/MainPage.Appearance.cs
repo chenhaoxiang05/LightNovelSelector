@@ -25,7 +25,7 @@ public sealed partial class MainPage
                     Path = @"D:\Books\classification_report.json",
                     FileName = "classification_report.json",
                     CreatedAt = "2026-07-20T20:22:40+08:00",
-                    Version = "2.1.0-dev.12",
+                    Version = "2.1.0-dev.13",
                     IsLatest = true,
                     CanUndo = true,
                     Status = "available",
@@ -164,10 +164,18 @@ public sealed partial class MainPage
             CanLoadCandidates = true,
         };
         _detail = smokeDetail;
-        await RenderDetailAsync(smokeDetail);
-        ApplySeriesGroupCheckBox.IsChecked = true;
+        await DetailPane.RenderAsync(smokeDetail);
+        UpdateCandidateLookupState();
+        UpdateCorrectionButtonState();
+        DetailPane.SetBatchScopeChecked(true);
         await Task.Delay(180);
-        ApplySeriesGroupCheckBox.IsChecked = false;
+        DetailPane.SetBatchScopeChecked(false);
+        if (Environment.GetEnvironmentVariable("LN_SELECTOR_WINUI_TEST_OPEN_DETAIL") == "1")
+        {
+            DetailSplitView.IsPaneOpen = true;
+            UpdateCompactDetailButtonState();
+            await Task.Yield();
+        }
         if (
             int.TryParse(
                 Environment.GetEnvironmentVariable("LN_SELECTOR_WINUI_APPEARANCE_HOLD_MS"),

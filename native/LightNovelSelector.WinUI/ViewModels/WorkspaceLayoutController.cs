@@ -17,6 +17,7 @@ public readonly record struct WorkspaceLayoutPresentation(
     bool StackOperationActions,
     bool UseCompactPadding,
     bool UseCompactWorkflow,
+    bool UseWorkspaceScroll,
     double DetailWidth
 );
 
@@ -29,6 +30,8 @@ public static class WorkspaceLayoutController
     public const double StackedFilterBreakpoint = 820;
     public const double StackedActionBreakpoint = 760;
     public const double ShortWindowBreakpoint = 760;
+    public const double WorkspaceScrollHeightBreakpoint = 720;
+    public const double NarrowWorkspaceScrollHeightBreakpoint = 820;
 
     public static WorkspaceLayoutPresentation Describe(double width, double height)
     {
@@ -40,6 +43,9 @@ public static class WorkspaceLayoutController
             : width >= CompactBreakpoint
                 ? WorkspaceLayoutMode.Compact
                 : WorkspaceLayoutMode.Narrow;
+        var detailWidth = mode == WorkspaceLayoutMode.Wide
+            ? width >= 1500 ? 380 : 340
+            : Math.Clamp(width - 280, 320, 420);
 
         return new WorkspaceLayoutPresentation(
             mode,
@@ -51,7 +57,9 @@ public static class WorkspaceLayoutController
             StackOperationActions: width < StackedActionBreakpoint,
             UseCompactPadding: width < CompactPaddingBreakpoint,
             UseCompactWorkflow: height < ShortWindowBreakpoint,
-            DetailWidth: width >= 1500 ? 380 : 340
+            UseWorkspaceScroll: height < WorkspaceScrollHeightBreakpoint
+                || (width < CompactBreakpoint && height < NarrowWorkspaceScrollHeightBreakpoint),
+            DetailWidth: detailWidth
         );
     }
 
