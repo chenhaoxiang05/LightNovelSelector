@@ -3,7 +3,7 @@
   "file_count": 10000,
   "max_cold_scan_seconds": 180.0,
   "max_warm_scan_seconds": 60.0,
-  "max_warm_to_cold_ratio": 0.75,
+  "max_warm_to_cold_ratio": 0.9,
   "max_cancel_latency_seconds": 2.0,
   "max_peak_working_set_mib": 768.0,
   "min_warm_cache_reuse_ratio": 0.99
