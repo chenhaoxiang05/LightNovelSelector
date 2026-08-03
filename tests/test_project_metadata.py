@@ -154,6 +154,11 @@ class ProjectMetadataTests(unittest.TestCase):
         ci_workflow = (PROJECT_ROOT / ".github" / "workflows" / "windows-ci.yml").read_text(encoding="utf-8")
         self.assertIn("runs-on: windows-2022", ci_workflow)
 
+        build_script = (PROJECT_ROOT / "scripts" / "windows" / "build_winui.ps1").read_text(encoding="utf-8")
+        self.assertIn("$env:LN_SELECTOR_PYTHON = $python", build_script)
+        self.assertIn("$previousSidecarPython = $env:LN_SELECTOR_PYTHON", build_script)
+        self.assertIn("Remove-Item Env:LN_SELECTOR_PYTHON", build_script)
+
     def test_winui_uses_only_required_windows_app_sdk_components(self) -> None:
         project = ElementTree.parse(
             PROJECT_ROOT / "native" / "LightNovelSelector.WinUI" / "LightNovelSelector.WinUI.csproj"
