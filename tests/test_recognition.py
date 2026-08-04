@@ -18,6 +18,7 @@ from lightnovel_classifier import (
     extract_series_guess,
     identity_from_filename,
     normalize_identity_values,
+    normalize_title_text,
     parse_volume_number,
     read_book_identity,
     score_title,
@@ -94,6 +95,27 @@ class SanitizedRecognitionCorpusTests(unittest.TestCase):
 
 
 class RecognitionNormalizationTests(unittest.TestCase):
+    def test_normalize_title_text_handles_spaces_controls_and_quotes(self) -> None:
+        # test NFKC normalization and punctuation
+        self.assertEqual(normalize_title_text("Title～Subtitle"), "Title~Subtitle")
+        self.assertEqual(normalize_title_text("ＡＢＣ"), "ABC")
+        self.assertEqual(normalize_title_text("Hello，World"), "Hello,World")
+
+        # test control characters
+        self.assertEqual(normalize_title_text("Ghost\x00 in the Shell\u202e"), "Ghost in the Shell")
+
+        # test spaces
+        self.assertEqual(normalize_title_text("Space\u3000Invaders"), "Space Invaders")
+        self.assertEqual(normalize_title_text("Much   Space"), "Much Space")
+
+        # test stripping
+        self.assertEqual(normalize_title_text("  \nTitle\t "), "Title")
+        self.assertEqual(normalize_title_text("「Title」"), "Title")
+        self.assertEqual(normalize_title_text("『Title』"), "Title")
+        self.assertEqual(normalize_title_text("《Title》"), "Title")
+        self.assertEqual(normalize_title_text('"Title"'), "Title")
+        self.assertEqual(normalize_title_text("'Title'"), "Title")
+
     def test_parses_chinese_japanese_and_roman_volume_numbers(self) -> None:
         self.assertEqual(parse_volume_number("星界旅人 第十二卷"), 12)
         self.assertEqual(parse_volume_number("星界の旅人 第〇七巻"), 7)
