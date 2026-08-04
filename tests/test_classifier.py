@@ -1738,6 +1738,41 @@ class BangumiMetadataTests(unittest.TestCase):
 
             self.assertEqual(loaded, metadata)
 
+    def test_book_metadata_to_dict(self) -> None:
+        identity = BookIdentity(
+            title="Mushoku Tensei (13)",
+            series_name="Mushoku Tensei",
+            authors=("Rifujin na Magonote",),
+            volume_number=13,
+            language="en",
+            tags=("Fantasy", "Isekai"),
+        )
+        metadata = BookMetadata(
+            title="Mushoku Tensei (13)",
+            source="Bangumi",
+            confidence=0.96,
+            query="Mushoku Tensei 13",
+            summary="volume summary",
+            cover_url="https://example.test/cover.jpg",
+            url="https://bgm.tv/subject/207694",
+            identity=identity,
+        )
+
+        result = book_metadata_to_dict(metadata)
+        self.assertEqual(result["title"], metadata.title)
+        self.assertEqual(result["series_name"], metadata.identity.series_name)
+        self.assertEqual(result["authors"], list(metadata.identity.authors))
+        self.assertEqual(result["volume_number"], metadata.identity.volume_number)
+        self.assertEqual(result["language"], metadata.identity.language)
+        self.assertEqual(result["tags"], list(metadata.identity.tags))
+        self.assertEqual(result["identity"], book_identity_to_dict(metadata.identity))
+        self.assertEqual(result["source"], metadata.source)
+        self.assertEqual(result["confidence"], metadata.confidence)
+        self.assertEqual(result["query"], metadata.query)
+        self.assertEqual(result["summary"], metadata.summary)
+        self.assertEqual(result["cover_url"], metadata.cover_url)
+        self.assertEqual(result["url"], metadata.url)
+
     def test_unified_identity_serialization_is_bounded_and_legacy_compatible(self) -> None:
         identity = BookIdentity(
             title="Mushoku Tensei (13)",
