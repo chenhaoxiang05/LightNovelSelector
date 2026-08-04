@@ -104,28 +104,19 @@ from .provider_reliability import (
 )
 from .providers import (
     AniListProvider,
-    BangumiProvider,
     JikanProvider,
     MetadataProvider,
     MetadataProviderRegistry,
-    ProviderContractError,
     bangumi_cover_url,
     bangumi_identity_from_item,
-    bangumi_infobox_values,
-    bangumi_metadata_from_item,
     bangumi_search_items,
-    bangumi_subject_url,
-    bangumi_tags,
     bangumi_title_candidates,
     builtin_metadata_providers,
     clean_summary,
-    flatten_bangumi_value,
     item_matches_volume,
     normalize_provider_book_metadata,
     normalize_provider_resolve_result,
     provider_error_message,
-    score_bangumi_item_for_detail,
-    unique_existing,
 )
 from .recognition import (
     RecognitionAssessment,
