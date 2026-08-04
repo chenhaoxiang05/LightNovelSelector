@@ -100,6 +100,38 @@ class RecognitionNormalizationTests(unittest.TestCase):
         self.assertEqual(parse_volume_number("Astral Traveler Vol. IV"), 4)
         self.assertIsNone(parse_volume_number("Civilization"))
 
+    def test_parse_volume_number_edge_cases(self) -> None:
+        # Boundary conditions (0 to 999)
+        self.assertEqual(parse_volume_number("Title 000"), 0)
+        self.assertEqual(parse_volume_number("Title 999"), 999)
+        self.assertIsNone(parse_volume_number("Title 1000"))
+
+        # File extension stripping for supported extensions vs unsupported
+        self.assertEqual(parse_volume_number("file_vol_1.epub"), 1)
+        self.assertEqual(parse_volume_number("archive_book_2.zip"), 2)
+
+        # Different format markers
+        self.assertEqual(parse_volume_number("Title book 3"), 3)
+        self.assertEqual(parse_volume_number("Title v 4"), 4)
+        self.assertEqual(parse_volume_number("Title (5)"), 5)
+        self.assertEqual(parse_volume_number("Title （6）"), 6)
+        self.assertEqual(parse_volume_number("Title - 7"), 7)
+        self.assertEqual(parse_volume_number("Title ~ 8 ~"), 8)
+
+        # Chinese numeral variations and different volume markers
+        self.assertEqual(parse_volume_number("第一卷"), 1)
+        self.assertEqual(parse_volume_number("第二冊"), 2)
+        self.assertEqual(parse_volume_number("第十集"), 10)
+        self.assertEqual(parse_volume_number("第二十部"), 20)
+        self.assertEqual(parse_volume_number("第一百巻"), 100)
+
+        # Decimal numbers (will parse the first integer matched, e.g. Vol 1)
+        self.assertEqual(parse_volume_number("Vol. 1.5"), 1)
+
+        # Empty string and unrelated alphabetical characters
+        self.assertIsNone(parse_volume_number(""))
+        self.assertIsNone(parse_volume_number("No Numbers Here"))
+
     def test_subtitle_variant_improves_matching_without_changing_display(self) -> None:
         title = "Project Aurora ~Afterglow~"
         self.assertEqual(
