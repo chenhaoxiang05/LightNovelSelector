@@ -18,7 +18,7 @@ from .classification import (
     validate_classification_root,
     write_classification_report,
 )
-from .constants import *
+from .constants import *  # noqa: F403
 from .corrections import (
     RecognitionCorrectionMemory,
     SeriesAlias,

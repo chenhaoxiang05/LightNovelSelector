@@ -14,8 +14,8 @@ import zipfile
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from defusedxml import ElementTree
-from defusedxml.common import DefusedXmlException
+from defusedxml import ElementTree  # type: ignore[import-untyped]
+from defusedxml.common import DefusedXmlException  # type: ignore[import-untyped]
 
 from .constants import (
     ARCHIVE_TEXT_MAX_BYTES,
