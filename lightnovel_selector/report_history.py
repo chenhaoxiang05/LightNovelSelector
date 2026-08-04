@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,15 +15,8 @@ from .constants import (
     REPORT_SCHEMA_VERSION,
 )
 from .storage import write_json_atomic
+from .utils import valid_execution_id
 
-
-def _valid_execution_id(value: object) -> bool:
-    if not isinstance(value, str) or len(value) != 32:
-        return False
-    try:
-        return uuid.UUID(hex=value).hex == value
-    except ValueError:
-        return False
 
 
 def _history_file_execution_id(path: Path) -> str | None:
@@ -37,7 +29,7 @@ def _history_file_execution_id(path: Path) -> str | None:
         return None
     timestamp = remainder[:16]
     execution_id = remainder[17:]
-    if not timestamp[:8].isdigit() or not timestamp[9:15].isdigit() or not _valid_execution_id(execution_id):
+    if not timestamp[:8].isdigit() or not timestamp[9:15].isdigit() or not valid_execution_id(execution_id):
         return None
     return execution_id
 
@@ -132,7 +124,7 @@ def archive_classification_report(report_path: Path) -> Path | None:
     if report.get("schema_version") != REPORT_SCHEMA_VERSION:
         return None
     execution_id = report.get("execution_id")
-    if not _valid_execution_id(execution_id):
+    if not valid_execution_id(execution_id):
         raise ValueError("分类报告缺少有效的执行编号，无法归档。")
 
     history_dir = _history_directory(root, create=True)
@@ -164,7 +156,7 @@ def _report_summary(
         recover_pending=recover_pending,
     )
     execution_id = report.get("execution_id")
-    if not _valid_execution_id(execution_id):
+    if not valid_execution_id(execution_id):
         if not is_latest:
             raise ValueError("历史报告缺少有效的执行编号。")
         report_id = "latest"
@@ -284,7 +276,7 @@ def resolve_classification_report(root: Path, report_id: str | None) -> Path:
         if not canonical.is_file() or canonical.is_symlink():
             raise FileNotFoundError("当前目录没有可用的最新分类报告。")
         return canonical
-    if not _valid_execution_id(report_id):
+    if not valid_execution_id(report_id):
         raise ValueError("分类历史执行编号无效。")
 
     if canonical.is_file() and not canonical.is_symlink():
