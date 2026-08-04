@@ -1771,6 +1771,19 @@ class BangumiMetadataTests(unittest.TestCase):
             )
         )
 
+    def test_book_metadata_from_dict_error_paths(self) -> None:
+        # KeyError: missing required "title" key
+        self.assertIsNone(book_metadata_from_dict({"source": "Bangumi"}))
+
+        # ValueError: title is empty
+        self.assertIsNone(book_metadata_from_dict({"title": ""}))
+
+        # TypeError: title has invalid type
+        self.assertIsNone(book_metadata_from_dict({"title": 123}))
+
+        # KeyError / ValueError in identity logic (e.g. invalid identity dict)
+        self.assertIsNone(book_metadata_from_dict({"title": "Valid", "identity": {"authors": "invalid_type"}}))
+
     def test_cached_metadata_rejects_invalid_types_and_non_finite_confidence(self) -> None:
         self.assertIsNone(book_metadata_from_dict({"title": ["not", "text"]}))
         self.assertIsNone(book_metadata_from_dict({"title": "Broken", "confidence": "nan"}))
