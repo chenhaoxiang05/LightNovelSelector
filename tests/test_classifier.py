@@ -1738,6 +1738,30 @@ class BangumiMetadataTests(unittest.TestCase):
 
             self.assertEqual(loaded, metadata)
 
+    def test_book_identity_to_dict(self) -> None:
+        identity = BookIdentity(
+            title="Test Title",
+            series_name="Test Series",
+            authors=("Author 1", "Author 2"),
+            volume_number=5,
+            language="zh",
+            tags=("Tag A", "Tag B"),
+        )
+
+        result = book_identity_to_dict(identity)
+
+        self.assertEqual(
+            result,
+            {
+                "title": "Test Title",
+                "series_name": "Test Series",
+                "authors": ["Author 1", "Author 2"],
+                "volume_number": 5,
+                "language": "zh",
+                "tags": ["Tag A", "Tag B"],
+            }
+        )
+
     def test_unified_identity_serialization_is_bounded_and_legacy_compatible(self) -> None:
         identity = BookIdentity(
             title="Mushoku Tensei (13)",
