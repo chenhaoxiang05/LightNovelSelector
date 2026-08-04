@@ -1771,6 +1771,31 @@ class BangumiMetadataTests(unittest.TestCase):
             )
         )
 
+    def test_book_identity_from_dict_error_paths(self) -> None:
+        # Not a dict
+        self.assertIsNone(book_identity_from_dict(None))
+        self.assertIsNone(book_identity_from_dict([]))
+        self.assertIsNone(book_identity_from_dict("not-a-dict"))
+
+        # Missing required title (and no fallback)
+        self.assertIsNone(book_identity_from_dict({}))
+        self.assertIsNone(book_identity_from_dict({"series_name": "Series"}))
+
+        # Invalid title type
+        self.assertIsNone(book_identity_from_dict({"title": ["not", "string"]}))
+
+        # Invalid series type (without fallback)
+        self.assertIsNone(book_identity_from_dict({"title": "Title", "series_name": ["not", "string"]}))
+
+        # Invalid volume number
+        self.assertIsNone(book_identity_from_dict({"title": "Title", "series_name": "Series", "volume_number": "not-an-int"}))
+
+        # Invalid authors list
+        self.assertIsNone(book_identity_from_dict({"title": "Title", "series_name": "Series", "authors": "not-a-list"}))
+
+        # Invalid tags list
+        self.assertIsNone(book_identity_from_dict({"title": "Title", "series_name": "Series", "tags": "not-a-list"}))
+
     def test_cached_metadata_rejects_invalid_types_and_non_finite_confidence(self) -> None:
         self.assertIsNone(book_metadata_from_dict({"title": ["not", "text"]}))
         self.assertIsNone(book_metadata_from_dict({"title": "Broken", "confidence": "nan"}))
