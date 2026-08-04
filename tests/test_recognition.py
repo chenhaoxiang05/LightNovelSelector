@@ -24,6 +24,8 @@ from lightnovel_classifier import (
 )
 from lightnovel_selector.application import ApplicationService, plan_to_dict
 
+from lightnovel_selector.parsing import collapse_spaces
+
 CORPUS_PATH = Path(__file__).parent / "fixtures" / "recognition_corpus.json"
 
 
@@ -99,6 +101,13 @@ class RecognitionNormalizationTests(unittest.TestCase):
         self.assertEqual(parse_volume_number("星界の旅人 第〇七巻"), 7)
         self.assertEqual(parse_volume_number("Astral Traveler Vol. IV"), 4)
         self.assertIsNone(parse_volume_number("Civilization"))
+
+    def test_collapse_spaces_normalizes_whitespace(self) -> None:
+        self.assertEqual(collapse_spaces("a  b"), "a b")
+        self.assertEqual(collapse_spaces(" a  b "), "a b")
+        self.assertEqual(collapse_spaces("a\tb\nc\r\nd"), "a b c d")
+        self.assertEqual(collapse_spaces(""), "")
+        self.assertEqual(collapse_spaces("   "), "")
 
     def test_subtitle_variant_improves_matching_without_changing_display(self) -> None:
         title = "Project Aurora ~Afterglow~"
