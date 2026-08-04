@@ -37,7 +37,7 @@ def _report_execution_is_active(report_path: Path) -> bool:
         return report_path in _ACTIVE_REPORT_PATHS
 
 
-def _valid_execution_id(value: object) -> bool:
+def valid_execution_id(value: object) -> bool:
     if not isinstance(value, str) or len(value) != 32:
         return False
     try:
@@ -131,7 +131,7 @@ def _recover_classification_report(
     records = _read_report_journal(journal_path)
     header = records[0]
     execution_id = report.get("execution_id")
-    if not _valid_execution_id(execution_id):
+    if not valid_execution_id(execution_id):
         raise ValueError("分类恢复日志无法匹配缺少或无效执行编号的报告。")
     journal_schema_version = header.get("schema_version")
     if (

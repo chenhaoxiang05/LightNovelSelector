@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import uuid
+from .classification_recovery import valid_execution_id
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -17,16 +17,6 @@ from .constants import (
 )
 from .storage import write_json_atomic
 
-
-def _valid_execution_id(value: object) -> bool:
-    if not isinstance(value, str) or len(value) != 32:
-        return False
-    try:
-        return uuid.UUID(hex=value).hex == value
-    except ValueError:
-        return False
-
-
 def _history_file_execution_id(path: Path) -> str | None:
     name = path.name
     if not name.startswith(REPORT_HISTORY_FILE_PREFIX) or path.suffix.casefold() != ".json":
@@ -37,17 +27,15 @@ def _history_file_execution_id(path: Path) -> str | None:
         return None
     timestamp = remainder[:16]
     execution_id = remainder[17:]
-    if not timestamp[:8].isdigit() or not timestamp[9:15].isdigit() or not _valid_execution_id(execution_id):
+    if not timestamp[:8].isdigit() or not timestamp[9:15].isdigit() or not valid_execution_id(execution_id):
         return None
     return execution_id
-
 
 def _resolved_root(root: Path) -> Path:
     resolved = root.expanduser().resolve()
     if not resolved.is_dir():
         raise NotADirectoryError(f"分类根目录不存在或不是文件夹：{resolved}")
     return resolved
-
 
 def _history_directory(root: Path, *, create: bool) -> Path | None:
     resolved_root = _resolved_root(root)
@@ -89,10 +77,8 @@ def _history_directory(root: Path, *, create: bool) -> Path | None:
         raise NotADirectoryError("分类历史路径已被其他文件占用。")
     return resolved
 
-
 def classification_report_history_directory(root: Path, *, create: bool = False) -> Path | None:
     return _history_directory(root, create=create)
-
 
 def _report_timestamp(report: dict[str, Any], report_path: Path) -> tuple[datetime, str | None]:
     value = report.get("created_at")
@@ -110,12 +96,10 @@ def _report_timestamp(report: dict[str, Any], report_path: Path) -> tuple[dateti
         fallback = datetime.now(tz=timezone.utc)
     return fallback, None
 
-
 def _report_count(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         return 0
     return max(0, value)
-
 
 def _validated_report(root: Path, report_path: Path, *, recover_pending: bool) -> dict[str, Any]:
     resolved_path = report_path.expanduser().resolve()
@@ -124,7 +108,6 @@ def _validated_report(root: Path, report_path: Path, *, recover_pending: bool) -
         raise ValueError("分类报告不属于当前所选目录。")
     return report
 
-
 def archive_classification_report(report_path: Path) -> Path | None:
     resolved_report = report_path.expanduser().resolve()
     report = load_classification_report(resolved_report)
@@ -132,7 +115,7 @@ def archive_classification_report(report_path: Path) -> Path | None:
     if report.get("schema_version") != REPORT_SCHEMA_VERSION:
         return None
     execution_id = report.get("execution_id")
-    if not _valid_execution_id(execution_id):
+    if not valid_execution_id(execution_id):
         raise ValueError("分类报告缺少有效的执行编号，无法归档。")
 
     history_dir = _history_directory(root, create=True)
@@ -150,7 +133,6 @@ def archive_classification_report(report_path: Path) -> Path | None:
     write_json_atomic(target, report)
     return target
 
-
 def _report_summary(
     root: Path,
     report_path: Path,
@@ -164,7 +146,7 @@ def _report_summary(
         recover_pending=recover_pending,
     )
     execution_id = report.get("execution_id")
-    if not _valid_execution_id(execution_id):
+    if not valid_execution_id(execution_id):
         if not is_latest:
             raise ValueError("历史报告缺少有效的执行编号。")
         report_id = "latest"
@@ -208,7 +190,6 @@ def _report_summary(
         "status_label": status_label,
         "summary": stats,
     }
-
 
 def list_classification_reports(
     root: Path,
@@ -276,7 +257,6 @@ def list_classification_reports(
         "truncated": history_truncated or total_count > bounded_limit,
     }
 
-
 def resolve_classification_report(root: Path, report_id: str | None) -> Path:
     resolved_root = _resolved_root(root)
     canonical = resolved_root / REPORT_FILE_NAME
@@ -284,7 +264,7 @@ def resolve_classification_report(root: Path, report_id: str | None) -> Path:
         if not canonical.is_file() or canonical.is_symlink():
             raise FileNotFoundError("当前目录没有可用的最新分类报告。")
         return canonical
-    if not _valid_execution_id(report_id):
+    if not valid_execution_id(report_id):
         raise ValueError("分类历史执行编号无效。")
 
     if canonical.is_file() and not canonical.is_symlink():
@@ -313,7 +293,6 @@ def resolve_classification_report(root: Path, report_id: str | None) -> Path:
         if report.get("execution_id") == report_id:
             return path
     raise FileNotFoundError("没有找到指定的分类历史报告。")
-
 
 def mark_classification_report_undone(
     report_path: Path,

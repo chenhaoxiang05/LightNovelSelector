@@ -150,7 +150,7 @@ def _windows_change_token(file_descriptor: int) -> int | None:
         return None
     try:
         info = _WindowsFileBasicInfo()
-        handle = wintypes.HANDLE(msvcrt.get_osfhandle(file_descriptor))
+        handle = wintypes.HANDLE(msvcrt.get_osfhandle(file_descriptor))  # type: ignore[attr-defined]
         succeeded = _GET_FILE_INFORMATION_BY_HANDLE_EX(
             handle,
             0,
@@ -167,7 +167,7 @@ def _windows_file_identity(file_descriptor: int) -> tuple[int, int] | None:
         return None
     try:
         info = _WindowsFileIdInfo()
-        handle = wintypes.HANDLE(msvcrt.get_osfhandle(file_descriptor))
+        handle = wintypes.HANDLE(msvcrt.get_osfhandle(file_descriptor))  # type: ignore[attr-defined]
         succeeded = _GET_FILE_INFORMATION_BY_HANDLE_EX(
             handle,
             18,
