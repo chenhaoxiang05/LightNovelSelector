@@ -23,6 +23,7 @@ from lightnovel_classifier import (
     score_title,
 )
 from lightnovel_selector.application import ApplicationService, plan_to_dict
+from lightnovel_selector.corrections import series_alias_key
 
 CORPUS_PATH = Path(__file__).parent / "fixtures" / "recognition_corpus.json"
 
@@ -91,6 +92,29 @@ class SanitizedRecognitionCorpusTests(unittest.TestCase):
         corpus = _load_corpus()
         self.assertEqual(corpus["schema_version"], 1)
         self.assertIn("不含用户路径", corpus["privacy_note"])
+
+
+class SeriesAliasKeyTests(unittest.TestCase):
+    def test_empty_or_whitespace_returns_empty(self) -> None:
+        self.assertEqual(series_alias_key(""), "")
+        self.assertEqual(series_alias_key("   "), "")
+
+    def test_too_short_or_numeric_returns_empty(self) -> None:
+        self.assertEqual(series_alias_key("A"), "")
+        self.assertEqual(series_alias_key("123"), "")
+        self.assertEqual(series_alias_key("  123  "), "")
+
+    def test_normalizes_and_extracts_guess(self) -> None:
+        self.assertEqual(series_alias_key("My Series"), "myseries")
+        self.assertEqual(series_alias_key("星界旅人 第十二卷"), "星界旅人")
+        self.assertEqual(series_alias_key("【轻小说】Project Aurora ~Afterglow~ Vol.03"), "projectauroraafterglowvol")
+
+    def test_truncates_long_input(self) -> None:
+        # Based on CORRECTION_ALIAS_MAX_CHARS = 512
+        long_string = "A" * 600
+        result = series_alias_key(long_string)
+        self.assertLessEqual(len(result), 512)
+        self.assertTrue(result.startswith("aaaa"))
 
 
 class RecognitionNormalizationTests(unittest.TestCase):
