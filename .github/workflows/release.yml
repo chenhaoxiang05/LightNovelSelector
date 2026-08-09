@@ -141,12 +141,12 @@ jobs:
           "sbom_path=$sbomPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: 生成安装器构建来源证明
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: ${{ steps.release-assets.outputs.installer_path }}
 
       - name: 生成安装器 SBOM 证明
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: ${{ steps.release-assets.outputs.installer_path }}
           sbom-path: ${{ steps.release-assets.outputs.sbom_path }}
