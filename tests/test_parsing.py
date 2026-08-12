@@ -58,6 +58,7 @@ class FilenameParsingContractTests(unittest.TestCase):
             "星界旅人 第十二卷": 12,
             "Astral Traveler Vol. IV": 4,
             "Astral Traveler (007)": 7,
+            "Project Aurora Vol. 3 / Side Story": 3,
             "Demo Vol.00.txt": 0,
         }
         for value, expected in cases.items():

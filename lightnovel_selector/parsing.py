@@ -415,7 +415,8 @@ def _volume_token_patterns() -> tuple[str, ...]:
 
 
 def parse_volume_number(value: str) -> int | None:
-    raw_text = _supported_file_stem(value)
+    path_value = Path(value)
+    raw_text = path_value.stem if path_value.suffix.casefold() in SUPPORTED_EXTENSIONS else value
     text = unicodedata.normalize("NFKC", raw_text)
     for pattern in _volume_token_patterns():
         match = re.search(pattern, text, flags=re.IGNORECASE)
