@@ -151,6 +151,18 @@ class ProjectMetadataTests(unittest.TestCase):
         self.assertIn("gh release delete-asset", workflow)
         self.assertIn("Compare-Object", workflow)
 
+        codeql_workflow = (PROJECT_ROOT / ".github" / "workflows" / "codeql.yml").read_text(encoding="utf-8")
+        codeql_refs = re.findall(
+            r"uses:\s*github/codeql-action/(init|analyze)@([0-9a-f]{40})\s+# v([^\s]+)",
+            codeql_workflow,
+        )
+        self.assertEqual({action for action, _, _ in codeql_refs}, {"init", "analyze"})
+        self.assertEqual(len({reference for _, reference, _ in codeql_refs}), 1)
+        self.assertEqual(len({version for _, _, version in codeql_refs}), 1)
+
+        dependabot_config = (PROJECT_ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+        self.assertIn('          - "github/codeql-action/*"', dependabot_config)
+
         ci_workflow = (PROJECT_ROOT / ".github" / "workflows" / "windows-ci.yml").read_text(encoding="utf-8")
         self.assertIn("runs-on: windows-2022", ci_workflow)
 
