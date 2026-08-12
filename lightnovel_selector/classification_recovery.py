@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import threading
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from .classification_safety import (
     _undo_item_path,
 )
 from .constants import REPORT_JOURNAL_MAX_BYTES, REPORT_JOURNAL_SCHEMA_VERSION, SCAN_MAX_FILES
+from .report_ids import is_valid_execution_id
 from .storage import append_json_line_durable, write_json_atomic, write_json_lines_exclusive
 
 _ACTIVE_REPORT_PATHS: set[Path] = set()
@@ -35,15 +35,6 @@ def _set_report_execution_active(report_path: Path, active: bool) -> None:
 def _report_execution_is_active(report_path: Path) -> bool:
     with _ACTIVE_REPORT_PATHS_LOCK:
         return report_path in _ACTIVE_REPORT_PATHS
-
-
-def _valid_execution_id(value: object) -> bool:
-    if not isinstance(value, str) or len(value) != 32:
-        return False
-    try:
-        return uuid.UUID(hex=value).hex == value
-    except ValueError:
-        return False
 
 
 def _start_report_journal(report_path: Path, execution_id: str) -> Path:
@@ -131,7 +122,7 @@ def _recover_classification_report(
     records = _read_report_journal(journal_path)
     header = records[0]
     execution_id = report.get("execution_id")
-    if not _valid_execution_id(execution_id):
+    if not is_valid_execution_id(execution_id):
         raise ValueError("分类恢复日志无法匹配缺少或无效执行编号的报告。")
     journal_schema_version = header.get("schema_version")
     if (
