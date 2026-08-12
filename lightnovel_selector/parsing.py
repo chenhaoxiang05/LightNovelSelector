@@ -203,8 +203,13 @@ def strip_release_words(value: str) -> str:
     return collapse_spaces(text)
 
 
+def _supported_file_stem(value: str) -> str:
+    path = Path(value)
+    return path.stem if path.suffix.casefold() in SUPPORTED_EXTENSIONS else path.name
+
+
 def clean_file_stem(file_name: str) -> str:
-    stem = Path(file_name).stem
+    stem = _supported_file_stem(file_name)
     text = normalize_title_text(stem)
     text = text.replace("\u3000", " ").replace("_", " ")
     text = re.sub(r"\bNo\.(?=\d)", "No<<DOT>>", text, flags=re.IGNORECASE)
@@ -217,7 +222,7 @@ def clean_file_stem(file_name: str) -> str:
 
 @lru_cache(maxsize=2048)
 def extract_book_lookup_query(file_name: str) -> str:
-    stem = Path(file_name).stem
+    stem = _supported_file_stem(file_name)
     clean_stem = clean_file_stem(file_name)
     fallback = normalize_title_text(stem).strip(" -_.~")
     return clean_stem or collapse_spaces(fallback)
@@ -435,7 +440,7 @@ def title_has_volume(value: str, volume_number: int | None) -> bool:
 
 @lru_cache(maxsize=2048)
 def extract_series_guess(file_name: str) -> str:
-    stem = Path(file_name).stem
+    stem = _supported_file_stem(file_name)
     text = extract_book_lookup_query(file_name)
 
     volume_patterns = [
