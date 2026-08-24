@@ -114,7 +114,7 @@ public sealed partial class MainPage
             ? new GridLength(0)
             : new GridLength(1, GridUnitType.Star);
         ActivityMainGrid.RowDefinitions[0].Height = stackContent
-            ? GridLength.Auto
+            ? new GridLength(layout.HistoryViewportHeight)
             : new GridLength(1, GridUnitType.Star);
         ActivityMainGrid.RowDefinitions[1].Height = stackContent
             ? GridLength.Auto
@@ -127,14 +127,11 @@ public sealed partial class MainPage
         Grid.SetColumn(ActivityDetailsGrid, stackContent ? 0 : 1);
 
         ActivityDetailsGrid.RowDefinitions[0].Height = stackContent
-            ? GridLength.Auto
+            ? new GridLength(layout.ReportItemsViewportHeight)
             : new GridLength(3, GridUnitType.Star);
         ActivityDetailsGrid.RowDefinitions[1].Height = stackContent
-            ? GridLength.Auto
+            ? new GridLength(layout.LogsViewportHeight)
             : new GridLength(2, GridUnitType.Star);
-        ReportHistoryCard.MinHeight = layout.HistoryMinimumHeight;
-        ReportItemsCard.MinHeight = layout.ReportItemsMinimumHeight;
-        LogsCard.MinHeight = layout.LogsMinimumHeight;
         if (resetScroll)
         {
             ActivityView.ChangeView(

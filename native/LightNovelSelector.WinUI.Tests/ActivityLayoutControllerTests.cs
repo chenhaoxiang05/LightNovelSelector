@@ -29,16 +29,16 @@ public sealed class ActivityLayoutControllerTests
     }
 
     [TestMethod]
-    public void HalfScreenStacksReportRegions()
+    public void HalfScreenStacksReportRegionsWithBoundedListViewports()
     {
         var layout = ActivityLayoutController.Describe(853, 1019);
 
         Assert.AreEqual(ActivityLayoutMode.Stacked, layout.Mode);
         Assert.IsFalse(layout.StackSummaryActions);
         Assert.IsTrue(layout.UseScroll);
-        Assert.AreEqual(220, layout.HistoryMinimumHeight);
-        Assert.AreEqual(260, layout.ReportItemsMinimumHeight);
-        Assert.AreEqual(200, layout.LogsMinimumHeight);
+        Assert.AreEqual(220, layout.HistoryViewportHeight);
+        Assert.AreEqual(260, layout.ReportItemsViewportHeight);
+        Assert.AreEqual(200, layout.LogsViewportHeight);
     }
 
     [TestMethod]

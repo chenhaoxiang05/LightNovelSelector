@@ -12,9 +12,9 @@ public readonly record struct ActivityLayoutPresentation(
     bool UseScroll,
     double HistoryWidth,
     double MainMinimumHeight,
-    double HistoryMinimumHeight,
-    double ReportItemsMinimumHeight,
-    double LogsMinimumHeight
+    double HistoryViewportHeight,
+    double ReportItemsViewportHeight,
+    double LogsViewportHeight
 );
 
 public static class ActivityLayoutController
@@ -22,6 +22,11 @@ public static class ActivityLayoutController
     public const double StackedContentBreakpoint = 960;
     public const double StackedSummaryBreakpoint = 760;
     public const double ShortWindowBreakpoint = 720;
+    public const double StackedHistoryViewportHeight = 220;
+    public const double StackedReportItemsViewportHeight = 260;
+    public const double StackedLogsViewportHeight = 200;
+
+    private const double RegionSpacing = 12;
 
     public static ActivityLayoutPresentation Describe(double width, double height)
     {
@@ -33,16 +38,20 @@ public static class ActivityLayoutController
             : ActivityLayoutMode.Split;
         var stacked = mode == ActivityLayoutMode.Stacked;
         var useScroll = stacked || height < ShortWindowBreakpoint;
+        var stackedMainHeight = StackedHistoryViewportHeight
+            + StackedReportItemsViewportHeight
+            + StackedLogsViewportHeight
+            + (2 * RegionSpacing);
 
         return new ActivityLayoutPresentation(
             mode,
             StackSummaryActions: width < StackedSummaryBreakpoint,
             UseScroll: useScroll,
             HistoryWidth: stacked ? 0 : 270,
-            MainMinimumHeight: stacked ? 704 : useScroll ? 430 : 0,
-            HistoryMinimumHeight: stacked ? 220 : 0,
-            ReportItemsMinimumHeight: stacked ? 260 : 0,
-            LogsMinimumHeight: stacked ? 200 : 0
+            MainMinimumHeight: stacked ? stackedMainHeight : useScroll ? 430 : 0,
+            HistoryViewportHeight: stacked ? StackedHistoryViewportHeight : 0,
+            ReportItemsViewportHeight: stacked ? StackedReportItemsViewportHeight : 0,
+            LogsViewportHeight: stacked ? StackedLogsViewportHeight : 0
         );
     }
 
