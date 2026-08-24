@@ -3,8 +3,10 @@ using System.Runtime.CompilerServices;
 using LightNovelSelector.WinUI.Appearance;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.UI.ViewManagement;
 
 namespace LightNovelSelector.WinUI.Helpers;
@@ -12,6 +14,8 @@ namespace LightNovelSelector.WinUI.Helpers;
 public static class Motion
 {
     private static readonly ConditionalWeakTable<FrameworkElement, object> PressTargets = new();
+    private static readonly ConditionalWeakTable<ProgressBar, ProgressAnimationState> ProgressAnimations = new();
+    private const double ProgressEpsilon = 0.01;
 
     public static bool ReducedMotion
     {
@@ -117,6 +121,76 @@ public static class Motion
         AnimateScale(element, emphasized ? 1.04f : 1.0f, emphasized ? 100 : 120);
     }
 
+    public static void SetProgress(ProgressBar progressBar, double value, bool animate)
+    {
+        var target = double.IsFinite(value)
+            ? Math.Clamp(value, progressBar.Minimum, progressBar.Maximum)
+            : progressBar.Minimum;
+
+        if (ProgressAnimations.TryGetValue(progressBar, out var active))
+        {
+            if (Math.Abs(active.Target - target) < ProgressEpsilon)
+            {
+                return;
+            }
+
+            var interruptedValue = progressBar.Value;
+            active.Storyboard.Stop();
+            ProgressAnimations.Remove(progressBar);
+            progressBar.Value = interruptedValue;
+        }
+
+        var current = progressBar.Value;
+        if (Math.Abs(current - target) < ProgressEpsilon)
+        {
+            progressBar.Value = target;
+            return;
+        }
+        if (!animate || ReducedMotion)
+        {
+            progressBar.Value = target;
+            return;
+        }
+
+        var animation = new DoubleAnimation
+        {
+            From = current,
+            To = target,
+            Duration = new Duration(TimeSpan.FromMilliseconds(220)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            EnableDependentAnimation = true,
+        };
+        Storyboard.SetTarget(animation, progressBar);
+        Storyboard.SetTargetProperty(animation, nameof(ProgressBar.Value));
+
+        var storyboard = new Storyboard();
+        storyboard.Children.Add(animation);
+        storyboard.Completed += (_, _) =>
+        {
+            if (
+                !ProgressAnimations.TryGetValue(progressBar, out var completed)
+                || !ReferenceEquals(completed.Storyboard, storyboard)
+            )
+            {
+                return;
+            }
+
+            storyboard.Stop();
+            ProgressAnimations.Remove(progressBar);
+            progressBar.Value = target;
+        };
+        ProgressAnimations.Add(progressBar, new ProgressAnimationState(target, storyboard));
+        try
+        {
+            storyboard.Begin();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            ProgressAnimations.Remove(progressBar);
+            progressBar.Value = target;
+        }
+    }
+
     public static void ShowTransient(UIElement element, bool show)
     {
         var visual = ElementCompositionPreview.GetElementVisual(element);
@@ -176,4 +250,16 @@ public static class Motion
 
     private static CubicBezierEasingFunction EaseOut(Compositor compositor) =>
         compositor.CreateCubicBezierEasingFunction(new Vector2(0.22f, 1), new Vector2(0.36f, 1));
+
+    private sealed class ProgressAnimationState
+    {
+        public ProgressAnimationState(double target, Storyboard storyboard)
+        {
+            Target = target;
+            Storyboard = storyboard;
+        }
+
+        public double Target { get; }
+        public Storyboard Storyboard { get; }
+    }
 }
