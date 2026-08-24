@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from .cancellation import OperationCancelled
 from .classification import (
     build_classification_plan,
     classification_plan_group_indices,
@@ -65,7 +66,7 @@ from .report_history import (
     resolve_classification_report,
 )
 from .scan_cache import PersistentScanCache, ScanCacheStats
-from .scan_session import OperationCancelled, ScanSession
+from .scan_session import ScanSession
 from .storage import (
     app_settings_to_dict,
     book_identity_from_dict,

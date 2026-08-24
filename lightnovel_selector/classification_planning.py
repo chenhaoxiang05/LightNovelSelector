@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
+from .cancellation import OperationCancelled
 from .classification_discovery import find_novel_files, validate_classification_root
 from .constants import SERIES_NAME_MAX_CHARS
 from .corrections import RecognitionCorrectionMemory
@@ -359,6 +360,8 @@ def build_classification_plan(
                     candidates=candidates,
                 )
             )
+        except OperationCancelled:
+            raise
         except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
             identity = identity_from_filename(path.name)
             local_guess = identity.series_name
