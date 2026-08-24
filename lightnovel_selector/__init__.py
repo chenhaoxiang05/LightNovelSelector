@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 # ruff: noqa: F401
+from .cancellation import OperationCancelled
 from .classification import (
     build_classification_plan,
     classification_plan_group_indices,
@@ -148,7 +149,7 @@ from .scan_cache import (
     capture_open_file_snapshot,
     scan_cache_path,
 )
-from .scan_session import OperationCancelled, ScanSession, ScanSessionResult
+from .scan_session import ScanSession, ScanSessionResult
 from .storage import (
     PersistentMetadataCache,
     app_data_dir,

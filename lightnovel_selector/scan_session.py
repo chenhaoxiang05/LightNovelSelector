@@ -6,6 +6,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
+from .cancellation import OperationCancelled
 from .classification_planning import build_classification_plan
 from .corrections import RecognitionCorrectionMemory
 from .models import AppSettings, ClassificationPlan
@@ -15,10 +16,6 @@ from .scan_cache import PersistentScanCache, ScanCacheStats
 
 PlanBuilder = Callable[..., list[ClassificationPlan]]
 ScanCacheFactory = Callable[[], PersistentScanCache]
-
-
-class OperationCancelled(RuntimeError):
-    pass
 
 
 @dataclass(frozen=True)
