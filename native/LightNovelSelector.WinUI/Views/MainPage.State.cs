@@ -1,3 +1,4 @@
+using LightNovelSelector.WinUI.Helpers;
 using LightNovelSelector.WinUI.Models;
 using LightNovelSelector.WinUI.ViewModels;
 using Microsoft.UI.Xaml;
@@ -75,11 +76,11 @@ public sealed partial class MainPage
         var hasFolder = !string.IsNullOrWhiteSpace(_snapshot.Folder);
         var hasMovablePlans = Plans.Any(plan => plan.WillMove);
         OperationMessageText.Text = operation.Message;
-        OperationProgressBar.IsIndeterminate = running && operation.Total <= 0;
-        OperationProgressBar.Value = operation.Total > 0
-            ? Math.Clamp((double)operation.Done / operation.Total * 100, 0, 100)
-            : 0;
-        OperationProgressText.Text = operation.Total > 0 ? $"{operation.Done} / {operation.Total}" : string.Empty;
+        var progress = OperationProgressController.Describe(operation, _lastOperationId);
+        OperationProgressBar.IsIndeterminate = progress.IsIndeterminate;
+        OperationProgressBar.Foreground = ResourceBrush(progress.BrushKey);
+        Motion.SetProgress(OperationProgressBar, progress.Value, progress.ShouldAnimate);
+        OperationProgressText.Text = progress.Text;
 
         ChooseFolderButton.IsEnabled = coreReady && !running;
         ScanButton.IsEnabled = coreReady && hasFolder && !running;

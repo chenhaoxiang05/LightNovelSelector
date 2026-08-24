@@ -103,7 +103,9 @@ public sealed partial class MainPage
             throw new InvalidOperationException("外观冒烟测试无法访问主窗口。");
         }
 
+        _pollTimer.Stop();
         LoadAppearanceSmokeWorkspace();
+        await VerifyOperationProgressMotionAsync();
         var smokeDetail = new BookDetail
         {
             Index = 0,
@@ -213,6 +215,51 @@ public sealed partial class MainPage
         ShellNavigation.SelectedItem = WorkspaceNavigationItem;
         await Task.Delay(220);
     }
+
+    private async Task VerifyOperationProgressMotionAsync()
+    {
+        ShowSmokeOperation(2, "running", "正在验证进度反馈…", 1, 4);
+        ShowSmokeOperation(2, "running", "正在验证进度反馈…", 3, 4);
+        await Task.Delay(70);
+        ShowSmokeOperation(2, "success", "进度反馈验证完成。", 4, 4);
+        await Task.Delay(280);
+        if (Math.Abs(OperationProgressBar.Value - 100) > 0.5 || OperationProgressText.Text != "4 / 4")
+        {
+            throw new InvalidOperationException("确定进度动画未能稳定完成。");
+        }
+
+        var environmentVariable = AppearancePreferences.TestReducedMotionEnvironmentVariable;
+        var previousReducedMotion = Environment.GetEnvironmentVariable(environmentVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(environmentVariable, "true");
+            ShowSmokeOperation(3, "running", "正在验证减少动态效果…", 1, 4);
+            ShowSmokeOperation(3, "running", "正在验证减少动态效果…", 3, 4);
+            if (Math.Abs(OperationProgressBar.Value - 75) > 0.5)
+            {
+                throw new InvalidOperationException("减少动态效果未能立即更新确定进度。");
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(environmentVariable, previousReducedMotion);
+        }
+
+        ShowSmokeOperation(4, "success", "预览完成，共识别 3 个文件。", 3, 3);
+    }
+
+    private void ShowSmokeOperation(int id, string state, string message, int done, int total) =>
+        UpdateOperation(
+            new OperationState
+            {
+                Id = id,
+                Kind = "scan",
+                State = state,
+                Message = message,
+                Done = done,
+                Total = total,
+            }
+        );
 
     private void LoadAppearanceSmokeWorkspace()
     {

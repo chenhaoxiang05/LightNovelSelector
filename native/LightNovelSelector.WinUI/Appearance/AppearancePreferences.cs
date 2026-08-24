@@ -38,6 +38,7 @@ public static class AppearancePreferences
     private const int MaxFallbackFileBytes = 64 * 1024;
     private const string TestThemeEnvironmentVariable = "LN_SELECTOR_WINUI_TEST_THEME";
     private const string TestMaterialEnvironmentVariable = "LN_SELECTOR_WINUI_TEST_MATERIAL";
+    internal const string TestReducedMotionEnvironmentVariable = "LN_SELECTOR_WINUI_TEST_REDUCED_MOTION";
     private static readonly object FallbackFileLock = new();
     private static readonly JsonSerializerOptions FallbackJsonOptions = new()
     {
@@ -84,6 +85,16 @@ public static class AppearancePreferences
 
     public static bool LoadReducedMotion()
     {
+        if (
+            bool.TryParse(
+                Environment.GetEnvironmentVariable(TestReducedMotionEnvironmentVariable),
+                out var testValue
+            )
+        )
+        {
+            return testValue;
+        }
+
         try
         {
             if (ApplicationData.Current.LocalSettings.Values[ReducedMotionSettingKey] is bool value)
