@@ -162,6 +162,10 @@ class ProjectMetadataTests(unittest.TestCase):
 
         dependabot_config = (PROJECT_ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
         self.assertIn('          - "github/codeql-action/*"', dependabot_config)
+        for dependency in ("mypy", "pyinstaller", "ruff"):
+            self.assertIn(f'          - "{dependency}"', dependabot_config)
+        self.assertIn('          - "minor"', dependabot_config)
+        self.assertIn('          - "patch"', dependabot_config)
 
         ci_workflow = (PROJECT_ROOT / ".github" / "workflows" / "windows-ci.yml").read_text(encoding="utf-8")
         self.assertIn("runs-on: windows-2022", ci_workflow)
