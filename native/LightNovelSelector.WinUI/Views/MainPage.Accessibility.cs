@@ -51,7 +51,7 @@ public sealed partial class MainPage
         }
 
         args.Handled = true;
-        await SelectNavigationItemFromKeyboardAsync(selection.Item, selection.Focus);
+        await SelectNavigationItemAsync(selection.Item, selection.Focus);
     }
 
     private async void OnSearchShortcutInvoked(
@@ -60,7 +60,7 @@ public sealed partial class MainPage
     )
     {
         args.Handled = true;
-        await SelectNavigationItemFromKeyboardAsync(
+        await SelectNavigationItemAsync(
             WorkspaceNavigationItem,
             ShortcutFocusTarget.Search
         );
@@ -99,7 +99,7 @@ public sealed partial class MainPage
         );
     }
 
-    private async Task SelectNavigationItemFromKeyboardAsync(
+    private async Task SelectNavigationItemAsync(
         NavigationViewItem navigationItem,
         ShortcutFocusTarget focusTarget
     )

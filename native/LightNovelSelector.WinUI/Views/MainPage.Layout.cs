@@ -7,12 +7,14 @@ namespace LightNovelSelector.WinUI;
 public sealed partial class MainPage
 {
     private WorkspaceLayoutPresentation? _workspaceLayout;
+    private ActivityLayoutPresentation? _activityLayout;
 
     private void OnRootLayoutSizeChanged(object sender, SizeChangedEventArgs e)
     {
-        ApplyWorkspaceLayout(
-            WorkspaceLayoutController.Describe(e.NewSize.Width, e.NewSize.Height)
-        );
+        var width = e.NewSize.Width;
+        var height = e.NewSize.Height;
+        ApplyWorkspaceLayout(WorkspaceLayoutController.Describe(width, height));
+        ApplyActivityLayout(ActivityLayoutController.Describe(width, height));
     }
 
     private void ApplyWorkspaceLayout(WorkspaceLayoutPresentation layout)
@@ -72,6 +74,73 @@ public sealed partial class MainPage
         ApplyFilterLayout(layout.StackFilters);
         ApplyOperationLayout(layout.StackOperationActions);
         ApplyPaneFooterLayout(ShellNavigation.IsPaneOpen, layout.UseCompactWorkflow);
+    }
+
+    private void ApplyActivityLayout(ActivityLayoutPresentation layout)
+    {
+        if (_activityLayout == layout)
+        {
+            return;
+        }
+
+        var resetScroll = _activityLayout is { UseScroll: true } previous
+            && (!layout.UseScroll || previous.Mode != layout.Mode);
+        _activityLayout = layout;
+        var stackContent = layout.Mode == ActivityLayoutMode.Stacked;
+
+        ActivityView.VerticalScrollMode = layout.UseScroll
+            ? ScrollMode.Enabled
+            : ScrollMode.Disabled;
+        ActivityView.VerticalScrollBarVisibility = layout.UseScroll
+            ? ScrollBarVisibility.Auto
+            : ScrollBarVisibility.Hidden;
+        ActivityContent.RowDefinitions[2].Height = layout.UseScroll
+            ? GridLength.Auto
+            : new GridLength(1, GridUnitType.Star);
+
+        Grid.SetRow(ReportActions, layout.StackSummaryActions ? 1 : 0);
+        Grid.SetColumn(ReportActions, layout.StackSummaryActions ? 0 : 1);
+        Grid.SetColumnSpan(ReportActions, layout.StackSummaryActions ? 2 : 1);
+        ReportActions.HorizontalAlignment = layout.StackSummaryActions
+            ? HorizontalAlignment.Left
+            : HorizontalAlignment.Right;
+
+        ActivityMainGrid.ColumnSpacing = stackContent ? 0 : 12;
+        ActivityMainGrid.RowSpacing = stackContent ? 12 : 0;
+        ActivityMainGrid.ColumnDefinitions[0].Width = stackContent
+            ? new GridLength(1, GridUnitType.Star)
+            : new GridLength(layout.HistoryWidth);
+        ActivityMainGrid.ColumnDefinitions[1].Width = stackContent
+            ? new GridLength(0)
+            : new GridLength(1, GridUnitType.Star);
+        ActivityMainGrid.RowDefinitions[0].Height = stackContent
+            ? new GridLength(layout.HistoryViewportHeight)
+            : new GridLength(1, GridUnitType.Star);
+        ActivityMainGrid.RowDefinitions[1].Height = stackContent
+            ? GridLength.Auto
+            : new GridLength(0);
+        ActivityMainGrid.MinHeight = layout.MainMinimumHeight;
+
+        Grid.SetRow(ReportHistoryCard, 0);
+        Grid.SetColumn(ReportHistoryCard, 0);
+        Grid.SetRow(ActivityDetailsGrid, stackContent ? 1 : 0);
+        Grid.SetColumn(ActivityDetailsGrid, stackContent ? 0 : 1);
+
+        ActivityDetailsGrid.RowDefinitions[0].Height = stackContent
+            ? new GridLength(layout.ReportItemsViewportHeight)
+            : new GridLength(3, GridUnitType.Star);
+        ActivityDetailsGrid.RowDefinitions[1].Height = stackContent
+            ? new GridLength(layout.LogsViewportHeight)
+            : new GridLength(2, GridUnitType.Star);
+        if (resetScroll)
+        {
+            ActivityView.ChangeView(
+                horizontalOffset: null,
+                verticalOffset: 0,
+                zoomFactor: null,
+                disableAnimation: true
+            );
+        }
     }
 
     private void ApplyStatsLayout(bool useTwoColumns)

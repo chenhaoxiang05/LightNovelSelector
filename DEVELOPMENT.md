@@ -66,7 +66,7 @@ py -3 -m venv .venv-build
 - `Components/FileDetailPane.*`：详情加载、候选比较、分类依据和手动修正；宽屏与紧凑侧栏共用同一实例。
 - `Services/PythonSidecarClient.cs`：进程生命周期、请求关联、超时与安全重连。
 - `Security/ReportPathSafety.cs`：限制 WinUI 可打开或导出的本地报告位置。
-- `ViewModels/`：连接状态、筛选等可独立测试的纯逻辑。
+- `ViewModels/`：连接状态、筛选、工作区与报告页断点等可独立测试的纯逻辑。
 - `Appearance/` 与 `Styles/`：主题、Acrylic/Mica 回退和语义设计令牌。
 - `Helpers/Motion.cs`：按压、页面 reveal、Toast 与减少动态效果。
 
@@ -136,7 +136,7 @@ C# 测试会通过 `PythonSidecarClientTests` 启动真实 Sidecar 并强制结�
 - 默认跟随 Windows 深浅色，首次材质为 Acrylic；透明效果关闭或高对比度时回退实色。
 - 窗口只创建一层 Desktop Acrylic，卡片使用半透明实色，避免重复模糊带来的 GPU 开销。
 - 首次引导只在版本未读时出现；结果详情在窄窗口进入同一 `SplitView` 侧栏，避免维护两套交互和视觉状态。
-- 低高度紧凑窗口允许工作区纵向滚动，底部确认操作必须始终可到达；恢复宽窗口时不保留意外滚动位置。
+- 低高度紧凑窗口允许工作区纵向滚动，底部确认操作必须始终可到达；报告页在 960 有效像素以下改为历史、条目、日志纵向顺序，恢复宽窗口时回到并列布局。
 - 高频列表筛选和键盘操作不增加位移动画；大结果集采用短防抖和单次数据源替换，避免逐行刷新阻塞界面。
 - 进入、Toast、页面切换和按压只动画 `Opacity`、`Translation`、`Scale`，单次不超过 220ms。
 - 按下 100ms、释放 160ms；Toast 进入 180/220ms、退出 140ms。

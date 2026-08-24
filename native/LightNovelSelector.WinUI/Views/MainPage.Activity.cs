@@ -368,6 +368,14 @@ public sealed partial class MainPage
         }
     }
 
+    private async void OnReturnToWorkspaceClick(object sender, RoutedEventArgs e)
+    {
+        await SelectNavigationItemAsync(
+            WorkspaceNavigationItem,
+            ShortcutFocusTarget.WorkspacePrimary
+        );
+    }
+
     private void OnClearVisibleLogsClick(object sender, RoutedEventArgs e)
     {
         Logs.Clear();
