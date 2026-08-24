@@ -45,5 +45,48 @@ class ClassificationPlanningCancellationTests(unittest.TestCase):
         self.assertIs(OperationCancelled, SessionOperationCancelled)
 
 
+class ClassificationPlanningProgressTests(unittest.TestCase):
+    def test_mixed_batch_preserves_order_statuses_and_progress_contract(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "Alpha.Vol.01.txt"
+            duplicate = root / "Beta.Vol.01.txt"
+            broken = root / "Gamma.Vol.01.txt"
+            first.write_text("same content", encoding="utf-8")
+            duplicate.write_text("same content", encoding="utf-8")
+            broken.write_text("different content", encoding="utf-8")
+            messages: list[str] = []
+            counts: list[tuple[int, int]] = []
+
+            def read_hint(path: Path) -> None:
+                if path == broken:
+                    raise RuntimeError("解析器暂时不可用")
+
+            with patch(
+                "lightnovel_selector.classification_planning.read_identity_hint",
+                side_effect=read_hint,
+            ):
+                plans = build_classification_plan(
+                    root,
+                    use_network=False,
+                    progress=messages.append,
+                    progress_count=lambda current, total: counts.append((current, total)),
+                )
+
+        self.assertEqual([plan.source_path for plan in plans], [first, duplicate, broken])
+        self.assertEqual([plan.status for plan in plans], ["ready", "duplicate", "error"])
+        self.assertEqual(
+            messages,
+            [
+                "正在查找支持的小说文件…",
+                "正在检查 3 个文件的重复内容…",
+                "[1/3] 识别：Alpha.Vol.01.txt",
+                "[2/3] 识别：Beta.Vol.01.txt",
+                "[3/3] 识别：Gamma.Vol.01.txt",
+            ],
+        )
+        self.assertEqual(counts, [(1, 3), (2, 3), (3, 3)])
+
+
 if __name__ == "__main__":
     unittest.main()
