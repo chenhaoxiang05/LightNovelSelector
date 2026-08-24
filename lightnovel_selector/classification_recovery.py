@@ -12,10 +12,16 @@ from .classification_safety import (
     _undo_item_path,
 )
 from .constants import REPORT_JOURNAL_MAX_BYTES, REPORT_JOURNAL_SCHEMA_VERSION, SCAN_MAX_FILES
+from .report_execution_lease import (
+    ReportExecutionLease,
+    report_execution_lease_is_active,
+    try_acquire_report_execution_lease,
+)
 from .report_ids import is_valid_execution_id
 from .storage import append_json_line_durable, write_json_atomic, write_json_lines_exclusive
 
 _ACTIVE_REPORT_PATHS: set[Path] = set()
+_ACTIVE_REPORT_LEASES: dict[Path, ReportExecutionLease] = {}
 _ACTIVE_REPORT_PATHS_LOCK = threading.Lock()
 
 
@@ -28,17 +34,26 @@ def _claim_report_execution(report_path: Path) -> None:
     with _ACTIVE_REPORT_PATHS_LOCK:
         if report_path in _ACTIVE_REPORT_PATHS:
             raise ValueError("同一分类报告已有正在执行的分类操作，请等待完成后再重试。")
+        lease = try_acquire_report_execution_lease(report_path)
+        if lease is None:
+            raise ValueError("另一个程序正在整理同一书库，请等待完成后再重试。")
         _ACTIVE_REPORT_PATHS.add(report_path)
+        _ACTIVE_REPORT_LEASES[report_path] = lease
 
 
 def _release_report_execution(report_path: Path) -> None:
     with _ACTIVE_REPORT_PATHS_LOCK:
+        lease = _ACTIVE_REPORT_LEASES.pop(report_path, None)
         _ACTIVE_REPORT_PATHS.discard(report_path)
+        if lease is not None:
+            lease.release()
 
 
 def _report_execution_is_active(report_path: Path) -> bool:
     with _ACTIVE_REPORT_PATHS_LOCK:
-        return report_path in _ACTIVE_REPORT_PATHS
+        if report_path in _ACTIVE_REPORT_PATHS:
+            return True
+        return report_execution_lease_is_active(report_path)
 
 
 def _start_report_journal(report_path: Path, execution_id: str) -> Path:
