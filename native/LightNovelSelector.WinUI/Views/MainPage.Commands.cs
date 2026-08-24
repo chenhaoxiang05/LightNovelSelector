@@ -187,7 +187,7 @@ public sealed partial class MainPage
             CloseButtonText = "返回检查",
             DefaultButton = ContentDialogButton.Primary,
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        if (await ShowManagedDialogAsync(dialog) != ContentDialogResult.Primary)
         {
             return;
         }
@@ -239,7 +239,7 @@ public sealed partial class MainPage
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Close,
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        if (await ShowManagedDialogAsync(dialog) != ContentDialogResult.Primary)
         {
             return;
         }
