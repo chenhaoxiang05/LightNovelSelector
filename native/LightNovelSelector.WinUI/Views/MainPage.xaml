@@ -674,13 +674,19 @@
                         </Grid>
                     </ScrollViewer>
 
-                    <Grid
+                    <ScrollViewer
                         x:Name="ActivityView"
                         Grid.Row="1"
                         AutomationProperties.LandmarkType="Main"
                         AutomationProperties.Name="活动与报告主区域"
-                        RowSpacing="12"
+                        HorizontalContentAlignment="Stretch"
+                        HorizontalScrollBarVisibility="Disabled"
+                        HorizontalScrollMode="Disabled"
+                        VerticalContentAlignment="Stretch"
+                        VerticalScrollBarVisibility="Hidden"
+                        VerticalScrollMode="Disabled"
                         Visibility="Collapsed">
+                        <Grid x:Name="ActivityContent" RowSpacing="12">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -722,12 +728,16 @@
                         </Grid>
 
                         <Border x:Name="ReportCard" Grid.Row="1" Style="{StaticResource ElevatedCardBorderStyle}">
-                            <Grid ColumnSpacing="18">
+                            <Grid x:Name="ReportSummaryGrid" ColumnSpacing="18" RowSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Spacing="8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <StackPanel x:Name="ReportSummaryContent" Spacing="8">
                                     <TextBlock Style="{StaticResource SectionTitleTextStyle}" Text="所选分类批次" />
                                     <TextBlock
                                         x:Name="ReportStatusText"
@@ -743,7 +753,13 @@
                                         <TextBlock x:Name="ReportErrorText" FontSize="12" Text="错误 0" />
                                     </StackPanel>
                                 </StackPanel>
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                                <StackPanel
+                                    x:Name="ReportActions"
+                                    Grid.Column="1"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Orientation="Horizontal"
+                                    Spacing="8">
                                     <Button
                                         x:Name="OpenReportButton"
                                         AutomationProperties.Name="打开所选分类报告"
@@ -773,12 +789,16 @@
                             </Grid>
                         </Border>
 
-                        <Grid Grid.Row="2" ColumnSpacing="12">
+                        <Grid x:Name="ActivityMainGrid" Grid.Row="2" ColumnSpacing="12" RowSpacing="12">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="270" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Border x:Name="ReportHistoryCard" Style="{StaticResource CardBorderStyle}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="0" />
+                            </Grid.RowDefinitions>
+                            <Border x:Name="ReportHistoryCard" Style="{StaticResource LowCardBorderStyle}">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -858,20 +878,41 @@
                                             x:Name="ReportHistoryEmptyState"
                                             HorizontalAlignment="Center"
                                             VerticalAlignment="Center"
-                                            Spacing="7">
-                                            <FontIcon FontSize="22" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xE823;" />
-                                            <TextBlock Style="{StaticResource MutedTextStyle}" Text="暂无分类历史" />
+                                            MaxWidth="220"
+                                            Spacing="8">
+                                            <Border
+                                                Width="40"
+                                                Height="40"
+                                                HorizontalAlignment="Center"
+                                                Background="{ThemeResource AccentSubtleBrush}"
+                                                CornerRadius="8">
+                                                <FontIcon FontSize="18" Foreground="{ThemeResource AppAccentBrush}" Glyph="&#xE823;" />
+                                            </Border>
+                                            <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="暂无分类历史" />
+                                            <TextBlock
+                                                HorizontalAlignment="Center"
+                                                Style="{StaticResource MutedTextStyle}"
+                                                Text="完成一次整理后，报告会保存在这里。"
+                                                TextAlignment="Center"
+                                                TextWrapping="Wrap" />
+                                            <Button
+                                                HorizontalAlignment="Center"
+                                                AutomationProperties.Name="返回整理工作台"
+                                                Click="OnReturnToWorkspaceClick"
+                                                Style="{StaticResource ToolbarButtonStyle}">
+                                                <TextBlock Text="返回工作台" />
+                                            </Button>
                                         </StackPanel>
                                     </Grid>
                                 </Grid>
                             </Border>
 
-                            <Grid Grid.Column="1" RowSpacing="12">
+                            <Grid x:Name="ActivityDetailsGrid" Grid.Column="1" RowSpacing="12">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="3*" />
                                     <RowDefinition Height="2*" />
                                 </Grid.RowDefinitions>
-                                <Border x:Name="ReportItemsCard" Style="{StaticResource CardBorderStyle}">
+                                <Border x:Name="ReportItemsCard" Style="{StaticResource LowCardBorderStyle}">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto" />
@@ -930,7 +971,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border x:Name="LogsCard" Grid.Row="1" Style="{StaticResource CardBorderStyle}">
+                                <Border x:Name="LogsCard" Grid.Row="1" Style="{StaticResource LowCardBorderStyle}">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto" />
@@ -987,7 +1028,8 @@
                                 </Border>
                             </Grid>
                         </Grid>
-                    </Grid>
+                        </Grid>
+                    </ScrollViewer>
 
                     <Grid
                         x:Name="SettingsView"
