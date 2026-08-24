@@ -368,7 +368,7 @@ class ApplicationService:
             self.operation["message"] = message
             self.operation["can_cancel"] = False
             self.operation["error"] = error
-            if self.operation["total"]:
+            if state == "success" and self.operation["total"]:
                 self.operation["done"] = self.operation["total"]
             self._cancel_event = None
             log_kind = "success" if state == "success" else "warning" if state == "cancelled" else "error"
