@@ -40,7 +40,7 @@ py -3 -m venv .venv-build
 
 - `classification.py`：保持历史公开导入路径的轻量兼容门面。
 - `classification_discovery.py` / `classification_planning.py`：文件发现、分类计划生成与人工修正。
-- `classification_reporting.py` / `classification_recovery.py`：报告序列化、有界读取与崩溃恢复日志。
+- `classification_reporting.py` / `classification_recovery.py` / `report_execution_lease.py`：报告序列化、有界读取、跨进程执行租约与崩溃恢复日志。
 - `classification_execution.py` / `classification_undo.py`：文件移动事务与撤销执行。
 - `classification_safety.py`：执行、报告和撤销共用的路径与文件状态校验。
 - `corrections.py`：人工修正形成的有界本地系列别名与原子持久化。
