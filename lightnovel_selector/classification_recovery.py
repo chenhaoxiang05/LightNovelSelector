@@ -24,12 +24,16 @@ def _report_journal_path(report_path: Path) -> Path:
     return resolved.with_name(f"{resolved.stem}.recovery.jsonl")
 
 
-def _set_report_execution_active(report_path: Path, active: bool) -> None:
+def _claim_report_execution(report_path: Path) -> None:
     with _ACTIVE_REPORT_PATHS_LOCK:
-        if active:
-            _ACTIVE_REPORT_PATHS.add(report_path)
-        else:
-            _ACTIVE_REPORT_PATHS.discard(report_path)
+        if report_path in _ACTIVE_REPORT_PATHS:
+            raise ValueError("同一分类报告已有正在执行的分类操作，请等待完成后再重试。")
+        _ACTIVE_REPORT_PATHS.add(report_path)
+
+
+def _release_report_execution(report_path: Path) -> None:
+    with _ACTIVE_REPORT_PATHS_LOCK:
+        _ACTIVE_REPORT_PATHS.discard(report_path)
 
 
 def _report_execution_is_active(report_path: Path) -> bool:
