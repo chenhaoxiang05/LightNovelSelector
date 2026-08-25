@@ -1,4 +1,5 @@
 using LightNovelSelector.WinUI.Helpers;
+using LightNovelSelector.WinUI.ViewModels;
 using Microsoft.UI.Xaml;
 
 namespace LightNovelSelector.WinUI;
@@ -9,16 +10,24 @@ public sealed partial class MainPage
 
     private void ShowToast(string message, ToastKind kind, int durationMilliseconds = 3800)
     {
+        var revision = _toastLifecycle.Begin();
         _toastCancellation?.Cancel();
         _toastCancellation?.Dispose();
         _toastCancellation = new CancellationTokenSource();
-        _ = ShowToastAsync(message, kind, durationMilliseconds, _toastCancellation.Token);
+        _ = ShowToastAsync(
+            message,
+            kind,
+            durationMilliseconds,
+            revision,
+            _toastCancellation.Token
+        );
     }
 
     private async Task ShowToastAsync(
         string message,
         ToastKind kind,
         int durationMilliseconds,
+        long revision,
         CancellationToken cancellationToken
     )
     {
@@ -37,34 +46,50 @@ public sealed partial class MainPage
         try
         {
             await Task.Delay(durationMilliseconds, cancellationToken);
-            await HideToastAsync(cancellationToken);
+            await HideToastAsync(revision, cancellationToken);
         }
         catch (OperationCanceledException)
         {
         }
     }
 
-    private async Task HideToastAsync(CancellationToken cancellationToken = default)
+    private async Task HideToastAsync(
+        long revision,
+        CancellationToken cancellationToken = default
+    )
     {
-        Motion.ShowTransient(ToastHost, show: false);
-        if (!Motion.ReducedMotion)
+        if (!_toastLifecycle.IsCurrent(revision))
         {
-            await Task.Delay(150, cancellationToken);
+            return;
+        }
+
+        Motion.ShowTransient(ToastHost, show: false);
+        await Task.Delay(
+            TransientNotificationController.HideSettleDelayMilliseconds(Motion.ReducedMotion),
+            cancellationToken
+        );
+        if (!_toastLifecycle.IsCurrent(revision) || cancellationToken.IsCancellationRequested)
+        {
+            return;
         }
         ToastHost.Visibility = Visibility.Collapsed;
     }
 
-    private async void OnDismissToastClick(object sender, RoutedEventArgs e)
+    private async Task DismissToastAsync()
     {
+        var revision = _toastLifecycle.CurrentRevision;
         _toastCancellation?.Cancel();
         try
         {
-            await HideToastAsync();
+            await HideToastAsync(revision);
         }
         catch (OperationCanceledException)
         {
         }
     }
+
+    private async void OnDismissToastClick(object sender, RoutedEventArgs e) =>
+        await DismissToastAsync();
 
     private enum ToastKind
     {

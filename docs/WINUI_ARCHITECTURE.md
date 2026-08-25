@@ -263,8 +263,9 @@ WinUI 只把列表返回的执行编号传给 `get_report` 和 `start_undo`，�
 - 动画属性限制为 `Opacity`、`Scale` 和 `Translation`。
 - 强 ease-out 曲线为 `(0.22, 1, 0.36, 1)`。
 - 进入和退出方向一致，退出时长更短。
+- Toast 使用单调修订号标识当前内容；自动超时、手动关闭和页面卸载产生的旧任务只能结束自己的通知，不能折叠后续替换内容。
 - `UISettings.AnimationsEnabled` 关闭时自动降级。
-- 应用内 `ReducedMotion` 取消缩放和位移，只保留短透明度或控件颜色反馈。
+- 应用内 `ReducedMotion` 取消缩放和位移，只保留 90ms Toast 透明度或控件颜色反馈。
 
 ## 自适应布局边界
 

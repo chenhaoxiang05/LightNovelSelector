@@ -141,6 +141,7 @@ C# 测试会通过 `PythonSidecarClientTests` 启动真实 Sidecar 并强制结�
 - 进入、Toast、页面切换和按压只动画 `Opacity`、`Translation`、`Scale`，单次不超过 220ms。
 - 按下 100ms、释放 160ms；Toast 进入 180/220ms、退出 140ms。
 - 动画从当前 Composition 状态继续，快速连续通知不会跳回起点。
+- Toast 隐藏前必须核对通知修订号；旧淡出任务不能折叠后来替换的新通知，页面卸载时必须使待完成修订失效。
 - “减少动态效果”或系统关闭动画时移除位移和缩放，只保留短透明度反馈。
 - 图标按钮必须同时提供 Tooltip 和 `AutomationProperties.Name`。
 - `ContentDialog` 必须通过 `MainPage.Dialogs` 的协调入口显示，同一窗口任何时刻只允许一个确认对话框。
