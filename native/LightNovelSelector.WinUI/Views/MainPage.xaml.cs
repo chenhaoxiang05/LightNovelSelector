@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using LightNovelSelector.WinUI.Helpers;
 using LightNovelSelector.WinUI.Models;
 using LightNovelSelector.WinUI.Services;
+using LightNovelSelector.WinUI.ViewModels;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -16,6 +17,7 @@ public sealed partial class MainPage : Page
     private readonly DispatcherTimer _pollTimer = new();
     private readonly DispatcherTimer _filterTimer = new();
     private readonly SemaphoreSlim _detailRequestLock = new(1, 1);
+    private readonly TransientNotificationController _toastLifecycle = new();
     private readonly HashSet<int> _seenLogIds = [];
     private CancellationTokenSource? _detailCancellation;
     private AppSnapshot _snapshot = new();
@@ -150,6 +152,7 @@ public sealed partial class MainPage : Page
         _detailCancellation?.Cancel();
         _detailCancellation?.Dispose();
         _detailCancellation = null;
+        _toastLifecycle.Invalidate();
         _toastCancellation?.Cancel();
         _toastCancellation?.Dispose();
         _toastCancellation = null;

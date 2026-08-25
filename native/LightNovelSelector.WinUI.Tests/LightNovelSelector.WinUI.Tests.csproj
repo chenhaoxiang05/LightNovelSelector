@@ -26,6 +26,7 @@
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\MetadataProviderDisplay.cs" Link="Source\MetadataProviderDisplay.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\OperationProgressController.cs" Link="Source\OperationProgressController.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\PlanFilterController.cs" Link="Source\PlanFilterController.cs" />
+    <Compile Include="..\LightNovelSelector.WinUI\ViewModels\TransientNotificationController.cs" Link="Source\TransientNotificationController.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\WindowLaunchSizeController.cs" Link="Source\WindowLaunchSizeController.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\WindowCloseGuardController.cs" Link="Source\WindowCloseGuardController.cs" />
     <Compile Include="..\LightNovelSelector.WinUI\ViewModels\WorkspaceLayoutController.cs" Link="Source\WorkspaceLayoutController.cs" />

@@ -106,6 +106,7 @@ public sealed partial class MainPage
         _pollTimer.Stop();
         LoadAppearanceSmokeWorkspace();
         await VerifyOperationProgressMotionAsync();
+        await VerifyToastReplacementAsync();
         var smokeDetail = new BookDetail
         {
             Index = 0,
@@ -246,6 +247,53 @@ public sealed partial class MainPage
         }
 
         ShowSmokeOperation(4, "success", "预览完成，共识别 3 个文件。", 3, 3);
+    }
+
+    private async Task VerifyToastReplacementAsync()
+    {
+        const string replacementMessage = "新的操作反馈保持可见。";
+        var environmentVariable = AppearancePreferences.TestReducedMotionEnvironmentVariable;
+        var previousReducedMotion = Environment.GetEnvironmentVariable(environmentVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(environmentVariable, "false");
+            ShowToast("即将被替换的操作反馈。", ToastKind.Info, 10_000);
+            await Task.Delay(20);
+            var staleDismissal = DismissToastAsync();
+            await Task.Delay(30);
+            ShowToast(replacementMessage, ToastKind.Success, 10_000);
+            await staleDismissal;
+            await Task.Delay(20);
+            if (
+                ToastHost.Visibility != Visibility.Visible
+                || ToastMessageText.Text != replacementMessage
+            )
+            {
+                throw new InvalidOperationException("旧 Toast 的退出任务隐藏了后续操作反馈。");
+            }
+
+            Environment.SetEnvironmentVariable(environmentVariable, "true");
+            var reducedMotionDismissal = DismissToastAsync();
+            if (
+                await Task.WhenAny(reducedMotionDismissal, Task.Delay(25))
+                == reducedMotionDismissal
+            )
+            {
+                throw new InvalidOperationException("减少动态效果时未保留短暂的淡出反馈。");
+            }
+            await reducedMotionDismissal;
+            if (ToastHost.Visibility != Visibility.Collapsed)
+            {
+                throw new InvalidOperationException("Toast 退出动画结束后仍保持可见。");
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(environmentVariable, previousReducedMotion);
+            _toastLifecycle.Invalidate();
+            _toastCancellation?.Cancel();
+            ToastHost.Visibility = Visibility.Collapsed;
+        }
     }
 
     private void ShowSmokeOperation(int id, string state, string message, int done, int total) =>
