@@ -107,7 +107,7 @@ public sealed partial class MainPage
         }
     }
 
-    private async Task SaveCurrentSettingsAsync(bool showResult)
+    private async Task<SaveSettingsResult> SaveCurrentSettingsAsync(bool showResult)
     {
         var invalidProvider = Providers.FirstOrDefault(provider =>
             !double.IsFinite(provider.Priority)
@@ -152,7 +152,7 @@ public sealed partial class MainPage
         SetSettingsDirty(!result.Saved, result.Warning);
         if (!showResult)
         {
-            return;
+            return result;
         }
         if (result.Saved)
         {
@@ -162,6 +162,7 @@ public sealed partial class MainPage
         {
             ShowToast($"设置已用于本次会话，但未能写入磁盘：{result.Warning}", ToastKind.Warning, 6000);
         }
+        return result;
     }
 
     private void OnResetSettingsClick(object sender, RoutedEventArgs e)

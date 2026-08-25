@@ -266,7 +266,7 @@ public sealed partial class MainPage
                 CloseButtonText = "取消",
                 DefaultButton = ContentDialogButton.Close,
             };
-            if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+            if (await ShowManagedDialogAsync(confirmation) != ContentDialogResult.Primary)
             {
                 return;
             }

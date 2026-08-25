@@ -11,6 +11,7 @@ namespace LightNovelSelector.WinUI;
 public sealed partial class MainWindow : Window
 {
     private readonly WindowAppearanceController _appearance;
+    private bool _confirmedClose;
 
     public event EventHandler? ActualThemeChanged;
 
@@ -61,6 +62,12 @@ public sealed partial class MainWindow : Window
         }
         AppWindow.Show();
         Activate();
+    }
+
+    public void CloseAfterConfirmation()
+    {
+        _confirmedClose = true;
+        Close();
     }
 
     private void OnClosed(object sender, WindowEventArgs args)
@@ -120,11 +127,35 @@ public sealed partial class MainWindow : Window
 
     private void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
-        if (RootFrame.Content is not MainPage { IsCriticalOperation: true } page)
+        if (RootFrame.Content is not MainPage page)
         {
             return;
         }
-        args.Cancel = true;
-        page.NotifyCriticalClose();
+
+        var action = WindowCloseGuardController.Describe(
+            _confirmedClose,
+            page.IsCriticalOperation,
+            page.IsDialogOpen,
+            page.HasUnsavedSettings
+        );
+        switch (action)
+        {
+            case WindowCloseAction.Allow:
+                return;
+            case WindowCloseAction.BlockCriticalOperation:
+                args.Cancel = true;
+                page.NotifyCriticalClose();
+                return;
+            case WindowCloseAction.BlockActiveDialog:
+                args.Cancel = true;
+                page.NotifyActiveDialogClose();
+                return;
+            case WindowCloseAction.ConfirmUnsavedSettings:
+                args.Cancel = true;
+                page.RequestUnsavedSettingsClose();
+                return;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(action), action, null);
+        }
     }
 }

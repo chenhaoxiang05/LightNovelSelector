@@ -143,6 +143,9 @@ C# 测试会通过 `PythonSidecarClientTests` 启动真实 Sidecar 并强制结�
 - 动画从当前 Composition 状态继续，快速连续通知不会跳回起点。
 - “减少动态效果”或系统关闭动画时移除位移和缩放，只保留短透明度反馈。
 - 图标按钮必须同时提供 Tooltip 和 `AutomationProperties.Name`。
+- `ContentDialog` 必须通过 `MainPage.Dialogs` 的协调入口显示，同一窗口任何时刻只允许一个确认对话框。
+- 窗口关闭按“已确认退出、文件移动或撤销、已有对话框、未保存设置、普通关闭”的顺序判定；新增关闭路径时必须补充 `WindowCloseGuardController` 测试。
+- 未保存设置的退出确认必须保留“保存并退出、放弃更改、继续编辑”三种结果；持久化失败时留在设置页，不得把失败当作已保存。
 
 ## 构建单 EXE 安装器
 
