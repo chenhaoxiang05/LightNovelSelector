@@ -187,6 +187,32 @@ def resolve_zip_member(base_path: str, href: str) -> str:
     return joined.lstrip("/")
 
 
+def _read_epub_opf(epub: zipfile.ZipFile) -> tuple[ElementTree.Element, str] | None:
+    container_data = read_zip_member(
+        epub,
+        "META-INF/container.xml",
+        max_bytes=ARCHIVE_XML_MAX_BYTES,
+    )
+    if not container_data:
+        return None
+    container = ElementTree.fromstring(container_data)
+    rootfile_path = next(
+        (
+            element.attrib.get("full-path")
+            for element in container.iter()
+            if xml_local_name(element.tag) == "rootfile" and element.attrib.get("full-path")
+        ),
+        None,
+    )
+    if not rootfile_path:
+        return None
+    opf_data = read_zip_member(epub, rootfile_path, max_bytes=ARCHIVE_XML_MAX_BYTES)
+    if not opf_data:
+        return None
+    opf_root = ElementTree.fromstring(opf_data)
+    return opf_root, rootfile_path
+
+
 def read_zip_member(
     zip_file: zipfile.ZipFile,
     member_name: str,
@@ -229,27 +255,11 @@ def pick_archive_cover_name(names: Iterable[str]) -> str | None:
 def read_epub_cover_bytes(path: Path) -> bytes | None:
     try:
         with zipfile.ZipFile(path) as epub:
-            container_xml = read_zip_member(
-                epub,
-                "META-INF/container.xml",
-                max_bytes=ARCHIVE_XML_MAX_BYTES,
-            )
-            if not container_xml:
+            result = _read_epub_opf(epub)
+            if not result:
                 return None
-            container = ElementTree.fromstring(container_xml)
-            rootfile_path = None
-            for element in container.iter():
-                if xml_local_name(element.tag) == "rootfile":
-                    rootfile_path = element.attrib.get("full-path")
-                    if rootfile_path:
-                        break
-            if not rootfile_path:
-                return None
+            opf_root, rootfile_path = result
 
-            opf_data = read_zip_member(epub, rootfile_path, max_bytes=ARCHIVE_XML_MAX_BYTES)
-            if not opf_data:
-                return None
-            opf_root = ElementTree.fromstring(opf_data)
             cover_id = None
             manifest_items: list[dict[str, str]] = []
             for element in opf_root.iter():
@@ -309,26 +319,10 @@ def decode_bytes(data: bytes) -> str:
 def read_epub_identity_hint(path: Path) -> str | None:
     try:
         with zipfile.ZipFile(path) as epub:
-            container_data = read_zip_member(
-                epub,
-                "META-INF/container.xml",
-                max_bytes=ARCHIVE_XML_MAX_BYTES,
-            )
-            if not container_data:
+            result = _read_epub_opf(epub)
+            if not result:
                 return None
-            container = ElementTree.fromstring(container_data)
-            rootfile_path = None
-            for element in container.iter():
-                if xml_local_name(element.tag) == "rootfile":
-                    rootfile_path = element.attrib.get("full-path")
-                    break
-            if not rootfile_path:
-                return None
-
-            opf_data = read_zip_member(epub, rootfile_path, max_bytes=ARCHIVE_XML_MAX_BYTES)
-            if not opf_data:
-                return None
-            opf_root = ElementTree.fromstring(opf_data)
+            opf_root, rootfile_path = result
             titles: list[str] = []
             manifest: dict[str, str] = {}
             spine_ids: list[str] = []
@@ -373,91 +367,76 @@ def read_epub_identity_hint(path: Path) -> str | None:
         return None
 
 
+def _parse_epub_metadata(opf_root: ElementTree.Element, fallback: BookIdentity) -> BookIdentity:
+    titles: list[str] = []
+    creators: list[str] = []
+    languages: list[str] = []
+    subjects: list[str] = []
+    series_names: list[str] = []
+    series_index: int | None = None
+    for element in opf_root.iter():
+        name = xml_local_name(element.tag).casefold()
+        text = collapse_spaces(element.text or "")
+        if name == "title" and text and len(titles) < 3:
+            titles.append(text[:METADATA_TEXT_MAX_CHARS])
+        elif name == "creator" and text and len(creators) < IDENTITY_MAX_AUTHORS * 2:
+            creators.append(text[:IDENTITY_VALUE_MAX_CHARS])
+        elif name == "language" and text and len(languages) < 8:
+            languages.append(text[:35])
+        elif name == "subject" and text and len(subjects) < IDENTITY_MAX_TAGS * 2:
+            subjects.append(text[:IDENTITY_VALUE_MAX_CHARS])
+        elif name == "meta":
+            meta_name = str(element.attrib.get("name") or "").casefold()
+            property_name = str(element.attrib.get("property") or "").casefold()
+            content = collapse_spaces(str(element.attrib.get("content") or "") or text)[
+                :METADATA_TEXT_MAX_CHARS
+            ]
+            if content and (meta_name == "calibre:series" or property_name == "belongs-to-collection"):
+                if len(series_names) < 8:
+                    series_names.append(content)
+            elif meta_name == "calibre:series_index" and content:
+                try:
+                    numeric_index = float(content)
+                except ValueError:
+                    numeric_index = -1
+                if numeric_index.is_integer() and 0 <= numeric_index <= 999:
+                    series_index = int(numeric_index)
+
+    title = titles[0] if titles else fallback.title
+    series_name = series_names[0] if series_names else extract_series_guess(title)
+    language = next(
+        (normalized for value in languages if (normalized := normalize_language_code(value)) is not None),
+        fallback.language,
+    )
+    volume_number = series_index
+    if volume_number is None:
+        volume_number = parse_volume_number(title)
+    if volume_number is None:
+        volume_number = fallback.volume_number
+    epub_identity = BookIdentity(
+        title=title,
+        series_name=series_name,
+        authors=normalize_identity_values(
+            creators,
+            limit=IDENTITY_MAX_AUTHORS,
+            kind="author",
+        ),
+        volume_number=volume_number,
+        language=language,
+        tags=normalize_identity_values(subjects, limit=IDENTITY_MAX_TAGS),
+    )
+    return merge_book_identities(fallback, epub_identity)
+
+
 def read_epub_book_identity(path: Path, fallback: BookIdentity | None = None) -> BookIdentity | None:
     fallback = fallback or identity_from_filename(path.name)
     try:
         with zipfile.ZipFile(path) as epub:
-            container_data = read_zip_member(
-                epub,
-                "META-INF/container.xml",
-                max_bytes=ARCHIVE_XML_MAX_BYTES,
-            )
-            if not container_data:
+            result = _read_epub_opf(epub)
+            if not result:
                 return None
-            container = ElementTree.fromstring(container_data)
-            rootfile_path = next(
-                (
-                    element.attrib.get("full-path")
-                    for element in container.iter()
-                    if xml_local_name(element.tag) == "rootfile" and element.attrib.get("full-path")
-                ),
-                None,
-            )
-            if not rootfile_path:
-                return None
-            opf_data = read_zip_member(epub, rootfile_path, max_bytes=ARCHIVE_XML_MAX_BYTES)
-            if not opf_data:
-                return None
-            opf_root = ElementTree.fromstring(opf_data)
-
-            titles: list[str] = []
-            creators: list[str] = []
-            languages: list[str] = []
-            subjects: list[str] = []
-            series_names: list[str] = []
-            series_index: int | None = None
-            for element in opf_root.iter():
-                name = xml_local_name(element.tag).casefold()
-                text = collapse_spaces(element.text or "")
-                if name == "title" and text and len(titles) < 3:
-                    titles.append(text[:METADATA_TEXT_MAX_CHARS])
-                elif name == "creator" and text and len(creators) < IDENTITY_MAX_AUTHORS * 2:
-                    creators.append(text[:IDENTITY_VALUE_MAX_CHARS])
-                elif name == "language" and text and len(languages) < 8:
-                    languages.append(text[:35])
-                elif name == "subject" and text and len(subjects) < IDENTITY_MAX_TAGS * 2:
-                    subjects.append(text[:IDENTITY_VALUE_MAX_CHARS])
-                elif name == "meta":
-                    meta_name = str(element.attrib.get("name") or "").casefold()
-                    property_name = str(element.attrib.get("property") or "").casefold()
-                    content = collapse_spaces(str(element.attrib.get("content") or "") or text)[
-                        :METADATA_TEXT_MAX_CHARS
-                    ]
-                    if content and (meta_name == "calibre:series" or property_name == "belongs-to-collection"):
-                        if len(series_names) < 8:
-                            series_names.append(content)
-                    elif meta_name == "calibre:series_index" and content:
-                        try:
-                            numeric_index = float(content)
-                        except ValueError:
-                            numeric_index = -1
-                        if numeric_index.is_integer() and 0 <= numeric_index <= 999:
-                            series_index = int(numeric_index)
-
-            title = titles[0] if titles else fallback.title
-            series_name = series_names[0] if series_names else extract_series_guess(title)
-            language = next(
-                (normalized for value in languages if (normalized := normalize_language_code(value)) is not None),
-                fallback.language,
-            )
-            volume_number = series_index
-            if volume_number is None:
-                volume_number = parse_volume_number(title)
-            if volume_number is None:
-                volume_number = fallback.volume_number
-            epub_identity = BookIdentity(
-                title=title,
-                series_name=series_name,
-                authors=normalize_identity_values(
-                    creators,
-                    limit=IDENTITY_MAX_AUTHORS,
-                    kind="author",
-                ),
-                volume_number=volume_number,
-                language=language,
-                tags=normalize_identity_values(subjects, limit=IDENTITY_MAX_TAGS),
-            )
-            return merge_book_identities(fallback, epub_identity)
+            opf_root, _ = result
+            return _parse_epub_metadata(opf_root, fallback)
     except (
         OSError,
         KeyError,
