@@ -251,25 +251,29 @@ def read_epub_cover_bytes(path: Path) -> bytes | None:
                 return None
             opf_root = ElementTree.fromstring(opf_data)
             cover_id = None
-            manifest_items: list[dict[str, str]] = []
+            manifest_items: dict[str, dict[str, str]] = {}
             for element in opf_root.iter():
                 name = xml_local_name(element.tag)
                 if name == "meta" and element.attrib.get("name") == "cover":
                     cover_id = element.attrib.get("content")
                 elif name == "item":
-                    manifest_items.append(dict(element.attrib))
+                    attrib = dict(element.attrib)
+                    item_id = attrib.get("id")
+                    if item_id:
+                        manifest_items[item_id] = attrib
+                    else:
+                        manifest_items[str(id(attrib))] = attrib
 
             cover_href = None
-            for item in manifest_items:
+            for item in manifest_items.values():
                 properties = item.get("properties", "")
                 if "cover-image" in properties.split():
                     cover_href = item.get("href")
                     break
             if not cover_href and cover_id:
-                for item in manifest_items:
-                    if item.get("id") == cover_id:
-                        cover_href = item.get("href")
-                        break
+                cover_item = manifest_items.get(cover_id)
+                if cover_item:
+                    cover_href = cover_item.get("href")
             if cover_href:
                 data = read_zip_member(
                     epub,
@@ -280,7 +284,7 @@ def read_epub_cover_bytes(path: Path) -> bytes | None:
                     return data
 
             image_hrefs = [
-                item.get("href", "") for item in manifest_items if item.get("media-type", "").startswith("image/")
+                item.get("href", "") for item in manifest_items.values() if item.get("media-type", "").startswith("image/")
             ]
             fallback_name = pick_archive_cover_name(resolve_zip_member(rootfile_path, href) for href in image_hrefs)
             if fallback_name:
