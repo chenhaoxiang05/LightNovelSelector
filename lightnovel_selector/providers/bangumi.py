@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import urllib.parse
 
 from ..constants import (
@@ -159,19 +160,30 @@ def bangumi_search_items(query: str, *, timeout: float, pages: int = 1) -> list[
     }
     items: list[dict] = []
     seen_ids: set[int] = set()
-    for page in range(max(1, pages)):
+    max_pages = max(1, pages)
+
+    def fetch_page(page_index: int) -> list[dict]:
         url = BANGUMI_SEARCH_URL
-        if pages > 1:
+        if max_pages > 1:
             url += "?" + urllib.parse.urlencode(
                 {
                     "limit": BANGUMI_SEARCH_LIMIT,
-                    "offset": page * BANGUMI_SEARCH_LIMIT,
+                    "offset": page_index * BANGUMI_SEARCH_LIMIT,
                 }
             )
         data = http_json(url, payload=payload, timeout=timeout)
         page_items = data.get("data", [])
         if not isinstance(page_items, list):
             raise RuntimeError("Bangumi 接口返回的 data 不是数组。")
+        return page_items
+
+    if max_pages == 1:
+        pages_data = [fetch_page(0)]
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, max_pages)) as executor:
+            pages_data = list(executor.map(fetch_page, range(max_pages)))
+
+    for page_items in pages_data:
         for item in page_items[:BANGUMI_SEARCH_LIMIT]:
             if not isinstance(item, dict):
                 continue
