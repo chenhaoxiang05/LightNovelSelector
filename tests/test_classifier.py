@@ -45,7 +45,6 @@ from lightnovel_classifier import (
     classification_plan_to_report_item,
     classification_report_history_directory,
     clean_summary,
-    count_plan_statuses,
     execute_classification_plan,
     extract_book_lookup_query,
     extract_series_guess,
@@ -78,6 +77,7 @@ from lightnovel_classifier import (
     try_save_app_settings,
     undo_classification_report,
 )
+from lightnovel_selector import classification_planning
 
 MINIMAL_PNG = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
@@ -1346,7 +1346,7 @@ class MovePlanTests(unittest.TestCase):
             plans = build_classification_plan(root, use_network=False)
 
             self.assertEqual(
-                count_plan_statuses(plans),
+                classification_planning.count_plan_statuses(plans),
                 {"total": 2, "ready": 1, "duplicate": 1, "error": 0},
             )
 
