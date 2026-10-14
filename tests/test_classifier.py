@@ -68,7 +68,6 @@ from lightnovel_classifier import (
     read_epub_book_identity,
     read_local_cover_bytes,
     resolve_classification_report,
-    revise_classification_plan,
     revise_classification_plans,
     run_cli,
     safe_folder_name,
@@ -78,6 +77,8 @@ from lightnovel_classifier import (
     try_save_app_settings,
     undo_classification_report,
 )
+
+from lightnovel_selector.classification_planning import revise_classification_plan
 
 MINIMAL_PNG = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
