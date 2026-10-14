@@ -70,7 +70,6 @@ from lightnovel_classifier import (
     resolve_classification_report,
     revise_classification_plan,
     revise_classification_plans,
-    run_cli,
     safe_folder_name,
     save_app_settings,
     scan_cache_path,
@@ -78,6 +77,7 @@ from lightnovel_classifier import (
     try_save_app_settings,
     undo_classification_report,
 )
+from lightnovel_selector.cli import run_cli
 
 MINIMAL_PNG = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
