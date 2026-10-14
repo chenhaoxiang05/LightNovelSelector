@@ -12,10 +12,10 @@ from unittest.mock import patch
 
 from lightnovel_selector import (
     build_classification_plan,
-    execute_classification_plan,
     load_classification_report,
     undo_classification_report,
 )
+from lightnovel_selector.classification_execution import execute_classification_plan
 
 
 class ClassificationExecutionConcurrencyTests(unittest.TestCase):
@@ -82,7 +82,8 @@ import shutil
 import sys
 from pathlib import Path
 from unittest.mock import patch
-from lightnovel_selector import build_classification_plan, execute_classification_plan
+from lightnovel_selector import build_classification_plan
+from lightnovel_selector.classification_execution import execute_classification_plan
 
 root = Path(sys.argv[1])
 report_path = Path(sys.argv[2])

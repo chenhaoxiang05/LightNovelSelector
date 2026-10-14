@@ -15,13 +15,13 @@ from .classification import (
     build_classification_plan,
     classification_plan_group_indices,
     count_plan_statuses,
-    execute_classification_plan,
     load_classification_report,
     plan_status_label,
     revise_classification_plans,
     undo_classification_report,
     validate_classification_root,
 )
+from .classification_execution import execute_classification_plan
 from .constants import (
     APP_NAME,
     APP_VERSION,

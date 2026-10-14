@@ -15,7 +15,6 @@ from lightnovel_selector import (
     REMOTE_JSON_MAX_BYTES,
     REPORT_SCHEMA_VERSION,
     build_classification_plan,
-    execute_classification_plan,
     http_bytes,
     http_json,
     load_classification_report,
@@ -24,6 +23,7 @@ from lightnovel_selector import (
     undo_classification_report,
     validate_https_url,
 )
+from lightnovel_selector.classification_execution import execute_classification_plan
 from lightnovel_selector.application import ApplicationService
 from lightnovel_selector.constants import SETTINGS_MAX_BYTES
 from lightnovel_selector.models import ClassificationPlan
