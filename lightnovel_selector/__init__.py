@@ -16,10 +16,10 @@ from .classification import (
     revise_classification_plans,
     undo_classification_report,
     unique_target_path,
-    validate_classification_root,
     write_classification_report,
 )
-from .constants import *
+from .classification_discovery import validate_classification_root
+from .constants import *  # noqa: F403
 from .corrections import (
     RecognitionCorrectionMemory,
     SeriesAlias,
