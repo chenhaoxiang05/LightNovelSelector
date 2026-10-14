@@ -15,7 +15,6 @@ from .classification_planning import (
     plan_status_label,
     revise_classification_plan,
     revise_classification_plans,
-    unique_target_path,
 )
 from .classification_reporting import (
     classification_plan_to_report_item,
@@ -38,7 +37,6 @@ __all__ = [
     "revise_classification_plan",
     "revise_classification_plans",
     "undo_classification_report",
-    "unique_target_path",
     "validate_classification_root",
     "write_classification_report",
 ]
