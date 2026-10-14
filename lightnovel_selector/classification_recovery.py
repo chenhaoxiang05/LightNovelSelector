@@ -133,14 +133,12 @@ def _read_report_journal(journal_path: Path) -> list[dict]:
     return records
 
 
-def _recover_classification_report(
-    report: dict,
+def _validate_journal_header(
+    header: dict,
+    execution_id: str | None,
     report_path: Path,
-    journal_path: Path,
-) -> dict:
-    records = _read_report_journal(journal_path)
-    header = records[0]
-    execution_id = report.get("execution_id")
+    root_path: Path,
+) -> None:
     if not is_valid_execution_id(execution_id):
         raise ValueError("分类恢复日志无法匹配缺少或无效执行编号的报告。")
     journal_schema_version = header.get("schema_version")
@@ -154,14 +152,11 @@ def _recover_classification_report(
     ):
         raise ValueError("分类恢复日志与当前报告不匹配。")
 
-    root_path = _report_root(report, report_path)
     if header.get("root_path") != str(root_path):
         raise ValueError("分类恢复日志的根目录与当前报告不匹配。")
-    items = report.get("items")
-    summary = report.get("summary")
-    if not isinstance(items, list) or not isinstance(summary, dict):
-        raise ValueError("分类报告格式无效：无法应用恢复日志。")
 
+
+def _build_items_by_source(items: list, root_path: Path) -> dict[Path, dict]:
     items_by_source: dict[Path, dict] = {}
     for item_number, item in enumerate(items, start=1):
         if not isinstance(item, dict):
@@ -175,7 +170,15 @@ def _recover_classification_report(
         if source_path in items_by_source:
             raise ValueError("分类报告包含重复的源路径。")
         items_by_source[source_path] = item
+    return items_by_source
 
+
+def _apply_journal_events(
+    records: list[dict],
+    items_by_source: dict[Path, dict],
+    execution_id: str | None,
+    root_path: Path,
+) -> None:
     seen_sources: set[Path] = set()
     seen_targets: set[Path] = set()
     for event_number, event in enumerate(records[1:], start=1):
@@ -235,6 +238,8 @@ def _recover_classification_report(
         item["actual_target_path"] = str(target_path)
         item["operation"] = "moved"
 
+
+def _update_report_summary(report: dict, items: list, summary: dict) -> None:
     moved = sum(
         isinstance(item, dict) and item.get("operation") == "moved" and bool(item.get("actual_target_path"))
         for item in items
@@ -248,6 +253,41 @@ def _recover_classification_report(
     summary["moved"] = moved
     summary["skipped"] = max(existing_skipped, known_skipped)
     report["recovered_at"] = datetime.now(tz=timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def _recover_classification_report(
+    report: dict,
+    report_path: Path,
+    journal_path: Path,
+) -> dict:
+    records = _read_report_journal(journal_path)
+    header = records[0]
+    execution_id = report.get("execution_id")
+    root_path = _report_root(report, report_path)
+
+    _validate_journal_header(
+        header=header,
+        execution_id=execution_id,
+        report_path=report_path,
+        root_path=root_path,
+    )
+
+    items = report.get("items")
+    summary = report.get("summary")
+    if not isinstance(items, list) or not isinstance(summary, dict):
+        raise ValueError("分类报告格式无效：无法应用恢复日志。")
+
+    items_by_source = _build_items_by_source(items=items, root_path=root_path)
+
+    _apply_journal_events(
+        records=records,
+        items_by_source=items_by_source,
+        execution_id=execution_id,
+        root_path=root_path,
+    )
+
+    _update_report_summary(report=report, items=items, summary=summary)
+
     write_json_atomic(report_path, report)
     _remove_report_journal(journal_path)
     return report
