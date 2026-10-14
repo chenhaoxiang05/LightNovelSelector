@@ -7,7 +7,6 @@ from .classification import (
     classification_plan_group_indices,
     classification_plan_to_report_item,
     classification_report_root,
-    count_plan_statuses,
     execute_classification_plan,
     find_novel_files,
     load_classification_report,

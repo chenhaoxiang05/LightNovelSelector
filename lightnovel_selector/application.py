@@ -10,11 +10,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from . import classification_planning
 from .cancellation import OperationCancelled
 from .classification import (
     build_classification_plan,
     classification_plan_group_indices,
-    count_plan_statuses,
     execute_classification_plan,
     load_classification_report,
     plan_status_label,
@@ -554,7 +554,7 @@ class ApplicationService:
             plans_payload = None
             if plans_revision != self.plans_revision:
                 plans_payload = [plan_to_dict(plan, index) for index, plan in enumerate(self.plans)]
-            counts = count_plan_statuses(self.plans)
+            counts = classification_planning.count_plan_statuses(self.plans)
             counts.update(
                 {
                     "unchanged": sum(plan.status == "unchanged" for plan in self.plans),
