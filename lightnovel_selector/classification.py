@@ -6,7 +6,7 @@ Implementation lives in focused modules so planning, file transactions, recovery
 and undo safety can evolve and be tested independently.
 """
 
-from .classification_discovery import find_novel_files, validate_classification_root
+from .classification_discovery import validate_classification_root
 from .classification_execution import execute_classification_plan
 from .classification_planning import (
     build_classification_plan,
@@ -32,7 +32,6 @@ __all__ = [
     "classification_report_root",
     "count_plan_statuses",
     "execute_classification_plan",
-    "find_novel_files",
     "load_classification_report",
     "plan_status_label",
     "revise_classification_plan",

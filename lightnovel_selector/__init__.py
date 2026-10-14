@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # ruff: noqa: F401
 from .cancellation import OperationCancelled
+from .classification_discovery import find_novel_files
 from .classification import (
     build_classification_plan,
     classification_plan_group_indices,
@@ -9,7 +10,6 @@ from .classification import (
     classification_report_root,
     count_plan_statuses,
     execute_classification_plan,
-    find_novel_files,
     load_classification_report,
     plan_status_label,
     revise_classification_plan,
