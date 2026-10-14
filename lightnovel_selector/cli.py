@@ -7,10 +7,10 @@ from pathlib import Path
 
 from .classification import (
     build_classification_plan,
-    execute_classification_plan,
     plan_status_label,
     undo_classification_report,
 )
+from .classification_execution import execute_classification_plan
 from .constants import REPORT_FILE_NAME
 from .corrections import RecognitionCorrectionMemory
 from .models import ClassificationPlan

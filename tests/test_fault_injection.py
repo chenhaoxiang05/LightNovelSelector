@@ -15,7 +15,6 @@ from unittest.mock import patch
 from lightnovel_selector import (
     build_classification_plan,
     clean_file_stem,
-    execute_classification_plan,
     extract_book_lookup_query,
     extract_series_guess,
     infer_language,
@@ -31,6 +30,7 @@ from lightnovel_selector import (
     score_title,
     undo_classification_report,
 )
+from lightnovel_selector.classification_execution import execute_classification_plan
 from lightnovel_selector.constants import SERIES_NAME_MAX_CHARS
 from lightnovel_selector.models import ClassificationPlan
 from lightnovel_selector.sidecar import SidecarServer

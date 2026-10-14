@@ -8,7 +8,6 @@ from .classification import (
     classification_plan_to_report_item,
     classification_report_root,
     count_plan_statuses,
-    execute_classification_plan,
     find_novel_files,
     load_classification_report,
     plan_status_label,
@@ -19,6 +18,7 @@ from .classification import (
     validate_classification_root,
     write_classification_report,
 )
+from .classification_execution import execute_classification_plan
 from .constants import *
 from .corrections import (
     RecognitionCorrectionMemory,

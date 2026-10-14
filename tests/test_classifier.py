@@ -11,6 +11,7 @@ from unittest.mock import patch
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import lightnovel_classifier
+from lightnovel_selector.classification_execution import execute_classification_plan
 from lightnovel_classifier import (
     CLASSIFICATION_CANDIDATE_MAX_COUNT,
     COVER_MAX_BYTES,
@@ -46,7 +47,6 @@ from lightnovel_classifier import (
     classification_report_history_directory,
     clean_summary,
     count_plan_statuses,
-    execute_classification_plan,
     extract_book_lookup_query,
     extract_series_guess,
     find_duplicate_files,
