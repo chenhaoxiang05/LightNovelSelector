@@ -1,12 +1,12 @@
-from __future__ import annotations
-
 """Stable public facade for classification workflows.
 
 Implementation lives in focused modules so planning, file transactions, recovery,
 and undo safety can evolve and be tested independently.
 """
 
-from .classification_discovery import find_novel_files, validate_classification_root
+from __future__ import annotations
+
+from .classification_discovery import find_novel_files
 from .classification_execution import execute_classification_plan
 from .classification_planning import (
     build_classification_plan,
@@ -39,6 +39,5 @@ __all__ = [
     "revise_classification_plans",
     "undo_classification_report",
     "unique_target_path",
-    "validate_classification_root",
     "write_classification_report",
 ]

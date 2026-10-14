@@ -20,8 +20,8 @@ from .classification import (
     plan_status_label,
     revise_classification_plans,
     undo_classification_report,
-    validate_classification_root,
 )
+from .classification_discovery import validate_classification_root
 from .constants import (
     APP_NAME,
     APP_VERSION,
