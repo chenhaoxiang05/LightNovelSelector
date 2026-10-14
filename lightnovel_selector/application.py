@@ -17,11 +17,11 @@ from .classification import (
     count_plan_statuses,
     execute_classification_plan,
     load_classification_report,
-    plan_status_label,
     revise_classification_plans,
     undo_classification_report,
     validate_classification_root,
 )
+from .classification_planning import plan_status_label
 from .constants import (
     APP_NAME,
     APP_VERSION,
