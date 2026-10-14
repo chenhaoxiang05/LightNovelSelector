@@ -13,6 +13,7 @@ import urllib.request
 import zipfile
 from collections.abc import Callable, Iterable
 from pathlib import Path
+from xml.etree.ElementTree import Element
 
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
@@ -226,30 +227,40 @@ def pick_archive_cover_name(names: Iterable[str]) -> str | None:
     return min(images, key=sort_key)
 
 
+
+def _read_epub_opf(epub: zipfile.ZipFile) -> tuple[str, Element] | None:
+    container_xml = read_zip_member(
+        epub,
+        "META-INF/container.xml",
+        max_bytes=ARCHIVE_XML_MAX_BYTES,
+    )
+    if not container_xml:
+        return None
+    container = ElementTree.fromstring(container_xml)
+    rootfile_path = next(
+        (
+            element.attrib.get("full-path")
+            for element in container.iter()
+            if xml_local_name(element.tag) == "rootfile" and element.attrib.get("full-path")
+        ),
+        None,
+    )
+    if not rootfile_path:
+        return None
+
+    opf_data = read_zip_member(epub, rootfile_path, max_bytes=ARCHIVE_XML_MAX_BYTES)
+    if not opf_data:
+        return None
+    return rootfile_path, ElementTree.fromstring(opf_data)
+
+
 def read_epub_cover_bytes(path: Path) -> bytes | None:
     try:
         with zipfile.ZipFile(path) as epub:
-            container_xml = read_zip_member(
-                epub,
-                "META-INF/container.xml",
-                max_bytes=ARCHIVE_XML_MAX_BYTES,
-            )
-            if not container_xml:
+            opf = _read_epub_opf(epub)
+            if not opf:
                 return None
-            container = ElementTree.fromstring(container_xml)
-            rootfile_path = None
-            for element in container.iter():
-                if xml_local_name(element.tag) == "rootfile":
-                    rootfile_path = element.attrib.get("full-path")
-                    if rootfile_path:
-                        break
-            if not rootfile_path:
-                return None
-
-            opf_data = read_zip_member(epub, rootfile_path, max_bytes=ARCHIVE_XML_MAX_BYTES)
-            if not opf_data:
-                return None
-            opf_root = ElementTree.fromstring(opf_data)
+            rootfile_path, opf_root = opf
             cover_id = None
             manifest_items: list[dict[str, str]] = []
             for element in opf_root.iter():
@@ -309,26 +320,10 @@ def decode_bytes(data: bytes) -> str:
 def read_epub_identity_hint(path: Path) -> str | None:
     try:
         with zipfile.ZipFile(path) as epub:
-            container_data = read_zip_member(
-                epub,
-                "META-INF/container.xml",
-                max_bytes=ARCHIVE_XML_MAX_BYTES,
-            )
-            if not container_data:
+            opf = _read_epub_opf(epub)
+            if not opf:
                 return None
-            container = ElementTree.fromstring(container_data)
-            rootfile_path = None
-            for element in container.iter():
-                if xml_local_name(element.tag) == "rootfile":
-                    rootfile_path = element.attrib.get("full-path")
-                    break
-            if not rootfile_path:
-                return None
-
-            opf_data = read_zip_member(epub, rootfile_path, max_bytes=ARCHIVE_XML_MAX_BYTES)
-            if not opf_data:
-                return None
-            opf_root = ElementTree.fromstring(opf_data)
+            rootfile_path, opf_root = opf
             titles: list[str] = []
             manifest: dict[str, str] = {}
             spine_ids: list[str] = []
@@ -377,29 +372,10 @@ def read_epub_book_identity(path: Path, fallback: BookIdentity | None = None) ->
     fallback = fallback or identity_from_filename(path.name)
     try:
         with zipfile.ZipFile(path) as epub:
-            container_data = read_zip_member(
-                epub,
-                "META-INF/container.xml",
-                max_bytes=ARCHIVE_XML_MAX_BYTES,
-            )
-            if not container_data:
+            opf = _read_epub_opf(epub)
+            if not opf:
                 return None
-            container = ElementTree.fromstring(container_data)
-            rootfile_path = next(
-                (
-                    element.attrib.get("full-path")
-                    for element in container.iter()
-                    if xml_local_name(element.tag) == "rootfile" and element.attrib.get("full-path")
-                ),
-                None,
-            )
-            if not rootfile_path:
-                return None
-            opf_data = read_zip_member(epub, rootfile_path, max_bytes=ARCHIVE_XML_MAX_BYTES)
-            if not opf_data:
-                return None
-            opf_root = ElementTree.fromstring(opf_data)
-
+            _rootfile_path, opf_root = opf
             titles: list[str] = []
             creators: list[str] = []
             languages: list[str] = []
