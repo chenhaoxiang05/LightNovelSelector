@@ -4,7 +4,6 @@ from __future__ import annotations
 from .cancellation import OperationCancelled
 from .classification import (
     build_classification_plan,
-    classification_plan_group_indices,
     classification_plan_to_report_item,
     classification_report_root,
     count_plan_statuses,
@@ -18,6 +17,9 @@ from .classification import (
     unique_target_path,
     validate_classification_root,
     write_classification_report,
+)
+from .classification_planning import (
+    classification_plan_group_indices,
 )
 from .constants import *
 from .corrections import (

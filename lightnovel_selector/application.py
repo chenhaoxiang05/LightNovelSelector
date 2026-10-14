@@ -13,7 +13,6 @@ from typing import Any, Literal, cast
 from .cancellation import OperationCancelled
 from .classification import (
     build_classification_plan,
-    classification_plan_group_indices,
     count_plan_statuses,
     execute_classification_plan,
     load_classification_report,
@@ -22,6 +21,7 @@ from .classification import (
     undo_classification_report,
     validate_classification_root,
 )
+from .classification_planning import classification_plan_group_indices
 from .constants import (
     APP_NAME,
     APP_VERSION,
