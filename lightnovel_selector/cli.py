@@ -8,9 +8,9 @@ from pathlib import Path
 from .classification import (
     build_classification_plan,
     execute_classification_plan,
-    plan_status_label,
     undo_classification_report,
 )
+from .classification_planning import plan_status_label
 from .constants import REPORT_FILE_NAME
 from .corrections import RecognitionCorrectionMemory
 from .models import ClassificationPlan

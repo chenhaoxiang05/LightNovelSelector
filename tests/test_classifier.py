@@ -63,7 +63,6 @@ from lightnovel_classifier import (
     merge_classification_candidates,
     normalize_for_match,
     parse_volume_number,
-    plan_status_label,
     read_book_identity,
     read_epub_book_identity,
     read_local_cover_bytes,
@@ -78,6 +77,7 @@ from lightnovel_classifier import (
     try_save_app_settings,
     undo_classification_report,
 )
+from lightnovel_selector.classification_planning import plan_status_label
 
 MINIMAL_PNG = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"

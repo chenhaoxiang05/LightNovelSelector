@@ -11,7 +11,6 @@ from .classification import (
     execute_classification_plan,
     find_novel_files,
     load_classification_report,
-    plan_status_label,
     revise_classification_plan,
     revise_classification_plans,
     undo_classification_report,
@@ -19,6 +18,7 @@ from .classification import (
     validate_classification_root,
     write_classification_report,
 )
+from .classification_planning import plan_status_label
 from .constants import *
 from .corrections import (
     RecognitionCorrectionMemory,
