@@ -13,7 +13,6 @@ from .classification_planning import (
     classification_plan_group_indices,
     count_plan_statuses,
     plan_status_label,
-    revise_classification_plan,
     revise_classification_plans,
     unique_target_path,
 )
@@ -35,7 +34,6 @@ __all__ = [
     "find_novel_files",
     "load_classification_report",
     "plan_status_label",
-    "revise_classification_plan",
     "revise_classification_plans",
     "undo_classification_report",
     "unique_target_path",

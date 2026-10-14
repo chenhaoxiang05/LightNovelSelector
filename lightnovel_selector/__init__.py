@@ -12,7 +12,6 @@ from .classification import (
     find_novel_files,
     load_classification_report,
     plan_status_label,
-    revise_classification_plan,
     revise_classification_plans,
     undo_classification_report,
     unique_target_path,
