@@ -15,7 +15,6 @@ from .classification import (
     revise_classification_plan,
     revise_classification_plans,
     undo_classification_report,
-    unique_target_path,
     validate_classification_root,
     write_classification_report,
 )
