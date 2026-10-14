@@ -946,6 +946,103 @@ class ApplicationService:
             "warning": warning,
         }
 
+    def _resolve_detail_cover(
+        self,
+        *,
+        plan: ClassificationPlan,
+        cover_url: str | None,
+    ) -> tuple[str | None, str]:
+        local_cover_bytes = read_local_cover_bytes(plan.source_path)
+        cover_bytes = local_cover_bytes
+        if cover_bytes is None and cover_url:
+            try:
+                cover_bytes = http_bytes(cover_url, timeout=8.0, max_bytes=COVER_MAX_BYTES)
+            except (OSError, RuntimeError, ValueError):
+                cover_bytes = None
+
+        cover_data_url = _data_uri(cover_bytes)
+        cover_source = (
+            "本地封面"
+            if local_cover_bytes and cover_data_url
+            else "在线封面"
+            if cover_data_url
+            else "无封面"
+        )
+        return cover_data_url, cover_source
+
+    def _build_detail_result(
+        self,
+        *,
+        index: int,
+        plans_revision: int,
+        plan: ClassificationPlan,
+        identity: Any,
+        title: str,
+        summary: str,
+        subject_url: str | None,
+        cover_data_url: str | None,
+        cover_source: str,
+        warning: str | None,
+        matching_series_count: int,
+        can_load_candidates: bool,
+    ) -> dict[str, Any]:
+        return {
+            "index": index,
+            "plans_revision": plans_revision,
+            "identity": book_identity_to_dict(identity),
+            "title": title,
+            "summary": summary,
+            "subject_url": subject_url,
+            "cover_data_url": cover_data_url,
+            "cover_source": cover_source,
+            "file_name": plan.source_path.name,
+            "source_path": str(plan.source_path),
+            "target_path": str(plan.target_path),
+            "series_name": plan.series_name,
+            "authors": list(identity.authors),
+            "authors_label": "、".join(identity.authors) or "未识别",
+            "volume_number": identity.volume_number,
+            "volume_label": volume_display_name(identity.volume_number),
+            "language": identity.language,
+            "language_label": language_display_name(identity.language),
+            "tags": list(identity.tags),
+            "tags_label": " · ".join(identity.tags) or "未识别",
+            "resolver_source": plan.resolver_source,
+            "confidence_label": f"{plan.confidence:.0%}",
+            "confidence_level": plan.confidence_level,
+            "classification_reason": plan.classification_reason,
+            "classification_evidence": list(plan.classification_evidence),
+            "status": plan.status,
+            "status_label": plan_status_label(plan.status),
+            "note": plan.note,
+            "warning": warning,
+            "matching_series_count": matching_series_count,
+            "can_load_candidates": can_load_candidates,
+        }
+
+    def _fetch_detail_metadata(
+        self,
+        *,
+        plan: ClassificationPlan,
+        use_network: bool,
+        metadata_providers: MetadataProviderRegistry,
+    ) -> tuple[Any, str | None]:
+        metadata = None
+        warning = None
+        if use_network and plan.network_query:
+            try:
+                metadata = SeriesResolver(
+                    use_network=True,
+                    providers=metadata_providers,
+                    reliability=self.provider_reliability,
+                ).resolve_book_metadata_for_query(
+                    plan.network_query,
+                    series_name=plan.series_name,
+                )
+            except (OSError, RuntimeError) as exc:
+                warning = f"详情暂时无法联网更新：{exc}"
+        return metadata, warning
+
     def get_detail(
         self,
         index: int,
@@ -969,20 +1066,11 @@ class ApplicationService:
                 )
             )
 
-        metadata = None
-        warning = None
-        if use_network and plan.network_query:
-            try:
-                metadata = SeriesResolver(
-                    use_network=True,
-                    providers=metadata_providers,
-                    reliability=self.provider_reliability,
-                ).resolve_book_metadata_for_query(
-                    plan.network_query,
-                    series_name=plan.series_name,
-                )
-            except (OSError, RuntimeError) as exc:
-                warning = f"详情暂时无法联网更新：{exc}"
+        metadata, warning = self._fetch_detail_metadata(
+            plan=plan,
+            use_network=use_network,
+            metadata_providers=metadata_providers,
+        )
 
         identity = merge_book_identities(
             plan.identity,
@@ -993,15 +1081,12 @@ class ApplicationService:
         summary = (metadata.summary if metadata else None) or plan.metadata_summary or "暂无可用简介。"
         subject_url = (metadata.url if metadata else None) or plan.metadata_url
         cover_url = (metadata.cover_url if metadata else None) or plan.metadata_cover_url
-        local_cover_bytes = read_local_cover_bytes(plan.source_path)
-        cover_bytes = local_cover_bytes
-        if cover_bytes is None and cover_url:
-            try:
-                cover_bytes = http_bytes(cover_url, timeout=8.0, max_bytes=COVER_MAX_BYTES)
-            except (OSError, RuntimeError, ValueError):
-                cover_bytes = None
 
-        cover_data_url = _data_uri(cover_bytes)
+        cover_data_url, cover_source = self._resolve_detail_cover(
+            plan=plan,
+            cover_url=cover_url,
+        )
+
         detail_candidates = plan.candidates
         if metadata is not None:
             detail_candidates = merge_classification_candidates(
@@ -1015,43 +1100,20 @@ class ApplicationService:
                 ),
             )
 
-        result = {
-            "index": index,
-            "plans_revision": plans_revision,
-            "identity": book_identity_to_dict(identity),
-            "title": title,
-            "summary": summary,
-            "subject_url": subject_url,
-            "cover_data_url": cover_data_url,
-            "cover_source": "本地封面"
-            if local_cover_bytes and cover_data_url
-            else "在线封面"
-            if cover_data_url
-            else "无封面",
-            "file_name": plan.source_path.name,
-            "source_path": str(plan.source_path),
-            "target_path": str(plan.target_path),
-            "series_name": plan.series_name,
-            "authors": list(identity.authors),
-            "authors_label": "、".join(identity.authors) or "未识别",
-            "volume_number": identity.volume_number,
-            "volume_label": volume_display_name(identity.volume_number),
-            "language": identity.language,
-            "language_label": language_display_name(identity.language),
-            "tags": list(identity.tags),
-            "tags_label": " · ".join(identity.tags) or "未识别",
-            "resolver_source": plan.resolver_source,
-            "confidence_label": f"{plan.confidence:.0%}",
-            "confidence_level": plan.confidence_level,
-            "classification_reason": plan.classification_reason,
-            "classification_evidence": list(plan.classification_evidence),
-            "status": plan.status,
-            "status_label": plan_status_label(plan.status),
-            "note": plan.note,
-            "warning": warning,
-            "matching_series_count": matching_series_count,
-            "can_load_candidates": bool(use_network and plan.network_query),
-        }
+        result = self._build_detail_result(
+            index=index,
+            plans_revision=plans_revision,
+            plan=plan,
+            identity=identity,
+            title=title,
+            summary=summary,
+            subject_url=subject_url,
+            cover_data_url=cover_data_url,
+            cover_source=cover_source,
+            warning=warning,
+            matching_series_count=matching_series_count,
+            can_load_candidates=bool(use_network and plan.network_query),
+        )
         with self._lock:
             if (
                 self.plans_revision != plans_revision
