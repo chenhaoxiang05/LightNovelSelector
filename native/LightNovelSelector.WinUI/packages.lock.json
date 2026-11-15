@@ -10,9 +10,9 @@
       },
       "Microsoft.Windows.SDK.BuildTools.WinApp": {
         "type": "Direct",
-        "requested": "[0.5.0, )",
-        "resolved": "0.5.0",
-        "contentHash": "zASqHuAUp38P+ZKLc3h/ERiTQgbDnxDn6vBDLMw3aYynDJ8p6y+e5esKXLQcyDnMwXj2QIDgwAy+Lw3vdMh+qw=="
+        "requested": "[0.8.0, )",
+        "resolved": "0.8.0",
+        "contentHash": "Dc5mlJAypeWELkicp2CJronPZ3TGEDEGaUJZUzSr/cbqojkQ4ws5a2+Gpq9FOl5jjYVtg2QI8Bee2knULqvU1Q=="
       },
       "Microsoft.WindowsAppSDK.Foundation": {
         "type": "Direct",
