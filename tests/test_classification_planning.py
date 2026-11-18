@@ -3,7 +3,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from lightnovel_selector import OperationCancelled, build_classification_plan
+from lightnovel_selector import (
+    ClassificationPlan,
+    OperationCancelled,
+    build_classification_plan,
+    revise_classification_plans,
+)
 from lightnovel_selector.cancellation import OperationCancelled as SharedOperationCancelled
 from lightnovel_selector.scan_session import OperationCancelled as SessionOperationCancelled
 
@@ -25,7 +30,7 @@ class ClassificationPlanningCancellationTests(unittest.TestCase):
 
     def test_non_cancellation_runtime_error_remains_a_file_error(self) -> None:
         with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
+            root = Path(temp_dir).resolve()
             book = root / "Demo.Vol.01.txt"
             book.write_text("content", encoding="utf-8")
 
@@ -48,7 +53,7 @@ class ClassificationPlanningCancellationTests(unittest.TestCase):
 class ClassificationPlanningProgressTests(unittest.TestCase):
     def test_mixed_batch_preserves_order_statuses_and_progress_contract(self) -> None:
         with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
+            root = Path(temp_dir).resolve()
             first = root / "Alpha.Vol.01.txt"
             duplicate = root / "Beta.Vol.01.txt"
             broken = root / "Gamma.Vol.01.txt"
@@ -86,6 +91,24 @@ class ClassificationPlanningProgressTests(unittest.TestCase):
             ],
         )
         self.assertEqual(counts, [(1, 3), (2, 3), (3, 3)])
+
+
+class ClassificationBatchEditTests(unittest.TestCase):
+    def test_same_filename_keeps_existing_and_pending_reservations(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            target = root / "Corrected"
+            target.mkdir()
+            (target / "Book (1).txt").touch()
+            plans = [
+                ClassificationPlan(root / "a/Book.txt", "Old", root / "Old", root / "Old/Book.txt"),
+                ClassificationPlan(root / "b/Book.txt", "Old", target, target / "Book.txt"),
+                ClassificationPlan(root / "c/Book.txt", "Other", target, target / "Book (2).txt"),
+            ]
+            other = plans[-1]
+            self.assertEqual(revise_classification_plans(plans, 0, "Corrected", scope="same_series"), (0, 1))
+            self.assertEqual([p.target_path.name for p in plans], ["Book (3).txt", "Book.txt", "Book (2).txt"])
+            self.assertIs(plans[-1], other)
 
 
 if __name__ == "__main__":

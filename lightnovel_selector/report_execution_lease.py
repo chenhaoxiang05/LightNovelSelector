@@ -3,11 +3,15 @@ from __future__ import annotations
 import ctypes
 import hashlib
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .classification_safety import _absolute_path_without_link_resolution
+
+if sys.platform != "win32":
+    import fcntl
 
 _WAIT_OBJECT_0 = 0x00000000
 _WAIT_ABANDONED = 0x00000080
@@ -60,11 +64,26 @@ class ReportExecutionLease:
         self._released = True
         if self._handle is None:
             return
+        if sys.platform != "win32":
+            os.close(self._handle)
+            return
         _RELEASE_MUTEX(self._handle)
         _CLOSE_HANDLE(self._handle)
 
 
 def try_acquire_report_execution_lease(report_path: Path) -> ReportExecutionLease | None:
+    if sys.platform != "win32":
+        # The report is atomically replaced. Lock its stable library directory instead.
+        directory_fd = os.open(report_path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(directory_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(directory_fd)
+            return None
+        except BaseException:
+            os.close(directory_fd)
+            raise
+        return ReportExecutionLease(_handle=directory_fd)
     if _CREATE_MUTEX_W is None:
         return ReportExecutionLease(_handle=None)
 

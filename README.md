@@ -2,10 +2,11 @@
   <img src="native/LightNovelSelector.WinUI/Assets/StoreLogo.png" width="96" height="96" alt="LightNovelSelector 图标">
   <h1>LightNovelSelector</h1>
   <p><strong>在移动文件之前，把轻小说分类结果完整地交给你确认。</strong></p>
-  <p>面向 Windows 的本地轻小说识别、预览、整理与安全撤销工具。</p>
+  <p>适用于 Windows、macOS 和 Linux 的轻小说识别、预览、整理与安全撤销工具。</p>
 
   <p>
     <a href="https://github.com/chenhaoxiang05/LightNovelSelector/actions/workflows/windows-ci.yml"><img alt="Windows 持续集成" src="https://github.com/chenhaoxiang05/LightNovelSelector/actions/workflows/windows-ci.yml/badge.svg"></a>
+    <a href="https://github.com/chenhaoxiang05/LightNovelSelector/actions/workflows/desktop-ci.yml"><img alt="macOS 与 Linux 桌面验证" src="https://github.com/chenhaoxiang05/LightNovelSelector/actions/workflows/desktop-ci.yml/badge.svg"></a>
     <a href="https://github.com/chenhaoxiang05/LightNovelSelector/actions/workflows/codeql.yml"><img alt="CodeQL 安全分析" src="https://github.com/chenhaoxiang05/LightNovelSelector/actions/workflows/codeql.yml/badge.svg"></a>
     <a href="https://github.com/chenhaoxiang05/LightNovelSelector/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/chenhaoxiang05/LightNovelSelector?display_name=tag"></a>
     <img alt="Windows 10 和 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows11&logoColor=white">
@@ -35,6 +36,16 @@
 > [!TIP]
 > 最新稳定版是 **WinUI 3 原生版 `v2.1.0`**。可直接下载 [Windows x64 安装器](https://github.com/chenhaoxiang05/LightNovelSelector/releases/download/v2.1.0/LightNovelSelector-v2.1.0-win-x64-setup.exe)，不需要另装 Python、.NET 或 Windows App SDK。
 
+## 选择桌面版本
+
+| 平台 | 启动方式 | 界面 |
+| --- | --- | --- |
+| macOS 26 及以上 | 解压 macOS 构建包后打开 `LightNovelSelector.app` | SwiftUI，使用系统 Liquid Glass 按钮与原生工具栏 |
+| Fedora、Debian、Ubuntu 等 Linux 桌面 | 安装 Python 3.10+、Tk 和 defusedxml 后，在源码或解压目录运行 `sh linux/run.sh` | Tk / ttk，支持预览、修正、整理和按批次撤销 |
+| Windows 10 / 11 | 安装 Windows x64 发布版，或从源码运行 `run_winui.bat` | WinUI 3 |
+
+macOS 和 Linux 的开发构建包可在本分支成功的 **macOS 与 Linux 桌面验证** 任务中下载。两个桌面版支持选择目录、离线扫描、检查和修正系列名、确认整批移动，以及查看报告并撤销。Windows 工作台的高级识别设置和界面操作见下文。
+
 ## 为什么使用它
 
 - **先预览，再整理**：扫描阶段只读取文件并生成分类计划，确认前不会移动原文件。
@@ -56,7 +67,33 @@
 
 ## 快速开始
 
-### 下载发布版
+### macOS 与 Linux
+
+在 macOS 上从源码构建需要带 macOS 26 或更新 SDK 的 Xcode 或 Command Line Tools，以及 Python 3.10+。在仓库根目录执行以下命令，构建当前架构的应用。源码构建版需保留用于构建的 Python 环境。
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-runtime.txt
+LN_SELECTOR_PYTHON="$PWD/.venv/bin/python" bash macos/build.sh
+open dist/macos/LightNovelSelector.app
+```
+
+在 Fedora 桌面上，可用系统包管理器安装依赖后从仓库根目录启动。
+
+```sh
+sudo dnf install python3-tkinter python3-defusedxml
+sh linux/run.sh
+```
+
+无头 Linux 也可以用 CLI 先做离线预览。将示例目录替换为自己的书库路径。
+
+```sh
+python3 lightnovel_classifier.py "/data/轻小说" --no-network --dry-run
+```
+
+[Linux 分发包与其他发行版说明](linux/README.md)
+
+### 下载 Windows 发布版
 
 从 [`v2.1.0` 发布页](https://github.com/chenhaoxiang05/LightNovelSelector/releases/tag/v2.1.0) 下载：
 
@@ -92,7 +129,7 @@ cd LightNovelSelector
 2. **扫描并预览**：检查系列、置信度、目标路径、重复项和异常项，必要时比较候选并单条或同系列批量修正。
 3. **确认整理**：核对完整执行范围后移动文件；随后可在“活动与报告”中选择批次、查看条目、导出报告或撤销。
 
-常用快捷键：
+WinUI 常用快捷键：
 
 | 快捷键 | 操作 |
 | --- | --- |
@@ -117,12 +154,15 @@ cd LightNovelSelector
 
 ## 原生桌面架构
 
-桌面界面采用 **WinUI 3 + Windows App SDK**，分类与文件安全逻辑由 Python 负责。两端通过本机标准输入输出上的 JSON Lines 协议通信，不启动本地网页服务器。
+Windows 的 WinUI 3 界面和 macOS 的 SwiftUI 界面通过标准输入输出上的 JSON Lines 协议调用 Python 核心。Linux 的 Tk 界面在同一进程内调用同一个应用服务。三个平台共享识别、分类预览、文件校验、移动和报告格式。
 
 ```mermaid
-flowchart LR
-    UI["WinUI 3 原生界面"] -->|"JSON Lines"| Sidecar["Python Sidecar"]
-    Sidecar --> Plan["识别与分类计划"]
+flowchart TD
+    Win["Windows · WinUI 3"] -->|"JSON Lines"| Sidecar["Python Sidecar"]
+    Mac["macOS · SwiftUI"] -->|"JSON Lines"| Sidecar
+    Sidecar --> Service["Python 应用服务"]
+    Linux["Linux · Tk"] --> Service
+    Service --> Plan["识别与分类计划"]
     Plan --> Files["文件校验与移动"]
     Files --> Report["报告与安全撤销"]
     Plan -. "可选标题查询" .-> Metadata["在线元数据"]
@@ -142,8 +182,8 @@ LightNovelSelector 将“能恢复”视为批量整理的基本要求：
 - 执行前再次验证源文件、目标路径和报告写入能力。
 - 扫描后源文件发生大小或修改时间变化时拒绝执行，并提示重新扫描。
 - 从查找目录项开始即可随时取消；单次最多检查 200,000 个目录项、处理 10,000 个受支持文件，超出时会提示缩小范围。
-- 主程序只保留一个活动实例，重复启动会唤回已有窗口，避免并发操作同一目录。
-- 图形界面与命令行同时访问同一报告时，Windows 系统级租约会保护运行中的恢复日志；进程异常退出后租约自动释放，不会永久锁住书库。
+- Windows 主程序只保留一个活动实例，重复启动会唤回已有窗口，避免并发操作同一目录。
+- 图形界面与命令行同时访问同一报告时，Windows 使用系统互斥量，macOS 和 Linux 使用目录锁保护运行中的恢复日志；进程异常退出后租约自动释放，不会永久锁住书库。
 - 目标存在同名文件时不会覆盖，重复项与错误项默认跳过。
 - 批量整理使用线性恢复日志，部分移动成功、进程异常退出或后续步骤失败时仍可重建已完成记录。
 - 恢复时会同时核对原计划、源和目标位置及文件状态；状态有歧义时停止并要求人工检查。
@@ -167,11 +207,13 @@ LightNovelSelector 将“能恢复”视为批量整理的基本要求：
 
 活动页最多显示最近 100 个有效批次；损坏、链接或越界报告会被忽略并提示。筛选历史只影响查看，撤销前仍会按所选批次重新验证完整文件状态。旧版 `classification_report.json` 仍可查看和撤销，但不会自动复制进历史目录。
 
-增量扫描缓存保存在 `%LOCALAPPDATA%\LightNovelSelector\scan_cache.json`。它只包含派生书籍身份、查询、快速签名和完整 SHA-256，不保存正文片段，也不会联网发送。缓存损坏、被锁定或被手动删除都不会影响小说文件和分类报告，只会让下一次扫描重新计算。
+Windows 默认将本地数据存放在 `%LOCALAPPDATA%\LightNovelSelector`，macOS 使用 `~/Library/Application Support/LightNovelSelector`，Linux 使用 `$XDG_DATA_HOME/LightNovelSelector`（默认 `~/.local/share/LightNovelSelector`）。已有命令行用户会继续使用原有的 `~/.lightnovel_selector` 目录。
+
+增量扫描缓存是上述目录中的 `scan_cache.json`。它只包含派生书籍身份、查询、快速签名和完整 SHA-256，不保存正文片段，也不会联网发送。缓存损坏、被锁定或被手动删除都不会影响小说文件和分类报告，只会让下一次扫描重新计算。
 
 项目在 Windows CI 中持续验证 10,000 个合成小说文件的取消、冷缓存扫描、热缓存重扫、内存和缓存复用，并单独验证 10,000 行结果筛选。固定种子的边界测试还会覆盖损坏 EPUB、异常文件名、文件移动各阶段失败和真实 Sidecar 崩溃重连。性能预算用于发现明显退化，不代表所有磁盘都能达到固定耗时；测试方法和本地命令见 [性能基准说明](docs/PERFORMANCE.md)。
 
-人工修正记忆保存在 `%LOCALAPPDATA%\LightNovelSelector\recognition_aliases.json`。它只记录脱离路径的系列别名、用户确认的系列名和更新时间，不保存小说完整路径或正文。文件损坏、不可写或被删除时，当前修正和分类功能仍然有效，只是不再复用此前别名。
+人工修正记忆保存在同一数据目录的 `recognition_aliases.json`。它只记录脱离路径的系列别名、用户确认的系列名和更新时间，不保存小说完整路径或正文。文件损坏、不可写或被删除时，当前修正和分类功能仍然有效，只是不再复用此前别名。
 
 整理进行中或异常退出后，同目录可能短暂保留
 `classification_report.recovery.jsonl`。它只用于核对尚未汇总的移动记录，成功完成或恢复后会自动删除。请勿修改、移动或单独删除报告与恢复日志；两者都包含绝对路径，也不要公开上传。

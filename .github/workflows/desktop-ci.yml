@@ -1,0 +1,89 @@
+name: macOS 与 Linux 桌面验证
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux 整理流程与分发包
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 配置系统 Python 与 Tk
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-venv python3-tk xvfb xauth
+          /usr/bin/python3 -m venv "$RUNNER_TEMP/desktop-env"
+          "$RUNNER_TEMP/desktop-env/bin/python" -m pip install -r requirements-dev.txt
+          echo "$RUNNER_TEMP/desktop-env/bin" >> "$GITHUB_PATH"
+
+      - name: 验证核心与图形界面
+        run: |
+          python -m pytest -q
+          xvfb-run -a python -m unittest discover -s linux/tests -v
+
+      - name: 构建并解压 Linux 分发包
+        run: |
+          sh linux/package.sh
+          tar -xzf dist/LightNovelSelector-linux.tar.gz -C "$RUNNER_TEMP"
+          test -x "$RUNNER_TEMP/LightNovelSelector/linux/run.sh"
+          python "$RUNNER_TEMP/LightNovelSelector/lightnovel_classifier.py" --help
+
+      - name: 保存 Linux 分发包
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: LightNovelSelector-linux
+          path: dist/LightNovelSelector-linux.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: macOS 原生应用与内置整理引擎
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 配置 Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements-runtime.txt
+            requirements-dev.txt
+
+      - name: 构建应用与独立引擎
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m PyInstaller --onefile --name LightNovelSelector.Sidecar \
+            --distpath build/mac-helper --workpath build/pyinstaller --specpath build lightnovel_sidecar.py
+          LN_SELECTOR_SIDECAR="$PWD/build/mac-helper/LightNovelSelector.Sidecar" bash macos/build.sh
+
+      - name: 验证 macOS 应用
+        run: |
+          python tools/verify_sidecar.py dist/macos/LightNovelSelector.app/Contents/Helpers/LightNovelSelector.Sidecar
+          bash macos/test.sh
+          codesign --verify --deep --strict dist/macos/LightNovelSelector.app
+          ditto -c -k --keepParent dist/macos/LightNovelSelector.app dist/LightNovelSelector-macos-arm64.zip
+
+      - name: 保存 macOS 应用
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: LightNovelSelector-macos-arm64
+          path: dist/LightNovelSelector-macos-arm64.zip
+          if-no-files-found: error

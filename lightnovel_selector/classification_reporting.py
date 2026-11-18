@@ -6,8 +6,9 @@ from pathlib import Path
 
 from .classification_recovery import (
     _recover_classification_report,
-    _report_execution_is_active,
+    _release_report_execution,
     _report_journal_path,
+    _try_claim_report_execution,
 )
 from .constants import APP_NAME, APP_VERSION, REPORT_MAX_BYTES, REPORT_SCHEMA_VERSION
 from .models import ClassificationPlan
@@ -100,6 +101,13 @@ def load_classification_report(
     if not recover_pending or (not journal_path.exists() and not journal_path.is_symlink()):
         return report
 
-    if _report_execution_is_active(report_path):
+    if not _try_claim_report_execution(report_path):
         return report
-    return _recover_classification_report(report, report_path, journal_path)
+    try:
+        # The writer may have replaced the report or completed recovery while we acquired the lease.
+        report = _read_classification_report(report_path)
+        if journal_path.exists() or journal_path.is_symlink():
+            return _recover_classification_report(report, report_path, journal_path)
+        return report
+    finally:
+        _release_report_execution(report_path)

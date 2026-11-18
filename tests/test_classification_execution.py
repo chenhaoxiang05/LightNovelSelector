@@ -1,5 +1,4 @@
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -16,6 +15,7 @@ from lightnovel_selector import (
     load_classification_report,
     undo_classification_report,
 )
+from lightnovel_selector.classification_recovery import _recover_classification_report
 
 
 class ClassificationExecutionConcurrencyTests(unittest.TestCase):
@@ -68,7 +68,6 @@ class ClassificationExecutionConcurrencyTests(unittest.TestCase):
             self.assertFalse(journal_path.exists())
             self.assertTrue(second_source.is_file())
 
-    @unittest.skipUnless(os.name == "nt", "跨进程报告租约使用 Windows 命名互斥体。")
     def test_crashed_process_releases_lease_for_journal_recovery(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -108,14 +107,25 @@ with patch("lightnovel_selector.classification_execution.shutil.move", side_effe
             self.assertFalse(source.exists())
             self.assertTrue(journal_path.is_file())
 
-            recovered_report = load_classification_report(report_path)
+            def recover_while_another_reader_opens_report(report: dict, path: Path, journal: Path) -> dict:
+                with patch(
+                    "lightnovel_selector.classification_reporting._recover_classification_report",
+                    side_effect=AssertionError("同一日志不能同时恢复两次。"),
+                ):
+                    self.assertEqual(load_classification_report(path)["summary"]["moved"], 0)
+                return _recover_classification_report(report, path, journal)
+
+            with patch(
+                "lightnovel_selector.classification_reporting._recover_classification_report",
+                side_effect=recover_while_another_reader_opens_report,
+            ):
+                recovered_report = load_classification_report(report_path)
             self.assertEqual(recovered_report["summary"]["moved"], 1)
             self.assertIn("recovered_at", recovered_report)
             self.assertFalse(journal_path.exists())
             self.assertEqual(undo_classification_report(report_path), (1, 0))
             self.assertTrue(source.is_file())
 
-    @unittest.skipUnless(os.name == "nt", "跨进程报告租约使用 Windows 命名互斥体。")
     def test_other_process_does_not_recover_active_report(self) -> None:
         real_move = shutil.move
         with TemporaryDirectory() as temp_dir:

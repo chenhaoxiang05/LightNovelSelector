@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import zipfile
-from collections.abc import Callable, Iterable
+from collections import Counter
+from collections.abc import Callable, Collection, Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -48,24 +49,18 @@ from .scan_cache import FileSnapshot, LocalFileAnalysis, PersistentScanCache, ca
 
 
 def unique_target_path(target_path: Path, reserved: set[Path]) -> Path:
-    normalized = target_path.absolute()
-    occupied = target_path.exists() or target_path.is_symlink()
-    if not occupied and normalized not in reserved:
-        reserved.add(normalized)
-        return target_path
+    candidate = _available_target_path(target_path, reserved)
+    reserved.add(candidate.absolute())
+    return candidate
 
-    stem = target_path.stem
-    suffix = target_path.suffix
-    parent = target_path.parent
-    counter = 1
-    while True:
-        candidate = parent / f"{stem} ({counter}){suffix}"
-        normalized_candidate = candidate.absolute()
-        occupied = candidate.exists() or candidate.is_symlink()
-        if not occupied and normalized_candidate not in reserved:
-            reserved.add(normalized_candidate)
-            return candidate
+
+def _available_target_path(target_path: Path, reserved: Collection[Path]) -> Path:
+    candidate = target_path
+    counter = 0
+    while candidate.absolute() in reserved or candidate.exists() or candidate.is_symlink():
         counter += 1
+        candidate = target_path.with_name(f"{target_path.stem} ({counter}){target_path.suffix}")
+    return candidate
 
 
 @dataclass(frozen=True, slots=True)
@@ -565,17 +560,45 @@ def revise_classification_plan(
 ) -> ClassificationPlan:
     if index < 0 or index >= len(plans):
         raise IndexError("分类计划索引超出范围。")
+    return _revised_entries(plans, (index,), series_name)[index]
+
+
+def _revised_entries(
+    plans: list[ClassificationPlan],
+    indices: tuple[int, ...],
+    series_name: str,
+) -> dict[int, ClassificationPlan]:
     clean_series = collapse_spaces(series_name)
     if not clean_series:
         raise ValueError("系列名不能为空。")
     if len(clean_series) > SERIES_NAME_MAX_CHARS:
         raise ValueError(f"系列名不能超过 {SERIES_NAME_MAX_CHARS} 个字符。")
 
-    plan = plans[index]
-    if plan.status == "moved":
+    if any(plans[i].status == "moved" for i in indices):
         raise ValueError("已移动的文件不能直接修改，请先撤销分类。")
 
     folder_name = safe_folder_name(clean_series)
+    original_targets = {
+        i: plan.target_path.resolve() if plan.target_path.exists() else plan.target_path.absolute()
+        for i, plan in enumerate(plans)
+        if plan.status == "ready"
+    }
+    reserved = Counter(original_targets.values())
+    revised = {}
+    for index in indices:
+        if index in original_targets:
+            old_target = original_targets[index]
+            reserved[old_target] -= 1
+            if reserved[old_target] == 0:
+                del reserved[old_target]
+        plan = _revise_plan(plans[index], folder_name, reserved)
+        revised[index] = plan
+        if plan.status == "ready":
+            reserved[plan.target_path.absolute()] += 1
+    return revised
+
+
+def _revise_plan(plan: ClassificationPlan, folder_name: str, reserved: Collection[Path]) -> ClassificationPlan:
     target_dir = plan.target_dir.parent / folder_name
     proposed_target = target_dir / plan.source_path.name
     try:
@@ -588,12 +611,7 @@ def revise_classification_plan(
         status = "unchanged"
         note = "文件已在手动指定的系列目录中，无需移动。"
     else:
-        reserved = {
-            other.target_path.resolve() if other.target_path.exists() else other.target_path.absolute()
-            for other_index, other in enumerate(plans)
-            if other_index != index and other.status == "ready"
-        }
-        target_path = unique_target_path(proposed_target, reserved)
+        target_path = _available_target_path(proposed_target, reserved)
         status = "ready"
         note = "已手动修正系列名。"
 
@@ -650,14 +668,8 @@ def revise_classification_plans(
     scope: Literal["single", "same_series"] = "single",
 ) -> tuple[int, ...]:
     indices = classification_plan_group_indices(plans, index, scope)
-    revised_plans = list(plans)
-    for plan_index in indices:
-        revised_plans[plan_index] = revise_classification_plan(
-            revised_plans,
-            plan_index,
-            series_name,
-        )
-    plans[:] = revised_plans
+    for plan_index, revised in _revised_entries(plans, indices, series_name).items():
+        plans[plan_index] = revised
     return indices
 
 

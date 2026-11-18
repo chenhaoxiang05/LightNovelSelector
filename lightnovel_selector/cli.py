@@ -25,8 +25,9 @@ def print_plan(plans: list[ClassificationPlan]) -> None:
     for plan in plans:
         marker = "MOVE" if plan.will_move else "SKIP"
         note = f"\t{plan.note}" if plan.note else ""
+        destination = plan.target_path.relative_to(plan.target_dir.parent)
         print(
-            f"{marker}\t{plan.source_path.name}\t=>\t{plan.target_dir.name}\\{plan.target_path.name}"
+            f"{marker}\t{plan.source_path.name}\t=>\t{destination}"
             f"\t[{plan.resolver_source}, {plan.confidence:.0%} {plan.confidence_level}, "
             f"{plan_status_label(plan.status)}]\t{plan.classification_reason}{note}"
         )
@@ -109,5 +110,5 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.folder:
         return run_cli(args)
-    print("未提供分类目录。图形界面请运行 run_winui.bat。", file=sys.stderr)
+    print("未提供分类目录。可加 --help 查看命令行用法，或打开本平台的桌面版。", file=sys.stderr)
     return 2
