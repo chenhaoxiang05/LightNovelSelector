@@ -57,6 +57,7 @@ for operation in operations:
                 child = subprocess.run(
                     [sys.executable, "-c", child_script, str(root)],
                     cwd=Path(__file__).resolve().parents[1],
+                    check=False,
                     capture_output=True,
                     timeout=10,
                 )

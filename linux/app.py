@@ -9,8 +9,8 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 # The installed archive and the source checkout have the same layout.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from lightnovel_selector.application import ApplicationService  # noqa: E402
-from linux.history import ReportHistory  # noqa: E402
+from lightnovel_selector.application import ApplicationService
+from linux.history import ReportHistory
 
 PAGE_SIZE = 200
 

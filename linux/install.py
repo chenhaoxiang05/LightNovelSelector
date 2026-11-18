@@ -70,11 +70,12 @@ def install(source: Path, data_home: Path):
 
 
 if __name__ == "__main__":
-    if sys.version_info < (3, 10):
+    if sys.version_info < (3, 10):  # noqa: UP036 - installer runs under the user's system Python.
         sys.exit("需要 Python 3.10 或更高版本。")
     try:
-        import defusedxml  # noqa: F401
         import tkinter  # noqa: F401
+
+        import defusedxml  # noqa: F401
     except ImportError:
         sys.exit("请先按 linux/README.md 安装 Tk 和 defusedxml。")
     data_home = Path(os.environ.get("XDG_DATA_HOME") or "")

@@ -154,7 +154,7 @@ class ReportHistory(tk.Toplevel):
         record = self.records[self.rows.selection()[0]]
         if not messagebox.askyesno(
             "确认撤销本批次",
-            f"将按 {record['created_at']} 的完整报告恢复 " f"{record['summary']['moved']} 个已移动文件。",
+            f"将按 {record['created_at']} 的完整报告恢复 {record['summary']['moved']} 个已移动文件。",
             parent=self,
             default="no",
         ):
