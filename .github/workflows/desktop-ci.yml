@@ -26,9 +26,9 @@ jobs:
       - name: 配置系统 Python 与 Tk
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends python3-venv python3-tk xvfb xauth
+          sudo apt-get install -y --no-install-recommends python3-venv python3-tk xvfb xauth desktop-file-utils
           /usr/bin/python3 -m venv "$RUNNER_TEMP/desktop-env"
-          "$RUNNER_TEMP/desktop-env/bin/python" -m pip install -r requirements-dev.txt
+          "$RUNNER_TEMP/desktop-env/bin/python" -m pip install -c requirements-dev.txt -r requirements-runtime.txt pytest
           echo "$RUNNER_TEMP/desktop-env/bin" >> "$GITHUB_PATH"
 
       - name: 验证核心与图形界面
@@ -42,6 +42,8 @@ jobs:
           tar -xzf dist/LightNovelSelector-linux.tar.gz -C "$RUNNER_TEMP"
           test -x "$RUNNER_TEMP/LightNovelSelector/linux/run.sh"
           python "$RUNNER_TEMP/LightNovelSelector/lightnovel_classifier.py" --help
+          XDG_DATA_HOME="$RUNNER_TEMP/menu" python "$RUNNER_TEMP/LightNovelSelector/linux/install.py"
+          desktop-file-validate "$RUNNER_TEMP/menu/applications/io.github.chenhaoxiang05.LightNovelSelector.desktop"
 
       - name: 保存 Linux 分发包
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -69,7 +71,7 @@ jobs:
 
       - name: 构建应用与独立引擎
         run: |
-          python -m pip install -r requirements-dev.txt
+          python -m pip install -c requirements-dev.txt -r requirements-runtime.txt pyinstaller
           python -m PyInstaller --onefile --name LightNovelSelector.Sidecar \
             --distpath build/mac-helper --workpath build/pyinstaller --specpath build lightnovel_sidecar.py
           LN_SELECTOR_SIDECAR="$PWD/build/mac-helper/LightNovelSelector.Sidecar" bash macos/build.sh

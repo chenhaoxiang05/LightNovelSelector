@@ -115,9 +115,9 @@ def _validate_target_state(plan: ClassificationPlan) -> tuple[Path, Path]:
 def _validate_execution_plan(
     plans: list[ClassificationPlan],
     report_path: Path | None,
-) -> None:
+) -> Path | None:
     if not plans:
-        return
+        return report_path.parent if report_path is not None else None
     if len(plans) > SCAN_MAX_FILES:
         raise ValueError(f"单次执行最多支持 {SCAN_MAX_FILES} 个分类计划。")
     roots = {plan.target_dir.parent.expanduser().resolve() for plan in plans}
@@ -144,6 +144,7 @@ def _validate_execution_plan(
                 raise ValueError("分类计划包含重复的目标路径。")
             seen_targets.add(target_path)
             _validate_source_state(plan)
+    return root_path
 
 
 def _report_root(report: dict, report_path: Path) -> Path:

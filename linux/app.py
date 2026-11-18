@@ -30,6 +30,7 @@ class LibraryWindow:
         self.movable = 0
         self.page = 0
         self.poll_id = None
+        self.closing = False
         self.filter_id = None
         self.state = {}
         self.folder = tk.StringVar()
@@ -96,10 +97,15 @@ class LibraryWindow:
         table.grid(row=4, sticky="nsew")
         table.rowconfigure(0, weight=1)
         table.columnconfigure(0, weight=1)
-        self.tree = ttk.Treeview(table, columns=("file", "series", "confidence", "status"), show="headings",
-                                 selectmode="browse", height=8)
-        for key, label, width in (("file", "文件名", 330), ("series", "系列", 210),
-                                  ("confidence", "置信度", 80), ("status", "状态", 86)):
+        self.tree = ttk.Treeview(
+            table, columns=("file", "series", "confidence", "status"), show="headings", selectmode="browse", height=8
+        )
+        for key, label, width in (
+            ("file", "文件名", 330),
+            ("series", "系列", 210),
+            ("confidence", "置信度", 80),
+            ("status", "状态", 86),
+        ):
             self.tree.heading(key, text=label, anchor="w")
             self.tree.column(key, width=width, minwidth=64, stretch=key in {"file", "series"})
         self.tree.grid(row=0, column=0, sticky="nsew")
@@ -120,8 +126,17 @@ class LibraryWindow:
         info = ttk.LabelFrame(body, text="所选文件", padding=(8, 6))
         info.grid(row=6, sticky="ew")
         info.columnconfigure(0, weight=1)
-        self.detail_text = tk.Text(info, height=4, width=10, wrap="word", borderwidth=0, highlightthickness=0,
-                                   font="TkDefaultFont", state="disabled", takefocus=True)
+        self.detail_text = tk.Text(
+            info,
+            height=4,
+            width=10,
+            wrap="word",
+            borderwidth=0,
+            highlightthickness=0,
+            font="TkDefaultFont",
+            state="disabled",
+            takefocus=True,
+        )
         self.detail_text.grid(row=0, column=0, sticky="ew")
         scrollbar = ttk.Scrollbar(info, orient="vertical", command=self.detail_text.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
@@ -185,10 +200,14 @@ class LibraryWindow:
             self.enable(widget, not running)
         self.update_edit_button()
         counts = state["counts"]
-        self.summary.set(f"共 {counts['total']} 个文件　·　可整理 {counts['ready']}　·　重复 {counts['duplicate']}　·　错误 {counts['error']}")
+        self.summary.set(
+            f"共 {counts['total']} 个文件　·　可整理 {counts['ready']}　·　重复 {counts['duplicate']}　·　错误 {counts['error']}"
+        )
         self.message.set(display(op["message"] + (f"：{op['error']}" if op["error"] else "")))
         self.progress.configure(maximum=max(1, op["total"]), value=op["done"])
-        if running:
+        if self.closing and not running:
+            self.root.destroy()
+        elif running:
             self.poll_id = self.root.after(180, self.refresh)
 
     def schedule_filter(self):
@@ -204,22 +223,37 @@ class LibraryWindow:
         old = self.tree.selection()
         query = self.search.get().strip().casefold()
         status = self.status_filter.get()
-        matches = [row for row in self.plans
-                   if (status == "全部状态" or row["status_label"] == status)
-                   and (not query or query in row["file_name"].casefold() or query in row["series_name"].casefold())]
+        matches = [
+            row
+            for row in self.plans
+            if (status == "全部状态" or row["status_label"] == status)
+            and (not query or query in row["file_name"].casefold() or query in row["series_name"].casefold())
+        ]
         last = max(0, (len(matches) - 1) // PAGE_SIZE)
         self.page = min(max(0, page), last)
         children = self.tree.get_children()
         if children:
             self.tree.delete(*children)
         start = self.page * PAGE_SIZE
-        for row in matches[start:start + PAGE_SIZE]:
-            self.tree.insert("", "end", iid=str(row["index"]), values=(
-                display(row["file_name"]), display(row["series_name"]), row["confidence_label"], row["status_label"]))
+        for row in matches[start : start + PAGE_SIZE]:
+            self.tree.insert(
+                "",
+                "end",
+                iid=str(row["index"]),
+                values=(
+                    display(row["file_name"]),
+                    display(row["series_name"]),
+                    row["confidence_label"],
+                    row["status_label"],
+                ),
+            )
         if old and self.tree.exists(old[0]):
             self.tree.selection_set(old[0])
-        self.page_label.set(f"显示 {start + 1}–{min(start + PAGE_SIZE, len(matches))} / {len(matches)} 个结果"
-                            if matches else "没有匹配的文件")
+        self.page_label.set(
+            f"显示 {start + 1}–{min(start + PAGE_SIZE, len(matches))} / {len(matches)} 个结果"
+            if matches
+            else "没有匹配的文件"
+        )
         self.enable(self.previous, self.page > 0)
         self.enable(self.following, self.page < last)
         self.show_detail()
@@ -230,16 +264,21 @@ class LibraryWindow:
 
     def update_edit_button(self):
         row = self.selected()
-        self.enable(self.edit_button, row is not None and row["status"] != "moved"
-                    and self.state["operation"]["state"] != "running")
+        self.enable(
+            self.edit_button,
+            row is not None and row["status"] != "moved" and self.state["operation"]["state"] != "running",
+        )
 
     def show_detail(self):
         row = self.selected()
         lines = ["选择文件可查看完整路径和分类依据。"]
         if row:
-            lines = [f"原路径　{row['source_path']}", f"目标　　{row['target_path']}",
-                     f"识别　　{row['resolver_source']}　{row['classification_reason']}",
-                     f"书籍　　{row['book_title']}　·　{row['authors_label']}　·　{row['volume_label']}　·　{row['language_label']}"]
+            lines = [
+                f"原路径　{row['source_path']}",
+                f"目标　　{row['target_path']}",
+                f"识别　　{row['resolver_source']}　{row['classification_reason']}",
+                f"书籍　　{row['book_title']}　·　{row['authors_label']}　·　{row['volume_label']}　·　{row['language_label']}",
+            ]
             lines.extend(row["classification_evidence"])
             if row["note"]:
                 lines.append(row["note"])
@@ -254,8 +293,12 @@ class LibraryWindow:
             return
         row = self.selected()
         revision = self.revision
-        name = simpledialog.askstring("修正系列", f"为「{display(row['file_name'])}」指定系列名",
-                                      initialvalue=display(row["series_name"]), parent=self.root)
+        name = simpledialog.askstring(
+            "修正系列",
+            f"为「{display(row['file_name'])}」指定系列名",
+            initialvalue=display(row["series_name"]),
+            parent=self.root,
+        )
         if name is not None:
             self.run(self.service.edit_plans, row["index"], name, scope="single", expected_plans_revision=revision)
 
@@ -267,8 +310,9 @@ class LibraryWindow:
     def pick_folder(self):
         if self.choose.instate(["disabled"]):
             return
-        folder = filedialog.askdirectory(parent=self.root, title="选择轻小说目录", mustexist=True,
-                                         initialdir=self.state["folder"] or None)
+        folder = filedialog.askdirectory(
+            parent=self.root, title="选择轻小说目录", mustexist=True, initialdir=self.state["folder"] or None
+        )
         if folder:
             self.run(self.service.set_folder, folder)
 
@@ -287,9 +331,14 @@ class LibraryWindow:
         if self.apply.instate(["disabled"]):
             return
         counts = self.state["counts"]
-        if messagebox.askyesno("确认整理全部预览", f"{self.folder.get()}\n\n将按完整预览移动 {self.movable} 个文件，"
-                               f"其余 {counts['total'] - self.movable} 个跳过。搜索、筛选和分页仅影响显示。"
-                               "\n\n执行后可在整理历史中撤销。", parent=self.root, default="no"):
+        if messagebox.askyesno(
+            "确认整理全部预览",
+            f"{self.folder.get()}\n\n将按完整预览移动 {self.movable} 个文件，"
+            f"其余 {counts['total'] - self.movable} 个跳过。搜索、筛选和分页仅影响显示。"
+            "\n\n执行后可在整理历史中撤销。",
+            parent=self.root,
+            default="no",
+        ):
             self.run(self.service.start_apply)
 
     def open_history(self):
@@ -297,12 +346,20 @@ class LibraryWindow:
             ReportHistory(self.root, self.service, self.refresh)
 
     def close(self):
+        if self.closing:
+            return
+        for window in self.root.winfo_children():
+            if isinstance(window, ReportHistory):
+                window.lift()
+                return
         if self.service.is_critical_operation():
             messagebox.showinfo("正在整理文件", "请等待文件操作完成后关闭。", parent=self.root)
             return
         if self.service.is_operation_running():
-            self.service.cancel_operation()
-        self.root.destroy()
+            self.closing = True
+            self.run(self.service.cancel_operation)
+        else:
+            self.root.destroy()
 
 
 def main():

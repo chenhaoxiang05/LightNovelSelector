@@ -5,8 +5,11 @@ cd "$root"
 python="${LN_SELECTOR_PYTHON:-python3}"
 "$python" -c 'import sys; assert sys.version_info >= (3, 10), "Python 3.10+ required"; import defusedxml'
 mkdir -p build/macos/module-cache dist/macos
-stage="$(mktemp -d "$root/build/macos/bundle.XXXXXX")"
-trap 'rm -rf "$stage"' EXIT
+# The signing workspace must be outside a File Provider synced checkout. Such providers
+# can attach FinderInfo to an .app as soon as its directory appears.
+stage="$(mktemp -d)"
+incoming="$(mktemp -d "$root/dist/macos/.incoming.XXXXXX")"
+trap 'rm -rf "$stage" "$incoming"' EXIT
 app="$stage/LightNovelSelector.app"
 contents="$app/Contents"
 resources="$contents/Resources"
@@ -47,6 +50,15 @@ shutil.copyfile(license_file, resources / "licenses" / "defusedxml-LICENSE")
 license_file = Path(sysconfig.get_path("stdlib")) / "LICENSE.txt"
 if license_file.is_file():
     shutil.copyfile(license_file, resources / "licenses" / "Python-LICENSE.txt")
+try:
+    pyinstaller = importlib.metadata.distribution("pyinstaller")
+except importlib.metadata.PackageNotFoundError:
+    pass
+else:
+    for file in pyinstaller.files or ():
+        if file.name.upper() in ("COPYING", "COPYING.TXT", "LICENSE", "LICENSE.TXT"):
+            shutil.copyfile(pyinstaller.locate_file(file), resources / "licenses" / ("PyInstaller-" + file.name))
+
 PY
 
 if [[ -n "${LN_SELECTOR_SIDECAR:-}" ]]; then
@@ -61,9 +73,10 @@ xattr -cr "$app"
 codesign --force --sign - "$app"
 codesign --verify --strict "$app"
 destination="$root/dist/macos/LightNovelSelector.app"
+ditto --norsrc --noextattr "$app" "$incoming/LightNovelSelector.app"
 # Both directories are in this checkout. Swap atomically to keep the last good build
 # available throughout an upgrade; the exit trap then discards the old bundle.
-"$python" - "$app" "$destination" <<'PYCODE'
+"$python" - "$incoming/LightNovelSelector.app" "$destination" <<'PYCODE'
 import ctypes
 import os
 import sys
@@ -79,4 +92,7 @@ if destination.exists():
 else:
     source.rename(destination)
 PYCODE
+# File Provider can add FinderInfo to the bundle directory when it is moved into place.
+xattr -d com.apple.FinderInfo "$destination" 2>/dev/null || true
+codesign --verify "$destination"
 echo "$destination"

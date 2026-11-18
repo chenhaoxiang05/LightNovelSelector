@@ -15,6 +15,7 @@ class ReportHistory(tk.Toplevel):
         self.reader = ThreadPoolExecutor(max_workers=1, thread_name_prefix="report-reader")
         self.read_job = None
         self.timer = None
+        self.closing = False
         self.records = {}
         self.title("整理历史")
         self.transient(root)
@@ -30,10 +31,15 @@ class ReportHistory(tk.Toplevel):
         table.grid(sticky="nsew")
         table.columnconfigure(0, weight=1)
         table.rowconfigure(0, weight=1)
-        self.rows = ttk.Treeview(table, columns=("date", "moved", "skipped", "status"), show="headings",
-                                 height=6, selectmode="browse")
-        for key, label, width in (("date", "整理时间", 220), ("moved", "已移动", 70), ("skipped", "已跳过", 70),
-                                  ("status", "状态", 80)):
+        self.rows = ttk.Treeview(
+            table, columns=("date", "moved", "skipped", "status"), show="headings", height=6, selectmode="browse"
+        )
+        for key, label, width in (
+            ("date", "整理时间", 220),
+            ("moved", "已移动", 70),
+            ("skipped", "已跳过", 70),
+            ("status", "状态", 80),
+        ):
             self.rows.heading(key, text=label, anchor="w")
             self.rows.column(key, width=width)
         self.rows.grid(row=0, column=0, sticky="nsew")
@@ -88,8 +94,17 @@ class ReportHistory(tk.Toplevel):
         for record in history["reports"]:
             key = record["report_id"]
             self.records[key] = record
-            self.rows.insert("", "end", iid=key, values=(
-                record["created_at"], record["summary"]["moved"], record["summary"]["skipped"], record["status_label"]))
+            self.rows.insert(
+                "",
+                "end",
+                iid=key,
+                values=(
+                    record["created_at"],
+                    record["summary"]["moved"],
+                    record["summary"]["skipped"],
+                    record["status_label"],
+                ),
+            )
         hints = [f"{len(self.records)} 个整理批次" if self.records else "此目录尚无可用报告"]
         if history["invalid_count"]:
             hints.append(f"忽略了 {history['invalid_count']} 份无效报告")
@@ -108,6 +123,8 @@ class ReportHistory(tk.Toplevel):
         self.items.configure(state="disabled")
 
     def select(self):
+        if self.closing:
+            return
         selected = self.rows.selection()
         self.undo.state(["disabled"])
         if not selected:
@@ -119,8 +136,10 @@ class ReportHistory(tk.Toplevel):
         def show(report):
             if self.rows.selection() != (key,):
                 return
-            lines = [f"{item['source_path']}\n    → {item['actual_target_path'] or item['target_path']}"
-                     for item in report["items"]]
+            lines = [
+                f"{item['source_path']}\n    → {item['actual_target_path'] or item['target_path']}"
+                for item in report["items"]
+            ]
             if report["items_truncated"]:
                 lines.append(f"报告共 {report['item_count']} 项，仅展示前 {len(report['items'])} 项。")
             self.set_items("\n".join(lines) or "当前报告没有文件条目。")
@@ -133,8 +152,12 @@ class ReportHistory(tk.Toplevel):
         if self.undo.instate(["disabled"]) or not self.rows.selection():
             return
         record = self.records[self.rows.selection()[0]]
-        if not messagebox.askyesno("确认撤销本批次", f"将按 {record['created_at']} 的完整报告恢复 "
-                                   f"{record['summary']['moved']} 个已移动文件。", parent=self, default="no"):
+        if not messagebox.askyesno(
+            "确认撤销本批次",
+            f"将按 {record['created_at']} 的完整报告恢复 " f"{record['summary']['moved']} 个已移动文件。",
+            parent=self,
+            default="no",
+        ):
             return
         try:
             self.service.start_undo(record["report_id"])
@@ -145,7 +168,14 @@ class ReportHistory(tk.Toplevel):
         self.refresh()
 
     def close(self):
+        self.closing = True
         if self.timer is not None:
             self.after_cancel(self.timer)
+        # A history load may recover or archive a report. Keep the folder locked in this dialog until it finishes.
+        if self.read_job is not None and not self.read_job.done():
+            self.status.set("正在完成报告读取…")
+            self.undo.state(["disabled"])
+            self.timer = self.after(60, self.close)
+            return
         self.reader.shutdown(wait=False, cancel_futures=True)
         self.destroy()

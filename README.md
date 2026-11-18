@@ -78,7 +78,7 @@ LN_SELECTOR_PYTHON="$PWD/.venv/bin/python" bash macos/build.sh
 open dist/macos/LightNovelSelector.app
 ```
 
-在 Fedora 桌面上，可用系统包管理器安装依赖后从仓库根目录启动。
+在 Fedora 桌面上，可用系统包管理器安装依赖后从仓库根目录启动。要加到 KDE 或 GNOME 的应用菜单，再运行一次 `python3 linux/install.py`。
 
 ```sh
 sudo dnf install python3-tkinter python3-defusedxml

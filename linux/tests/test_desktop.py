@@ -66,8 +66,9 @@ class DesktopWorkflowTest(unittest.TestCase):
         with patch("linux.app.messagebox.askyesno", return_value=True) as confirm:
             self.app.apply.invoke()
         self.assertIn("移动 2 个文件", confirm.call_args.args[1])
-        self.wait_for(lambda: self.app.state["operation"]["state"] == "success"
-                      and self.app.state["operation"]["kind"] == "apply")
+        self.wait_for(
+            lambda: self.app.state["operation"]["state"] == "success" and self.app.state["operation"]["kind"] == "apply"
+        )
         self.assertFalse(first.exists() or second.exists())
         self.assertEqual((self.library / "修正系列" / first.name).read_text(encoding="utf-8"), "volume one")
         self.app.history.invoke()
@@ -76,8 +77,9 @@ class DesktopWorkflowTest(unittest.TestCase):
         self.assertIn(first.name, dialog.items.get("1.0", "end"))
         with patch("linux.history.messagebox.askyesno", return_value=True):
             dialog.undo.invoke()
-        self.wait_for(lambda: self.app.state["operation"]["kind"] == "undo"
-                      and self.app.state["operation"]["state"] == "success")
+        self.wait_for(
+            lambda: self.app.state["operation"]["kind"] == "undo" and self.app.state["operation"]["state"] == "success"
+        )
         self.assertEqual(first.read_text(encoding="utf-8"), "volume one")
         self.assertEqual(second.read_text(encoding="utf-8"), "volume two")
         self.assertEqual(self.app.tree.get_children(), ())

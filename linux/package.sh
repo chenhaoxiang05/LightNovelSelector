@@ -16,6 +16,7 @@ sources = [
     Path("THIRD_PARTY_NOTICES.md"),
     Path("requirements-runtime.txt"),
     Path("lightnovel_classifier.py"),
+    Path("native/LightNovelSelector.WinUI/Assets/Square150x150Logo.scale-200.png"),
     Path("linux/README.md"),
     Path("linux/run.sh"),
     *Path("linux").glob("*.py"),
