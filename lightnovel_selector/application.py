@@ -249,6 +249,8 @@ class ApplicationService:
         self.folder = self._existing_folder(self.settings.last_folder)
         self.plans: list[ClassificationPlan] = []
         self.plans_revision = 0
+        self._counts_revision = -1
+        self._plan_counts: dict[str, int] = {}
         self.scan_cache_stats = ScanCacheStats().to_dict()
         self.report_path: Path | None = self._report_for_folder(self.folder)
         self._operation_id = 0
@@ -551,11 +553,8 @@ class ApplicationService:
             self._append_log("设置已保存。", "success")
         return {"saved": error is None, "warning": str(error) if error else None, "state": self.snapshot()}
 
-    def snapshot(self, log_cursor: int = 0, plans_revision: int = -1) -> dict[str, Any]:
-        with self._lock:
-            plans_payload = None
-            if plans_revision != self.plans_revision:
-                plans_payload = [plan_to_dict(plan, index) for index, plan in enumerate(self.plans)]
+    def _snapshot_counts_locked(self) -> dict[str, int]:
+        if self._counts_revision != self.plans_revision:
             counts = count_plan_statuses(self.plans)
             counts.update(
                 {
@@ -564,13 +563,22 @@ class ApplicationService:
                     "series": len({plan.series_key or plan.series_name for plan in self.plans}),
                 }
             )
+            self._plan_counts = counts
+            self._counts_revision = self.plans_revision
+        return self._plan_counts.copy()
+
+    def snapshot(self, log_cursor: int = 0, plans_revision: int = -1) -> dict[str, Any]:
+        with self._lock:
+            plans_payload = None
+            if plans_revision != self.plans_revision:
+                plans_payload = [plan_to_dict(plan, index) for index, plan in enumerate(self.plans)]
             return {
                 "app": {"name": APP_NAME, "version": APP_VERSION},
                 "metadata_providers": self._provider_snapshot(),
                 "folder": str(self.folder) if self.folder else "",
                 "settings": app_settings_to_dict(self.settings),
                 "operation": dict(self.operation),
-                "counts": counts,
+                "counts": self._snapshot_counts_locked(),
                 "scan_cache": dict(self.scan_cache_stats),
                 "report_path": str(self.report_path) if self.report_path and self.report_path.exists() else None,
                 "plans_revision": self.plans_revision,

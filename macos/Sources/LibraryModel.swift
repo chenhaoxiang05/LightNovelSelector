@@ -34,6 +34,19 @@ struct PreviewFile: Identifiable {
     }
 }
 
+enum StatusFilter: String, CaseIterable, Identifiable {
+    case all = "全部", ready = "待移动", duplicates = "重复", errors = "异常"
+    var id: Self { self }
+    func includes(_ file: PreviewFile) -> Bool {
+        switch self {
+        case .all: true
+        case .ready: file.willMove
+        case .duplicates: file.statusKey == "duplicate"
+        case .errors: file.statusKey == "error"
+        }
+    }
+}
+
 struct Batch: Identifiable {
     let id, date, status: String
     let moved, skipped, errors: Int
@@ -73,7 +86,16 @@ final class LibraryModel {
     var sending = false
     var folder = ""
     var revision = -1
-    var plans: [PreviewFile] = []
+    private(set) var plans: [PreviewFile] = [] {
+        didSet { updateVisibleRows() }
+    }
+    private(set) var visibleRows: [PreviewFile] = []
+    var query = "" {
+        didSet { if query != oldValue { updateVisibleRows() } }
+    }
+    var statusFilter = StatusFilter.all {
+        didSet { if statusFilter != oldValue { updateVisibleRows() } }
+    }
     var history: [Batch] = []
     var settings: Payload = [:]
     var operation = Operation()
@@ -88,6 +110,19 @@ final class LibraryModel {
     var idle: Bool { connected && !sending && !operation.running }
     var movableCount = 0
     var settingsNetwork: Bool { settings["use_network"] as? Bool ?? true }
+
+    private func updateVisibleRows() {
+        let query = self.query
+        let status = statusFilter
+        if query.isEmpty && status == .all {
+            visibleRows = plans
+            return
+        }
+        visibleRows = plans.filter { file in
+            status.includes(file) && (query.isEmpty || file.name.localizedCaseInsensitiveContains(query)
+                                      || file.series.localizedCaseInsensitiveContains(query))
+        }
+    }
 
     func connect() async {
         guard !sending, !connected else { return }
@@ -129,11 +164,12 @@ final class LibraryModel {
     private func receive(_ snapshot: Payload) {
         folder = snapshot.string("folder")
         settings = snapshot["settings"] as? Payload ?? [:]
-        if let rows = snapshot["plans"] as? [Payload] {
+        let newRevision = snapshot.count("plans_revision")
+        if newRevision > revision, let rows = snapshot["plans"] as? [Payload] {
+            revision = newRevision
             plans = rows.map(PreviewFile.init)
             movableCount = plans.lazy.filter(\.willMove).count
         }
-        revision = snapshot.count("plans_revision")
         cursor = snapshot.count("log_cursor")
         operation = Operation(snapshot["operation"] as? Payload ?? [:])
     }

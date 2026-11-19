@@ -52,8 +52,6 @@ private struct EditSelection: Identifiable {
 private struct Workspace: View {
     @Bindable var model: LibraryModel
     @ViewState private var page: Page? = .library
-    @ViewState private var query = ""
-    @ViewState private var filter = StatusFilter.all
     @ViewState private var selection: Int?
     @ViewState private var editing: EditSelection?
     @ViewState private var viewing: Batch?
@@ -63,12 +61,6 @@ private struct Workspace: View {
     private var selected: PreviewFile? {
         guard let selection, model.plans.indices.contains(selection) else { return nil }
         return model.plans[selection]
-    }
-    private var visibleRows: [PreviewFile] {
-        model.plans.filter { file in
-            filter.includes(file) && (query.isEmpty || file.name.localizedCaseInsensitiveContains(query)
-                                       || file.series.localizedCaseInsensitiveContains(query))
-        }
     }
 
     var body: some View {
@@ -126,8 +118,8 @@ private struct Workspace: View {
             if page == .history { await model.reloadHistory() }
         }
         .onChange(of: model.revision) { _, _ in selection = nil }
-        .onChange(of: query) { _, _ in selection = nil }
-        .onChange(of: filter) { _, _ in selection = nil }
+        .onChange(of: model.query) { _, _ in selection = nil }
+        .onChange(of: model.statusFilter) { _, _ in selection = nil }
         .sheet(item: $editing) { EditFileView(model: model, item: $0) }
         .sheet(item: $viewing) { ReportView(model: model, batch: $0) }
         .alert("确认整理整个预览？", isPresented: $confirmingApply) {
@@ -191,13 +183,13 @@ private struct Workspace: View {
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    TextField("搜索文件或系列", text: $query).textFieldStyle(.roundedBorder)
+                    TextField("搜索文件或系列", text: $model.query).textFieldStyle(.roundedBorder)
                         .accessibilityLabel("搜索文件或系列")
-                    Picker("状态", selection: $filter) {
+                    Picker("状态", selection: $model.statusFilter) {
                         ForEach(StatusFilter.allCases) { Text($0.rawValue).tag($0) }
                     }.frame(maxWidth: 175)
                 }
-                Table(visibleRows, selection: $selection) {
+                Table(model.visibleRows, selection: $selection) {
                     TableColumn("文件名", value: \.name).width(min: 130, ideal: 230)
                     TableColumn("系列", value: \.series).width(min: 85, ideal: 145)
                     TableColumn("置信度", value: \.confidence).width(58)
@@ -211,7 +203,7 @@ private struct Workspace: View {
                 }
                 HStack {
                     VStack(alignment: .leading) {
-                        Text("显示 \(visibleRows.count) / \(model.plans.count) 项")
+                        Text("显示 \(model.visibleRows.count) / \(model.plans.count) 项")
                         Text("共 \(model.movableCount) 项待移动").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -271,19 +263,6 @@ private struct Workspace: View {
                             set: { value in Task { await model.updateSetting(key, value: value) } })) {
             Text(title)
             Text(description).foregroundStyle(.secondary)
-        }
-    }
-}
-
-private enum StatusFilter: String, CaseIterable, Identifiable {
-    case all = "全部", ready = "待移动", duplicates = "重复", errors = "异常"
-    var id: Self { self }
-    func includes(_ file: PreviewFile) -> Bool {
-        switch self {
-        case .all: true
-        case .ready: file.willMove
-        case .duplicates: file.statusKey == "duplicate"
-        case .errors: file.statusKey == "error"
         }
     }
 }

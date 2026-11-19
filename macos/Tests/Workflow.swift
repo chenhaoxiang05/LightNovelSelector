@@ -37,15 +37,26 @@ struct WorkflowTest {
         guard model.plans.count == 1, model.movableCount == 1,
               try Data(contentsOf: source) == content else { throw Failed("Preview changed the source or missed it") }
         let preview = model.plans[0]
+        model.query = "TXT"
+        model.statusFilter = .duplicates
+        guard model.visibleRows.isEmpty else { throw Failed("Status filter did not hide a ready item") }
+        model.statusFilter = .ready
+        guard model.visibleRows.map(\.id) == [preview.id] else { throw Failed("Filename search failed") }
+        model.query = "测试系列"
+        guard model.visibleRows.isEmpty else { throw Failed("Unexpected match before editing") }
         await model.command("edit_plans", ["index": preview.id, "series_name": "测试系列",
                                            "scope": "single", "plans_revision": model.revision])
-        guard model.plans.first?.series == "测试系列", let target = model.plans.first?.target else {
+        guard model.visibleRows.first?.series == "测试系列", let target = model.plans.first?.target else {
             throw Failed(model.notice ?? "Manual correction failed")
         }
         await model.command("start_apply")
         try await settle(model)
         guard !FileManager.default.fileExists(atPath: source.path),
               try Data(contentsOf: URL(fileURLWithPath: target)) == content else { throw Failed("Move failed") }
+        guard model.visibleRows.isEmpty else { throw Failed("Moved item remained in ready filter") }
+        model.query = ""
+        model.statusFilter = .all
+        guard model.visibleRows.map(\.id) == [preview.id] else { throw Failed("Clearing filters lost a row") }
         await model.reloadHistory()
         guard let batch = model.history.first, batch.canUndo, batch.moved == 1,
               let report = await model.report(batch.id), report["item_count"] as? Int == 1 else {
@@ -56,6 +67,7 @@ struct WorkflowTest {
         guard try Data(contentsOf: source) == content, !FileManager.default.fileExists(atPath: target) else {
             throw Failed("Undo failed")
         }
-        print("macOS: connected, previewed offline, corrected, moved, read history and restored original bytes")
+        guard model.visibleRows.isEmpty else { throw Failed("Preview remained visible after undo") }
+        print("macOS: connected, previewed offline, filtered, corrected, moved, read history and restored original bytes")
     }
 }

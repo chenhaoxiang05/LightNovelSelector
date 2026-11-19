@@ -27,6 +27,8 @@ class LibraryWindow:
         self.revision = -1
         self.log_cursor = 0
         self.plans = []
+        self.filtered_plans = []
+        self.filter_key = None
         self.movable = 0
         self.page = 0
         self.poll_id = None
@@ -219,16 +221,26 @@ class LibraryWindow:
         self.filter_id = None
         self.render_page(0)
 
-    def render_page(self, page):
-        old = self.tree.selection()
+    def matching_plans(self):
         query = self.search.get().strip().casefold()
         status = self.status_filter.get()
-        matches = [
-            row
-            for row in self.plans
-            if (status == "全部状态" or row["status_label"] == status)
-            and (not query or query in row["file_name"].casefold() or query in row["series_name"].casefold())
-        ]
+        key = (self.revision, query, status)
+        if key != self.filter_key:
+            if not query and status == "全部状态":
+                self.filtered_plans = self.plans
+            else:
+                self.filtered_plans = [
+                    row
+                    for row in self.plans
+                    if (status == "全部状态" or row["status_label"] == status)
+                    and (not query or query in row["file_name"].casefold() or query in row["series_name"].casefold())
+                ]
+            self.filter_key = key
+        return self.filtered_plans
+
+    def render_page(self, page):
+        old = self.tree.selection()
+        matches = self.matching_plans()
         last = max(0, (len(matches) - 1) // PAGE_SIZE)
         self.page = min(max(0, page), last)
         children = self.tree.get_children()

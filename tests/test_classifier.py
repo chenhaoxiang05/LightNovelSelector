@@ -322,6 +322,32 @@ class MovePlanTests(unittest.TestCase):
             ):
                 find_novel_files(root)
 
+    def test_discovery_skips_metadata_reads_for_unsupported_names(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            book = root / "Book.EPUB"
+            ignored = root / "Cover.jpg"
+            book.touch()
+            ignored.touch()
+            (root / "folder.pdf").mkdir()
+
+            with patch.object(Path, "stat", autospec=True, side_effect=Path.stat) as read_status:
+                self.assertEqual(find_novel_files(root), [book])
+
+            self.assertNotIn(ignored, [call.args[0] for call in read_status.call_args_list])
+
+    def test_discovery_excludes_links_with_a_supported_suffix(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            book = root / "Book.txt"
+            book.touch()
+            try:
+                (root / "linked.epub").symlink_to(book)
+                (root / "missing.txt").symlink_to(root / "missing")
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"Symbolic links unavailable: {exc}")
+            self.assertEqual(find_novel_files(root, recursive=True), [book])
+
     def test_recursive_file_discovery_is_deterministic_for_matching_names(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir).resolve()

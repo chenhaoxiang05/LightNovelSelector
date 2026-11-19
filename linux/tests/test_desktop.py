@@ -44,6 +44,39 @@ class DesktopWorkflowTest(unittest.TestCase):
             time.sleep(0.01)
         self.fail(f"GUI did not reach requested state. {self.app.message.get()}")
 
+    @patch("linux.app.PAGE_SIZE", 1)
+    def test_filtered_pages_reuse_results_until_preview_changes(self):
+        for number in (1, 2, 3):
+            (self.library / f"青空物语 第{number}卷.txt").write_text(str(min(number, 2)), encoding="utf-8")
+        self.app.scan_button.invoke()
+        self.wait_for(lambda: self.app.page_label.get() == "显示 1–1 / 3 个结果")
+
+        self.app.search.set("青空")
+        self.wait_for(lambda: self.app.filter_id is None)
+        matches = self.app.matching_plans()
+        self.app.following.invoke()
+        self.assertEqual(self.app.page_label.get(), "显示 2–2 / 3 个结果")
+        self.assertIs(self.app.matching_plans(), matches)
+        self.app.status_filter.set("重复")
+        self.app.status_box.event_generate("<<ComboboxSelected>>")
+        self.wait_for(lambda: self.app.page_label.get() == "显示 1–1 / 1 个结果")
+        self.app.status_filter.set("全部状态")
+        self.app.status_box.event_generate("<<ComboboxSelected>>")
+        self.wait_for(lambda: self.app.page_label.get() == "显示 1–1 / 3 个结果")
+        self.app.tree.selection_set(self.app.tree.get_children()[0])
+        self.root.update()
+        with patch("linux.app.simpledialog.askstring", return_value="专属系列"):
+            self.app.edit_button.invoke()
+        self.app.search.set("专属系列")
+        self.wait_for(lambda: self.app.page_label.get() == "显示 1–1 / 1 个结果")
+        self.assertTrue(self.app.following.instate(["disabled"]))
+        self.app.tree.selection_set(self.app.tree.get_children()[0])
+        self.root.update()
+        with patch("linux.app.simpledialog.askstring", return_value="其他系列"):
+            self.app.edit_button.invoke()
+        self.assertEqual(self.app.tree.get_children(), ())
+        self.assertEqual(self.app.page_label.get(), "没有匹配的文件")
+
     def test_preview_filter_correct_apply_and_undo_history(self):
         first = self.library / "青空物语 第1卷.txt"
         second = self.library / "落雪物语 第2卷.txt"
