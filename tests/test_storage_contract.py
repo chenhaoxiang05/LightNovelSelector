@@ -1,14 +1,44 @@
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from lightnovel_selector.models import BookIdentity, BookMetadata, ResolveResult
 from lightnovel_selector.storage import (
+    app_data_dir,
     book_identity_from_dict,
     book_identity_to_dict,
     book_metadata_from_dict,
     book_metadata_to_dict,
+    metadata_cache_path,
     resolve_result_from_dict,
     resolve_result_to_dict,
 )
+
+
+class PlatformStorageTests(unittest.TestCase):
+    def test_new_install_and_existing_cli_data(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            locations = [
+                ("darwin", "", home / "Library" / "Application Support"),
+                ("linux", "relative", home / ".local" / "share"),
+                ("linux", str(home / "xdg"), home / "xdg"),
+            ]
+            for platform, xdg, parent in locations:
+                with (
+                    self.subTest(platform=platform, xdg=xdg),
+                    patch("lightnovel_selector.storage.sys.platform", platform),
+                    patch.object(Path, "home", return_value=home),
+                    patch.dict(os.environ, {"LOCALAPPDATA": "", "XDG_DATA_HOME": xdg}),
+                ):
+                    self.assertEqual(app_data_dir(), parent / "LightNovelSelector")
+                    self.assertEqual(metadata_cache_path().parent, app_data_dir())
+                    legacy = home / ".lightnovel_selector"
+                    legacy.mkdir()
+                    self.assertEqual(app_data_dir(), legacy)
+                    legacy.rmdir()
 
 
 class IdentityStorageContractTests(unittest.TestCase):

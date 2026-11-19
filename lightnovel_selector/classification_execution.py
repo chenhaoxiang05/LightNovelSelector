@@ -8,10 +8,9 @@ from pathlib import Path
 from .classification_planning import unique_target_path
 from .classification_recovery import (
     _append_move_intent,
-    _claim_report_execution,
-    _release_report_execution,
     _remove_report_journal,
     _start_report_journal,
+    library_write_lease,
 )
 from .classification_reporting import write_classification_report
 from .classification_safety import (
@@ -21,6 +20,7 @@ from .classification_safety import (
     _validate_target_state,
 )
 from .models import ClassificationPlan
+from .report_execution_lease import ReportExecutionLease
 
 
 class _ClassificationExecutor:
@@ -42,17 +42,15 @@ class _ClassificationExecutor:
         self._execution_id: str | None = None
         self._journal_path: Path | None = None
 
-    def run(self) -> tuple[int, int]:
-        _validate_execution_plan(self._plans, self._report_path)
-        if self._report_path is None:
-            self._execute_moves()
-            return self._moved, self._skipped
-
-        _claim_report_execution(self._report_path)
-        try:
+    def run(self, held: ReportExecutionLease | None) -> tuple[int, int]:
+        root = _validate_execution_plan(self._plans, self._report_path)
+        if root is None:
+            return 0, 0
+        with library_write_lease(root, held):
+            if self._report_path is None:
+                self._execute_moves()
+                return self._moved, self._skipped
             return self._run_with_report()
-        finally:
-            _release_report_execution(self._report_path)
 
     def _run_with_report(self) -> tuple[int, int]:
         try:
@@ -151,6 +149,7 @@ def execute_classification_plan(
     progress: Callable[[str], None] | None = None,
     progress_count: Callable[[int, int], None] | None = None,
     report_path: Path | None = None,
+    _lease: ReportExecutionLease | None = None,
 ) -> tuple[int, int]:
     resolved_report_path = report_path.expanduser().resolve() if report_path is not None else None
     return _ClassificationExecutor(
@@ -158,4 +157,4 @@ def execute_classification_plan(
         progress=progress,
         progress_count=progress_count,
         report_path=resolved_report_path,
-    ).run()
+    ).run(_lease)

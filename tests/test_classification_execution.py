@@ -1,5 +1,4 @@
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -11,14 +10,66 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from lightnovel_selector import (
+    archive_classification_report,
     build_classification_plan,
     execute_classification_plan,
     load_classification_report,
     undo_classification_report,
 )
+from lightnovel_selector.classification_recovery import _recover_classification_report
 
 
 class ClassificationExecutionConcurrencyTests(unittest.TestCase):
+    def test_archived_undo_excludes_other_process_writing_same_library(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            source = root / "First Series Vol.01.txt"
+            source.write_text("first", encoding="utf-8")
+            report = root / "classification_report.json"
+            execute_classification_plan(build_classification_plan(root, use_network=False), report_path=report)
+            archived = archive_classification_report(report)
+            assert archived is not None
+            next_source = root / "Second Series Vol.01.txt"
+            next_source.write_text("second", encoding="utf-8")
+
+            child_script = """
+import sys
+from pathlib import Path
+from lightnovel_selector import build_classification_plan, execute_classification_plan, undo_classification_report
+
+root = Path(sys.argv[1])
+plans = build_classification_plan(root, use_network=False)
+operations = [
+    lambda: undo_classification_report(root / "classification_report.json"),
+    lambda: execute_classification_plan(plans),
+    lambda: execute_classification_plan(plans, report_path=root / "custom.json"),
+]
+for operation in operations:
+    try:
+        operation()
+    except ValueError as exc:
+        assert "正在执行" in str(exc), exc
+    else:
+        raise AssertionError("并发写入未被拒绝")
+"""
+
+            def attempt_concurrent_operations(_: str) -> None:
+                child = subprocess.run(
+                    [sys.executable, "-c", child_script, str(root)],
+                    cwd=Path(__file__).resolve().parents[1],
+                    check=False,
+                    capture_output=True,
+                    timeout=10,
+                )
+                self.assertEqual(child.returncode, 0, child.stderr.decode(errors="replace"))
+
+            with self.assertRaisesRegex(ValueError, "所选分类报告已更新"):
+                undo_classification_report(archived, expected_execution_id="stale")
+            self.assertEqual(undo_classification_report(archived, progress=attempt_concurrent_operations), (1, 0))
+            self.assertTrue(source.is_file())
+            self.assertTrue(next_source.is_file())
+            self.assertFalse((root / "custom.json").exists())
+
     def test_rejected_concurrent_execution_keeps_active_report_protected(self) -> None:
         real_move = shutil.move
         with TemporaryDirectory() as temp_dir:
@@ -68,7 +119,6 @@ class ClassificationExecutionConcurrencyTests(unittest.TestCase):
             self.assertFalse(journal_path.exists())
             self.assertTrue(second_source.is_file())
 
-    @unittest.skipUnless(os.name == "nt", "跨进程报告租约使用 Windows 命名互斥体。")
     def test_crashed_process_releases_lease_for_journal_recovery(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -108,14 +158,25 @@ with patch("lightnovel_selector.classification_execution.shutil.move", side_effe
             self.assertFalse(source.exists())
             self.assertTrue(journal_path.is_file())
 
-            recovered_report = load_classification_report(report_path)
+            def recover_while_another_reader_opens_report(report: dict, path: Path, journal: Path) -> dict:
+                with patch(
+                    "lightnovel_selector.classification_reporting._recover_classification_report",
+                    side_effect=AssertionError("同一日志不能同时恢复两次。"),
+                ):
+                    self.assertEqual(load_classification_report(path)["summary"]["moved"], 0)
+                return _recover_classification_report(report, path, journal)
+
+            with patch(
+                "lightnovel_selector.classification_reporting._recover_classification_report",
+                side_effect=recover_while_another_reader_opens_report,
+            ):
+                recovered_report = load_classification_report(report_path)
             self.assertEqual(recovered_report["summary"]["moved"], 1)
             self.assertIn("recovered_at", recovered_report)
             self.assertFalse(journal_path.exists())
             self.assertEqual(undo_classification_report(report_path), (1, 0))
             self.assertTrue(source.is_file())
 
-    @unittest.skipUnless(os.name == "nt", "跨进程报告租约使用 Windows 命名互斥体。")
     def test_other_process_does_not_recover_active_report(self) -> None:
         real_move = shutil.move
         with TemporaryDirectory() as temp_dir:

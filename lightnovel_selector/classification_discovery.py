@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import stat
 from collections.abc import Callable
 from pathlib import Path
 
@@ -18,8 +19,10 @@ def validate_classification_root(root: Path) -> Path:
 
 
 def _is_supported_regular_file(path: Path) -> bool:
+    if path.suffix.casefold() not in SUPPORTED_EXTENSIONS:
+        return False
     try:
-        return not path.is_symlink() and path.is_file() and path.suffix.casefold() in SUPPORTED_EXTENSIONS
+        return stat.S_ISREG(path.lstat().st_mode)
     except OSError:
         return False
 

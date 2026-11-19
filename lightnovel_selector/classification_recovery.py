@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -11,16 +13,14 @@ from .classification_safety import (
     _reported_move_state,
     _undo_item_path,
 )
-from .constants import REPORT_JOURNAL_MAX_BYTES, REPORT_JOURNAL_SCHEMA_VERSION, SCAN_MAX_FILES
+from .constants import REPORT_FILE_NAME, REPORT_JOURNAL_MAX_BYTES, REPORT_JOURNAL_SCHEMA_VERSION, SCAN_MAX_FILES
 from .report_execution_lease import (
     ReportExecutionLease,
-    report_execution_lease_is_active,
     try_acquire_report_execution_lease,
 )
 from .report_ids import is_valid_execution_id
 from .storage import append_json_line_durable, write_json_atomic, write_json_lines_exclusive
 
-_ACTIVE_REPORT_PATHS: set[Path] = set()
 _ACTIVE_REPORT_LEASES: dict[Path, ReportExecutionLease] = {}
 _ACTIVE_REPORT_PATHS_LOCK = threading.Lock()
 
@@ -30,30 +30,40 @@ def _report_journal_path(report_path: Path) -> Path:
     return resolved.with_name(f"{resolved.stem}.recovery.jsonl")
 
 
-def _claim_report_execution(report_path: Path) -> None:
+@contextmanager
+def library_write_lease(root: Path, held: ReportExecutionLease | None = None) -> Iterator[ReportExecutionLease]:
+    key = root / REPORT_FILE_NAME
+    if held is not None:
+        with _ACTIVE_REPORT_PATHS_LOCK:
+            if _ACTIVE_REPORT_LEASES.get(key) is not held:
+                raise RuntimeError("书库写入租约已失效。")
+        yield held
+        return
+    lease = _try_claim_report_execution(key)
+    if lease is None:
+        raise ValueError("同一书库已有正在执行的分类操作，请等待完成后再重试。")
+    try:
+        yield lease
+    finally:
+        _release_report_execution(key)
+
+
+def _try_claim_report_execution(report_path: Path) -> ReportExecutionLease | None:
     with _ACTIVE_REPORT_PATHS_LOCK:
-        if report_path in _ACTIVE_REPORT_PATHS:
-            raise ValueError("同一分类报告已有正在执行的分类操作，请等待完成后再重试。")
+        if report_path in _ACTIVE_REPORT_LEASES:
+            return None
         lease = try_acquire_report_execution_lease(report_path)
         if lease is None:
-            raise ValueError("另一个程序正在整理同一书库，请等待完成后再重试。")
-        _ACTIVE_REPORT_PATHS.add(report_path)
+            return None
         _ACTIVE_REPORT_LEASES[report_path] = lease
+        return lease
 
 
 def _release_report_execution(report_path: Path) -> None:
     with _ACTIVE_REPORT_PATHS_LOCK:
         lease = _ACTIVE_REPORT_LEASES.pop(report_path, None)
-        _ACTIVE_REPORT_PATHS.discard(report_path)
         if lease is not None:
             lease.release()
-
-
-def _report_execution_is_active(report_path: Path) -> bool:
-    with _ACTIVE_REPORT_PATHS_LOCK:
-        if report_path in _ACTIVE_REPORT_PATHS:
-            return True
-        return report_execution_lease_is_active(report_path)
 
 
 def _start_report_journal(report_path: Path, execution_id: str) -> Path:

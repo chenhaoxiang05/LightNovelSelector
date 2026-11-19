@@ -4,6 +4,7 @@ import json
 import math
 import os
 import re
+import sys
 import tempfile
 import threading
 import time
@@ -261,19 +262,25 @@ def resolve_result_from_dict(data: dict) -> ResolveResult | None:
 
 
 def metadata_cache_path() -> Path:
-    base = os.environ.get("LOCALAPPDATA")
-    if base:
-        root = Path(base) / "LightNovelSelector"
-    else:
-        root = Path.home() / ".lightnovel_selector"
-    return root / "metadata_cache.json"
+    return app_data_dir() / "metadata_cache.json"
 
 
 def app_data_dir() -> Path:
     base = os.environ.get("LOCALAPPDATA")
     if base:
         return Path(base) / "LightNovelSelector"
-    return Path.home() / ".lightnovel_selector"
+    home = Path.home()
+    legacy = home / ".lightnovel_selector"
+    if legacy.is_dir():
+        return legacy
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "LightNovelSelector"
+    if sys.platform.startswith("linux"):
+        data_home = Path(os.environ.get("XDG_DATA_HOME", ""))
+        if not data_home.is_absolute():
+            data_home = home / ".local" / "share"
+        return data_home / "LightNovelSelector"
+    return legacy
 
 
 def read_json_bounded(path: Path, *, max_bytes: int) -> object | None:

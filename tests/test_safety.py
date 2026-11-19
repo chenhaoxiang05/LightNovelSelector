@@ -358,7 +358,7 @@ class UndoReportSafetyTests(unittest.TestCase):
 
     def test_recovery_journal_rejects_target_outside_classification_root(self) -> None:
         with TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
+            workspace = Path(temp_dir).resolve()
             root = workspace / "library"
             root.mkdir()
             source = root / "Sword.Art.Online.Vol.01.txt"
@@ -642,7 +642,7 @@ class UndoReportSafetyTests(unittest.TestCase):
 
     def test_undo_rejects_incomplete_file_state_fields(self) -> None:
         with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
+            root = Path(temp_dir).resolve()
             source = root / "book.txt"
             target = root / "Series" / "book.txt"
             target.parent.mkdir()
@@ -764,7 +764,7 @@ class UndoReportSafetyTests(unittest.TestCase):
 
     def test_undo_rejects_source_outside_classification_root(self) -> None:
         with TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
+            workspace = Path(temp_dir).resolve()
             root = workspace / "library"
             target = root / "Series" / "book.txt"
             target.parent.mkdir(parents=True)
@@ -784,7 +784,7 @@ class UndoReportSafetyTests(unittest.TestCase):
 
     def test_undo_rejects_target_outside_classification_root(self) -> None:
         with TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
+            workspace = Path(temp_dir).resolve()
             root = workspace / "library"
             root.mkdir()
             target = workspace / "outside.txt"
@@ -823,7 +823,7 @@ class UndoReportSafetyTests(unittest.TestCase):
 
     def test_legacy_report_remains_usable_in_original_root(self) -> None:
         with TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
+            root = Path(temp_dir).resolve()
             source = root / "book.txt"
             target = root / "Series" / "book.txt"
             target.parent.mkdir()

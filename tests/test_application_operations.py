@@ -11,6 +11,7 @@ from typing import Any
 from unittest.mock import patch
 
 from lightnovel_selector.application import ApplicationService
+from lightnovel_selector.classification import build_classification_plan, count_plan_statuses
 from lightnovel_selector.corrections import RecognitionCorrectionMemory
 from lightnovel_selector.models import AppSettings, ClassificationPlan
 from lightnovel_selector.scan_cache import PersistentScanCache
@@ -73,6 +74,27 @@ class ApplicationOperationProgressTests(unittest.TestCase):
         self.assertEqual(operation["state"], "success")
         self.assertEqual(operation["done"], 5)
         self.assertEqual(operation["total"], 5)
+
+    def test_poll_reuses_counts_until_the_preview_changes(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "library"
+            root.mkdir()
+            (root / "星之旅 第1卷.txt").write_text("one", encoding="utf-8")
+            (root / "月之门 第1卷.txt").write_text("two", encoding="utf-8")
+            with self.configured_service(root, build_classification_plan) as service:
+                service.start_scan()
+                first = self.wait_for_operation(service)
+                self.assertEqual(first["counts"]["series"], 2)
+                first["counts"]["series"] = 0
+                with patch("lightnovel_selector.application.count_plan_statuses", wraps=count_plan_statuses) as count:
+                    poll = service.snapshot(plans_revision=first["plans_revision"])
+                    self.assertEqual(poll["counts"]["series"], 2)
+                    self.assertIsNone(poll["plans"])
+                    count.assert_not_called()
+                    edited = service.edit_plan(0, first["plans"][1]["series_name"])
+                    self.assertEqual(edited["counts"]["series"], 1)
+                    service.snapshot(plans_revision=edited["plans_revision"])
+                    count.assert_called_once()
 
     def test_cancelled_scan_preserves_partial_progress(self) -> None:
         started = threading.Event()

@@ -116,9 +116,9 @@ def _validated_report(root: Path, report_path: Path, *, recover_pending: bool) -
     return report
 
 
-def archive_classification_report(report_path: Path) -> Path | None:
+def archive_classification_report(report_path: Path, *, _report: dict | None = None) -> Path | None:
     resolved_report = report_path.expanduser().resolve()
-    report = load_classification_report(resolved_report)
+    report = load_classification_report(resolved_report) if _report is None else _report
     root = classification_report_root(report, resolved_report)
     if report.get("schema_version") != REPORT_SCHEMA_VERSION:
         return None

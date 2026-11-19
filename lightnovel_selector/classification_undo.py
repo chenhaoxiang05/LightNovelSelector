@@ -4,8 +4,10 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
-from .classification_reporting import load_classification_report
+from .classification_recovery import library_write_lease
+from .classification_reporting import load_classification_report, read_report_under_lease
 from .classification_safety import _report_root, _reported_move_state, _validated_undo_items
+from .report_execution_lease import ReportExecutionLease
 
 
 def undo_classification_report(
@@ -13,10 +15,25 @@ def undo_classification_report(
     *,
     progress: Callable[[str], None] | None = None,
     progress_count: Callable[[int, int], None] | None = None,
+    expected_execution_id: str | None = None,
+    _lease: ReportExecutionLease | None = None,
 ) -> tuple[int, int]:
     report_path = report_path.expanduser().resolve()
-    report = load_classification_report(report_path)
-    root_path = _report_root(report, report_path)
+    root_path = _report_root(load_classification_report(report_path, recover_pending=False), report_path)
+    with library_write_lease(root_path, _lease):
+        report = read_report_under_lease(report_path, root_path)
+        if expected_execution_id is not None and report.get("execution_id") != expected_execution_id:
+            raise ValueError("所选分类报告已更新，请刷新历史记录后重试。")
+        return _restore_files(report, report_path, root_path, progress, progress_count)
+
+
+def _restore_files(
+    report: dict,
+    report_path: Path,
+    root_path: Path,
+    progress: Callable[[str], None] | None,
+    progress_count: Callable[[int, int], None] | None,
+) -> tuple[int, int]:
     moved_items = list(reversed(_validated_undo_items(report, report_path)))
     for source_path, target_path, expected_size, expected_mtime_ns in moved_items:
         _reported_move_state(

@@ -22,6 +22,8 @@ from .classification import (
     undo_classification_report,
     validate_classification_root,
 )
+from .classification_recovery import library_write_lease
+from .classification_reporting import read_report_under_lease
 from .constants import (
     APP_NAME,
     APP_VERSION,
@@ -247,6 +249,8 @@ class ApplicationService:
         self.folder = self._existing_folder(self.settings.last_folder)
         self.plans: list[ClassificationPlan] = []
         self.plans_revision = 0
+        self._counts_revision = -1
+        self._plan_counts: dict[str, int] = {}
         self.scan_cache_stats = ScanCacheStats().to_dict()
         self.report_path: Path | None = self._report_for_folder(self.folder)
         self._operation_id = 0
@@ -549,11 +553,8 @@ class ApplicationService:
             self._append_log("设置已保存。", "success")
         return {"saved": error is None, "warning": str(error) if error else None, "state": self.snapshot()}
 
-    def snapshot(self, log_cursor: int = 0, plans_revision: int = -1) -> dict[str, Any]:
-        with self._lock:
-            plans_payload = None
-            if plans_revision != self.plans_revision:
-                plans_payload = [plan_to_dict(plan, index) for index, plan in enumerate(self.plans)]
+    def _snapshot_counts_locked(self) -> dict[str, int]:
+        if self._counts_revision != self.plans_revision:
             counts = count_plan_statuses(self.plans)
             counts.update(
                 {
@@ -562,13 +563,22 @@ class ApplicationService:
                     "series": len({plan.series_key or plan.series_name for plan in self.plans}),
                 }
             )
+            self._plan_counts = counts
+            self._counts_revision = self.plans_revision
+        return self._plan_counts.copy()
+
+    def snapshot(self, log_cursor: int = 0, plans_revision: int = -1) -> dict[str, Any]:
+        with self._lock:
+            plans_payload = None
+            if plans_revision != self.plans_revision:
+                plans_payload = [plan_to_dict(plan, index) for index, plan in enumerate(self.plans)]
             return {
                 "app": {"name": APP_NAME, "version": APP_VERSION},
                 "metadata_providers": self._provider_snapshot(),
                 "folder": str(self.folder) if self.folder else "",
                 "settings": app_settings_to_dict(self.settings),
                 "operation": dict(self.operation),
-                "counts": counts,
+                "counts": self._snapshot_counts_locked(),
                 "scan_cache": dict(self.scan_cache_stats),
                 "report_path": str(self.report_path) if self.report_path and self.report_path.exists() else None,
                 "plans_revision": self.plans_revision,
@@ -684,18 +694,23 @@ class ApplicationService:
                     self._append_log(message)
                     self._update_operation(operation_id, message=message)
 
-                moved, skipped = execute_classification_plan(
-                    plans,
-                    progress=report_progress,
-                    progress_count=lambda done, total: self._update_operation(
-                        operation_id,
-                        done=done,
-                        total=total,
-                    ),
-                    report_path=report_path,
-                )
-                report = load_classification_report(report_path)
-                self._archive_report_best_effort(report_path)
+                with library_write_lease(report_path.parent) as lease:
+                    try:
+                        moved, skipped = execute_classification_plan(
+                            plans,
+                            progress=report_progress,
+                            progress_count=lambda done, total: self._update_operation(
+                                operation_id,
+                                done=done,
+                                total=total,
+                            ),
+                            report_path=report_path,
+                            _lease=lease,
+                        )
+                    finally:
+                        if report_path.is_file() and not report_path.is_symlink():
+                            self._archive_report_best_effort(report_path)
+                    report = load_classification_report(report_path, recover_pending=False)
                 actual_targets = {
                     str(item.get("source_path")): Path(str(item.get("actual_target_path")))
                     for item in report.get("items", [])
@@ -729,8 +744,6 @@ class ApplicationService:
                     f"分类完成：移动 {moved} 个，跳过 {skipped} 个。",
                 )
             except Exception as exc:  # noqa: BLE001 - 后台任务边界需将未知错误转为可恢复状态。
-                if report_path.exists() and not report_path.is_symlink():
-                    self._archive_report_best_effort(report_path)
                 with self._lock:
                     self._invalidate_plans_locked()
                     self.report_path = report_path if report_path.exists() else None
@@ -746,7 +759,8 @@ class ApplicationService:
 
     def _archive_report_best_effort(self, report_path: Path) -> Path | None:
         try:
-            return archive_classification_report(report_path)
+            report = read_report_under_lease(report_path, report_path.parent)
+            return archive_classification_report(report_path, _report=report)
         except (OSError, RuntimeError, ValueError) as exc:
             self._append_log(f"分类报告已保留，但历史归档失败：{exc}", "warning")
             return None
@@ -778,25 +792,28 @@ class ApplicationService:
                     self._append_log(message)
                     self._update_operation(operation_id, message=message)
 
-                restored, skipped = undo_classification_report(
-                    report_path,
-                    progress=report_progress,
-                    progress_count=lambda done, total: self._update_operation(
-                        operation_id,
-                        done=done,
-                        total=total,
-                    ),
-                )
-                try:
-                    mark_classification_report_undone(
+                with library_write_lease(folder) as lease:
+                    restored, skipped = undo_classification_report(
                         report_path,
-                        restored=restored,
-                        skipped=skipped,
+                        expected_execution_id=report_id if report_id not in {"", "latest"} else None,
+                        _lease=lease,
+                        progress=report_progress,
+                        progress_count=lambda done, total: self._update_operation(
+                            operation_id,
+                            done=done,
+                            total=total,
+                        ),
                     )
-                except (OSError, RuntimeError, ValueError) as exc:
-                    self._append_log(f"文件已恢复，但报告状态未能更新：{exc}", "warning")
-                if report_path.name == REPORT_FILE_NAME:
-                    self._archive_report_best_effort(report_path)
+                    try:
+                        mark_classification_report_undone(
+                            report_path,
+                            restored=restored,
+                            skipped=skipped,
+                        )
+                    except (OSError, RuntimeError, ValueError) as exc:
+                        self._append_log(f"文件已恢复，但报告状态未能更新：{exc}", "warning")
+                    if report_path.name == REPORT_FILE_NAME:
+                        self._archive_report_best_effort(report_path)
                 with self._lock:
                     self._invalidate_plans_locked()
                     self.report_path = self._report_for_folder(self.folder)
